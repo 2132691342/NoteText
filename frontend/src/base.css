@@ -1,0 +1,253 @@
+/* 重置、排版基线、滚动条、可复用的面与图标基元。
+   色值与尺寸只在 themes.css 定义；这里只放「怎么用」的规则。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* 编辑器是桌面应用：禁止文本选择溢出到窗口外造成整页选中 */
+  overscroll-behavior: none;
+}
+
+html,
+body {
+  font-family: var(--nt-font-ui);
+  font-size: var(--nt-fs-md);
+  line-height: var(--nt-lh-base);
+  color: var(--nt-ink);
+  background: var(--nt-bg);
+  /* 桌面应用不该有橡皮筋滚动 */
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tauri 的 WebView2 默认给 body 加一个可拖拽区提示，关掉：
+   拖拽由 TitleBar 显式声明（data-tauri-drag-region）。 */
+body {
+  user-select: none;
+  cursor: default;
+}
+
+/* 可编辑区域恢复选择与文本光标 */
+input,
+textarea,
+[contenteditable='true'],
+.cm-content,
+.nt-selectable {
+  user-select: text;
+  cursor: auto;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+a {
+  color: var(--nt-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: var(--nt-lh-tight);
+}
+
+p {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- 滚动条：桌面应用要细而不抢眼 ---------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nt-border-strong);
+  border-radius: var(--nt-radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nt-ink-muted);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ---------- 可复用面 ---------- */
+
+/* 卡片：圆角 + 1px 中性描边 + 一层极轻阴影。
+   禁彩色描边、禁 backdrop-blur 叠层（DESIGN.md 分层纪律）。 */
+.nt-card {
+  background: var(--nt-surface);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-lg);
+  box-shadow: var(--nt-card-shadow);
+}
+
+/* 只读读数：不套描边胶囊、不做悬停缩放——有盒子没动作等于骗点击。
+   要反馈就换字色，不换几何。 */
+.nt-readout {
+  font-variant-numeric: tabular-nums;
+  color: var(--nt-ink-2);
+}
+
+.nt-readout-strong {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--nt-ink);
+}
+
+/* ---------- 图标基元 ---------- */
+.nt-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.nt-icon svg {
+  width: 1em;
+  height: 1em;
+  stroke-width: var(--nt-icon-stroke);
+}
+
+/* 图标钮：控件高度四档之外的单列，全站同一尺寸 */
+.nt-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--nt-ctl-icon);
+  height: var(--nt-ctl-icon);
+  border-radius: var(--nt-radius-sm);
+  color: var(--nt-ink-2);
+  transition:
+    transform var(--nt-dur-fast) var(--nt-ease),
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-icon-btn:hover:not(:disabled):not(.is-loading) {
+  background: var(--nt-surface-hover);
+  color: var(--nt-ink);
+  transform: scale(1.06);
+}
+
+.nt-icon-btn:active:not(:disabled):not(.is-loading) {
+  transform: scale(0.92);
+}
+
+.nt-icon-btn:disabled,
+.nt-icon-btn.is-disabled {
+  opacity: 0.5;
+  transform: none;
+}
+
+.nt-icon-btn.is-on {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
+}
+
+/* ---------- 五态：每个可点元素必须给全五个状态 ----------
+   默认 / 悬停 / 按下 / 禁用 / 加载。缺一个就是半成品。
+   text / link 类文字按钮不缩放（会带动整行文字抖动），只换色。 */
+
+.nt-text-btn {
+  padding: 0 var(--nt-sp-2);
+  height: var(--nt-ctl-h);
+  border-radius: var(--nt-radius-sm);
+  color: var(--nt-ink-2);
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-text-btn:hover:not(:disabled) {
+  background: var(--nt-surface-hover);
+  color: var(--nt-ink);
+}
+
+.nt-text-btn:disabled {
+  opacity: 0.5;
+}
+
+/* 整行元素（会话行 / 设置项）不悬停放大：宽度 100% 的行放大 1%
+   就是左右各溢出，在 overflow: hidden 的侧栏里会被裁掉边缘，
+   一屏几十行跟着晃。缩小的点击感保留。 */
+.nt-row-item {
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-row-item:hover:not(.is-on) {
+  background: var(--nt-surface-hover);
+}
+
+.nt-row-item:active {
+  transform: scale(0.995);
+}
+
+/* 选中态 = 淡底 + 左侧 2px 竖条 + 主色：位置固定、不重排，
+   扫一眼就知道「我在哪」。 */
+.nt-row-item.is-on {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
+  box-shadow: inset 2px 0 0 var(--nt-primary);
+}
+
+/* ---------- 减少动效 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

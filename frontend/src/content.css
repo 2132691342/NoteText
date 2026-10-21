@@ -1,0 +1,743 @@
+/* 自绘区：EP 没有对应物、且是内容渲染不是表单基元的东西。
+   这里只放「原子类拼不出来、EP 也没有」的：编辑器 Chrome、标签、查找高亮、diff。 */
+
+/* ============================================================
+   编辑器 Chrome（五层）
+   ============================================================ */
+
+/* 菜单栏 32px：一级菜单横排，右侧放窗口控制 */
+.nt-menubar {
+  display: flex;
+  align-items: center;
+  height: var(--nt-h-menu);
+  padding: 0 var(--nt-sp-1);
+  background: var(--nt-surface);
+  border-bottom: 1px solid var(--nt-border);
+  -webkit-app-region: drag;
+  user-select: none;
+  flex: none;
+}
+
+.nt-menubar > * {
+  -webkit-app-region: no-drag;
+}
+
+.nt-menu-item {
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--nt-h-menu) - 4px);
+  padding: 0 var(--nt-sp-2);
+  border-radius: var(--nt-radius-xs);
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink-2);
+  white-space: nowrap;
+}
+
+.nt-menu-item:hover,
+.nt-menu-item.is-open {
+  background: var(--nt-surface-hover);
+  color: var(--nt-ink);
+}
+
+/* 工具栏 34px：图标钮 + 分隔组 */
+.nt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-1);
+  height: var(--nt-h-toolbar);
+  padding: 0 var(--nt-sp-2);
+  background: var(--nt-surface);
+  border-bottom: 1px solid var(--nt-border);
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nt-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.nt-toolbar-sep {
+  width: 1px;
+  height: calc(var(--nt-h-toolbar) - 12px);
+  background: var(--nt-border);
+  margin: 0 var(--nt-sp-1);
+  flex: none;
+}
+
+/* 标签栏 32px：横向滚动 + 关闭钮 + 脏标记圆点 */
+.nt-tabbar {
+  display: flex;
+  align-items: stretch;
+  height: var(--nt-h-tab);
+  background: var(--nt-surface);
+  border-bottom: 1px solid var(--nt-border);
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.nt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nt-sp-2);
+  max-width: 220px;
+  padding: 0 var(--nt-sp-2) 0 var(--nt-sp-3);
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink-2);
+  border-right: 1px solid var(--nt-border);
+  white-space: nowrap;
+  position: relative;
+  flex: none;
+}
+
+.nt-tab:hover {
+  background: var(--nt-surface-hover);
+}
+
+.nt-tab.is-on {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
+  /* 选中态 = 淡底 + 左侧 2px 竖条：与侧栏选中同一语言 */
+  box-shadow: inset 2px 0 0 var(--nt-primary);
+}
+
+.nt-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 脏标记：已修改 = 实心圆点；已保存 = 空心。与状态栏的圆点对齐。 */
+.nt-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--nt-radius-full);
+  background: var(--nt-primary);
+  flex: none;
+}
+
+.nt-dot.is-clean {
+  background: transparent;
+  border: 1px solid var(--nt-ink-muted);
+}
+
+.nt-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--nt-radius-xs);
+  color: var(--nt-ink-muted);
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-tab:hover .nt-tab-close,
+.nt-tab.is-on .nt-tab-close {
+  opacity: 1;
+}
+
+.nt-tab-close:hover {
+  background: var(--nt-danger-bg);
+  color: var(--nt-danger);
+}
+
+/* 状态栏 26px：左「已修改」、中读数、右编码 / 行尾 */
+.nt-statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-3);
+  height: var(--nt-h-status);
+  padding: 0 var(--nt-sp-3);
+  background: var(--nt-surface);
+  border-top: 1px solid var(--nt-border);
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-2);
+  flex: none;
+  user-select: none;
+}
+
+.nt-statusbar .nt-readout {
+  font-size: var(--nt-fs-hint);
+}
+
+.nt-statusbar-spacer {
+  flex: 1;
+}
+
+/* 侧栏头 30px：标题 + 动作 */
+.nt-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--nt-h-sidebar-header);
+  padding: 0 var(--nt-sp-2) 0 var(--nt-sp-3);
+  border-bottom: 1px solid var(--nt-border);
+  font-size: var(--nt-fs-label);
+  font-weight: 600;
+  color: var(--nt-ink);
+  flex: none;
+}
+
+/* ============================================================
+   文件树
+   ============================================================ */
+.nt-tree {
+  font-size: var(--nt-fs-sm);
+  padding: var(--nt-sp-1) 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.nt-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-2);
+  height: calc(var(--nt-ctl-h-sm) + 2px);
+  padding: 0 var(--nt-sp-2);
+  border-radius: var(--nt-radius-xs);
+  color: var(--nt-ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nt-tree-row:hover {
+  background: var(--nt-surface-hover);
+}
+
+.nt-tree-row.is-on {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
+  box-shadow: inset 2px 0 0 var(--nt-primary);
+}
+
+.nt-tree-row.is-cut {
+  opacity: 0.5;
+}
+
+.nt-tree-twisty {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+  flex: none;
+  transition: transform var(--nt-dur-fast) var(--nt-ease);
+  color: var(--nt-ink-muted);
+}
+
+.nt-tree-twisty.is-open {
+  transform: rotate(90deg);
+}
+
+.nt-tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.nt-tree-dirty {
+  color: var(--nt-primary);
+  flex: none;
+}
+
+/* ============================================================
+   查找 / 替换高亮
+   ============================================================ */
+
+/* 编辑器里的匹配高亮：当前匹配用主色描边，其余用淡底 */
+.cm-searchMatch {
+  background: var(--nt-primary-soft);
+  border-radius: 2px;
+}
+
+.cm-searchMatch-selected {
+  background: var(--nt-primary);
+  color: var(--nt-primary-contrast);
+  border-radius: 2px;
+}
+
+/* 选中即高亮（notepad-- 的「鼠标选择文本后高亮」） */
+.cm-selectionMatch {
+  background: var(--nt-primary-soft);
+  border-radius: 2px;
+}
+
+/* 书签行：左侧 2px 竖条 + 淡底 */
+.cm-bookmarkLine {
+  background: var(--nt-warning-bg);
+  box-shadow: inset 2px 0 0 var(--nt-warning);
+}
+
+/* 行号槽里的书签记号 */
+.cm-bookmarkGutter {
+  color: var(--nt-warning);
+}
+
+/* 列块模式（Alt+X）：光标变十字 */
+.cm-columnMode .cm-cursor {
+  border-left-width: 1px;
+  border-right-width: 1px;
+}
+
+/* ============================================================
+   查找结果面板
+   ============================================================ */
+.nt-find-result {
+  display: flex;
+  align-items: baseline;
+  gap: var(--nt-sp-2);
+  padding: var(--nt-sp-1) var(--nt-sp-2);
+  font-size: var(--nt-fs-sm);
+  border-radius: var(--nt-radius-xs);
+  cursor: pointer;
+}
+
+.nt-find-result:hover {
+  background: var(--nt-surface-hover);
+}
+
+.nt-find-result.is-on {
+  background: var(--nt-surface-selected);
+}
+
+.nt-find-result-path {
+  color: var(--nt-ink-muted);
+  font-size: var(--nt-fs-hint);
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nt-find-result-line {
+  font-family: var(--font-mono);
+  color: var(--nt-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.nt-find-result-line mark {
+  background: var(--nt-primary-soft);
+  color: var(--nt-primary);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ============================================================
+   Diff 视图
+   ============================================================ */
+.nt-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  line-height: 1.5;
+  overflow: auto;
+}
+
+.nt-diff-side {
+  min-width: 0;
+  border-right: 1px solid var(--nt-border);
+}
+
+.nt-diff-side:last-child {
+  border-right: none;
+}
+
+.nt-diff-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--nt-sp-1) var(--nt-sp-3);
+  background: var(--nt-surface-2);
+  border-bottom: 1px solid var(--nt-border);
+  font-family: var(--font-sans);
+  font-size: var(--nt-fs-label);
+  font-weight: 600;
+  color: var(--nt-ink);
+}
+
+.nt-diff-line {
+  display: flex;
+  gap: var(--nt-sp-2);
+  padding: 0 var(--nt-sp-2);
+  white-space: pre;
+}
+
+.nt-diff-no {
+  width: 3.5em;
+  text-align: right;
+  color: var(--nt-ink-muted);
+  flex: none;
+  user-select: none;
+}
+
+.nt-diff-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 差异底色：新增淡绿 / 删除淡红 / 相同透明 */
+.nt-diff-line.is-added {
+  background: var(--nt-success-bg);
+}
+
+.nt-diff-line.is-removed {
+  background: var(--nt-danger-bg);
+}
+
+/* 行内差异片段：比整行底色更深一档 */
+.nt-diff-line .nt-span {
+  background: color-mix(in srgb, var(--nt-primary) 22%, transparent);
+  border-radius: 2px;
+}
+
+.nt-diff-line.is-added .nt-span {
+  background: color-mix(in srgb, var(--nt-success) 28%, transparent);
+}
+
+.nt-diff-line.is-removed .nt-span {
+  background: color-mix(in srgb, var(--nt-danger) 26%, transparent);
+}
+
+/* ============================================================
+   Markdown 预览
+   ============================================================ */
+.nt-md {
+  padding: var(--nt-sp-6);
+  max-width: 860px;
+  margin: 0 auto;
+  font-size: var(--nt-fs-md);
+  line-height: var(--nt-lh-loose);
+  color: var(--nt-ink);
+  user-select: text;
+}
+
+.nt-md h1,
+.nt-md h2,
+.nt-md h3,
+.nt-md h4 {
+  margin: var(--nt-sp-6) 0 var(--nt-sp-3);
+  line-height: var(--nt-lh-tight);
+}
+
+.nt-md h1 {
+  font-size: var(--nt-fs-2xl);
+  padding-bottom: var(--nt-sp-2);
+  border-bottom: 1px solid var(--nt-border);
+}
+
+.nt-md h2 {
+  font-size: var(--nt-fs-xl);
+  padding-bottom: var(--nt-sp-1);
+  border-bottom: 1px solid var(--nt-border);
+}
+
+.nt-md h3 {
+  font-size: var(--nt-fs-lg);
+}
+
+.nt-md p {
+  margin: var(--nt-sp-3) 0;
+}
+
+.nt-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--nt-surface-2);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-xs);
+  padding: 0.1em 0.35em;
+}
+
+.nt-md pre {
+  margin: var(--nt-sp-3) 0;
+  padding: var(--nt-sp-3);
+  background: var(--nt-surface-2);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius);
+  overflow-x: auto;
+}
+
+.nt-md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--nt-fs-sm);
+}
+
+.nt-md blockquote {
+  margin: var(--nt-sp-3) 0;
+  padding: var(--nt-sp-2) var(--nt-sp-4);
+  border-left: 3px solid var(--nt-primary);
+  background: var(--nt-surface-2);
+  border-radius: 0 var(--nt-radius-sm) var(--nt-radius-sm) 0;
+  color: var(--nt-ink-2);
+}
+
+.nt-md table {
+  border-collapse: collapse;
+  margin: var(--nt-sp-3) 0;
+  font-size: var(--nt-fs-sm);
+}
+
+.nt-md th,
+.nt-md td {
+  border: 1px solid var(--nt-border);
+  padding: var(--nt-sp-1) var(--nt-sp-3);
+}
+
+.nt-md th {
+  background: var(--nt-surface-2);
+  font-weight: 600;
+}
+
+.nt-md ul,
+.nt-md ol {
+  padding-left: var(--nt-sp-6);
+  margin: var(--nt-sp-3) 0;
+  list-style: revert;
+}
+
+.nt-md li {
+  margin: var(--nt-sp-1) 0;
+}
+
+.nt-md a {
+  color: var(--nt-primary);
+}
+
+.nt-md img {
+  max-width: 100%;
+  border-radius: var(--nt-radius);
+}
+
+.nt-md hr {
+  border: none;
+  border-top: 1px solid var(--nt-border);
+  margin: var(--nt-sp-6) 0;
+}
+
+/* ============================================================
+   空态 / 欢迎页
+   ============================================================ */
+.nt-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--nt-sp-5);
+  padding: var(--nt-sp-8);
+  /* 渐变只允许三处：图表面积、欢迎页光晕、用户自选的背景图 */
+  background:
+    radial-gradient(60% 50% at 50% 0%, var(--nt-primary-soft) 0%, transparent 70%),
+    var(--nt-bg);
+}
+
+.nt-welcome-logo {
+  width: var(--nt-tile-lg);
+  height: var(--nt-tile-lg);
+  border-radius: var(--nt-radius-lg);
+  background: var(--nt-primary);
+  color: var(--nt-primary-contrast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: var(--nt-fs-xl);
+  font-weight: 700;
+}
+
+.nt-welcome-actions {
+  display: flex;
+  gap: var(--nt-sp-3);
+}
+
+/* ============================================================
+   通用浮窗内容
+   ============================================================ */
+
+/* 工具箱浮窗：左输入右结果 */
+.nt-tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--nt-sp-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.nt-tool-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.nt-tool-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--nt-sp-2);
+  font-size: var(--nt-fs-label);
+  font-weight: 600;
+  color: var(--nt-ink-2);
+  flex: none;
+}
+
+.nt-tool-io {
+  flex: 1;
+  min-height: 0;
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  background: var(--nt-surface-2);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-sm);
+  padding: var(--nt-sp-2);
+  overflow: auto;
+  white-space: pre;
+  user-select: text;
+}
+
+.nt-tool-io.is-error {
+  color: var(--nt-danger);
+  background: var(--nt-danger-bg);
+}
+
+/* 哈希结果：等宽 + 可选中 */
+.nt-hash-out {
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  word-break: break-all;
+  user-select: text;
+}
+
+/* 正则匹配计数：只读读数，不套胶囊 */
+.nt-regex-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--nt-ink-2);
+}
+
+/* ============================================================
+   十六进制 / 图片 / 日志查看器
+   ============================================================ */
+.nt-hex {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  line-height: 1.6;
+  overflow: auto;
+  user-select: text;
+}
+
+.nt-hex-offset {
+  color: var(--nt-ink-muted);
+  padding-right: var(--nt-sp-3);
+  text-align: right;
+  position: sticky;
+  left: 0;
+  background: var(--nt-bg);
+}
+
+.nt-hex-bytes {
+  color: var(--nt-ink);
+  white-space: pre;
+}
+
+.nt-hex-ascii {
+  color: var(--nt-ink-2);
+  white-space: pre;
+  padding-left: var(--nt-sp-3);
+}
+
+/* 不可打印字节：暗一档，避免一片花 */
+.nt-hex-byte.is-ctrl {
+  color: var(--nt-ink-muted);
+}
+
+.nt-viewer-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  overflow: auto;
+  background: var(--nt-bg);
+}
+
+.nt-viewer-center img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* 日志查看器：行级着色（ERROR 红 / WARN 黄） */
+.nt-log-line {
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  line-height: 1.55;
+  padding: 0 var(--nt-sp-3);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.nt-log-line.is-error {
+  color: var(--nt-danger);
+  background: var(--nt-danger-bg);
+}
+
+.nt-log-line.is-warn {
+  color: var(--nt-warning);
+  background: var(--nt-warning-bg);
+}
+
+/* ============================================================
+   分屏
+   ============================================================ */
+.nt-split {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+}
+
+.nt-split-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color var(--nt-dur-fast) var(--nt-ease);
+  z-index: 1;
+}
+
+.nt-split-handle:hover,
+.nt-split-handle.is-dragging {
+  background: var(--nt-primary);
+}
+
+/* ============================================================
+   拖放打开
+   ============================================================ */
+.nt-drop-target {
+  position: fixed;
+  inset: 0;
+  z-index: var(--nt-z-toast);
+  background: color-mix(in srgb, var(--nt-primary) 12%, transparent);
+  border: 2px dashed var(--nt-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--nt-fs-lg);
+  color: var(--nt-primary);
+  pointer-events: none;
+}

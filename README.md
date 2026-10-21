@@ -1,0 +1,154 @@
+# NoteText
+
+**轻量级 Windows 桌面文本编辑器。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
+安装包 ~5MB，内置代码编辑、查找替换、编码转换、JSON 工具、Diff 对比、Markdown 预览与文档预览。
+
+![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
+![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
+![Rust](https://img.shields.io/badge/Rust-1.80+-DEA584)
+![Vue](https://img.shields.io/badge/Vue-3.4-42b883)
+![License MIT](https://img.shields.io/badge/license-MIT-yellow)
+
+## 你会得到什么
+
+| | 能力 |
+|---|---|
+| 编辑内核 | 多标签、分屏、30 种语言高亮、代码折叠、括号配对着色、列块编辑、选中即高亮、书签、转到行 |
+| 编码 | 打开时探测（BOM 优先），状态栏一键切换，24 种编码互转；行尾独立切换，保存按原样写回 |
+| 查找替换 | 本文件 `Ctrl+F` / `Ctrl+H`，文件夹级 `Ctrl+Shift+F`（支持 glob 与超大文件跳过） |
+| 工具箱 | JSON（格式化/校验/JSONPath/转结构体）、文本与目录 Diff、哈希、正则测试、编码转换、11 种行编辑 |
+| 视图器 | Markdown 渲染、图片、日志（ERROR/WARN 着色）、十六进制、文档预览（xlsx / docx / pdf） |
+| 批量操作 | 目录级查找替换（先扫描预览再勾选应用）、批量重命名（三种模式，冲突项标红） |
+| 效率工具 | 宏录制回放、列编辑模式、小地图、剪贴板历史 |
+| 壳层 | 单实例、托盘常驻、文件关联、会话恢复（含未保存草稿）、自动保存、文件监控、备份导入导出 |
+| 外观 | 浅/深/跟随系统三档主题，界面字号 80%–140% 缩放 |
+
+## 快速开始
+
+### 环境要求
+
+- **Rust** 1.80+（stable，MSVC 工具链）
+- **Node.js** 18+
+- **Windows 10 1809+ / 11**（系统已内置 WebView2）
+- Tauri CLI：`cargo install tauri-cli --version "^2"`
+
+### 开发
+
+```bash
+npm --prefix frontend install          # 首次
+npm --prefix frontend run dev          # 浏览器预览（无后端，显示空态）
+cargo tauri dev                        # 完整开发（Vite HMR + Rust 后端）
+```
+
+### 构建
+
+```bash
+cargo tauri build                      # 产物 src-tauri/target/release/NoteText.exe
+cargo tauri build --bundler nsis       # NSIS 安装包
+```
+
+### 本地验证
+
+```bash
+pwsh scripts/check.ps1                 # 快门：格式 → 编译 → 测试
+pwsh scripts/check.ps1 -Full           # 全量门禁：+ clippy + 前端构建
+pwsh scripts/check.ps1 -Chain batch     # 只跑名字命中的那条链
+```
+
+| 命令 | 作用 |
+|---|---|
+| `pwsh scripts/check.ps1` | rustfmt → cargo check → 测试 |
+| `... -Chain <关键字>` | 只跑命中的那条链 |
+| `... -List` | 列出全部测试链 |
+| `... -Full` | + clippy `-D warnings` + 前端构建（提交前 / CI） |
+
+## 项目结构
+
+```
+NoteText/
+├── src-tauri/
+│   ├── src/
+│   │   ├── commands/          # Tauri invoke 入口（薄）
+│   │   ├── service/           # 业务编排：file / editor / tools / userdata
+│   │   ├── repo/              # 一张表一个 repo
+│   │   ├── domain/            # DO / REQ / VO（四层禁止内联结构体）
+│   │   ├── db/                # SQLite 打开 + 迁移（WAL）
+│   │   ├── app/               # 能力域：路径 / 装配 / 生命周期
+│   │   ├── shell/             # 壳层：单实例 / 托盘 / 关闭策略
+│   │   ├── platform/          # 平台相关：Win32 消息框、AppHandle
+│   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id
+│   ├── capabilities/          # Tauri 权限清单
+│   ├── icons/                 # 应用图标
+│   └── tests/integration.rs   # 5 条长链路测试（一个域一条）
+├── frontend/
+│   └── src/
+│       ├── api/               # invoke 封装（全站唯一出口）
+│       ├── components/        # layout / editor / panels / dialogs / common
+│       ├── composables/       # 命令 / 主题 / 语言 / 退出守卫 / 壳意图
+│       ├── stores/            # Pinia：settings / editor / fileTree / commands / dialogs / toast
+│       ├── locales/           # zh-CN / en
+│       ├── utils/             # 纯函数
+│       └── *.css              # themes / base / ep-theme / content 四个 CSS
+├── assets/docs/               # 内置用户手册（帮助页渲染）
+├── docs/ specs/               # 项目级文档与子系统规格
+└── scripts/                   # 验证脚本（check.ps1，唯一入口）
+```
+
+## 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 桌面壳 | Tauri 2（无边框 + 前端自绘标题栏，WebView2 渲染） |
+| 后端 | Rust（rusqlite bundled · notify · tracing） |
+| 前端 | Vue 3.4 + TypeScript 5.4 + Vite 5.2 |
+| 状态管理 | Pinia 2.1 |
+| 路由 | Vue Router 4.3（hash 模式） |
+| UI | Element Plus 2.9（按需引入，变量接到 `--nt-*`） |
+| 原子 CSS | UnoCSS 0.58（刻度接 `--nt-*` 令牌） |
+| 代码编辑 | CodeMirror 6（30 种语言，静态 + 动态按需加载） |
+| 富文本 / Markdown | WangEditor 5、Mavon-Editor |
+| 文档预览 | XLSX、docx-preview、vue-pdf-embed |
+| 图表 | ECharts 5.5 |
+| 国际化 | Vue I18n 9.10（zh-CN 默认 + en） |
+| 数据库 | SQLite（WAL，rusqlite bundled 无 CGO） |
+
+**不引入**：微前端（Qiankun）、图编排（AntV X6 / BPMN-JS）、Axios——纯 Tauri invoke
+通信，前端没有 HTTP 客户端。
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [AGENTS.md](AGENTS.md) | **工程规范（唯一权威）**：分层 / 依赖方向 / 错误码 / 测试 / 命名 |
+| [DESIGN.md](DESIGN.md) | 视觉语言与交互原则 |
+| [docs/OVERVIEW.md](docs/OVERVIEW.md) | **项目全景**：能力清单、模块地图、一次对话的链路、关键取舍 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分层、启动时序、IPC 契约、前端状态归属 |
+| [docs/DATA-MODEL.md](docs/DATA-MODEL.md) | 表结构、数据落在哪、会话恢复的形态 |
+| [docs/API-CONTRACT.md](docs/API-CONTRACT.md) | invoke 命令表与出入参契约 |
+| [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 页面与组件地图 |
+| [docs/ERROR-CODES.md](docs/ERROR-CODES.md) | 错误码段位与前端分流 |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、验证入口、数据位置、改代码时看什么 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 构建、安装器、CI 与 Release |
+| specs/ | 子系统规格（01–12，一个子系统一篇） |
+
+内置用户手册在 `assets/docs/`，面向用户；`docs/` 与 `specs/` 面向开发，两者不重复维护同一份话术。
+
+## 测试
+
+5 条集成测试，一条链一个域，聚焦长链路与硬契约，全量 < 1 秒：
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+| 入口 | 覆盖 |
+|---|---|
+| `test_bootstrap_chain` | 装配 → 建表 → 会话与书签往返 → 空数组序列化契约 |
+| `test_file_roundtrip_chain` | 编码探测、行尾按原样写回、BOM 剥离补回、原子写不留痕 |
+| `test_text_pipeline_chain` | 注释切换（含半注释块）、行编辑、行列换算、统计按 char |
+| `test_tools_chain` | JSON / diff / 正则硬契约、三种哈希已知向量 |
+| `test_batch_chain` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
+
+## 许可证
+
+[MIT](LICENSE)

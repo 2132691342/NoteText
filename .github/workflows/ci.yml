@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支上的新推送取消旧运行：全量门禁要几分钟，排对比跑完有用。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 验证（rustfmt / check / clippy / 测试 / 前端构建）
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装 Rust（stable）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: 装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Tauri 的 Rust 侧要 MSVC 链接器，系统盘已带；这里只缓存 cargo 产物。
+      - name: 缓存 cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # 单一验证入口：与本地 `pwsh scripts/check.ps1 -Full` 完全一致。
+      # 失败时脚本自己把「哪条链坏了、错在哪一行」写进 job summary。
+      - name: 全量门禁
+        run: pwsh scripts/check.ps1 -Full

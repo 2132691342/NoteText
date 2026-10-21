@@ -1,0 +1,244 @@
+/* Element Plus 变量 → --nt-* 的桥，外加按钮五态等细节对齐。
+   Element Plus 只是基元供给方：视觉语言仍由 themes.css 说了算，
+   组件里禁止另写色值。 */
+
+:root {
+  /* 主色系：EP 的每个色阶都从同一个靛蓝派生，消除 EP 默认蓝割裂感 */
+  --el-color-primary: var(--nt-primary);
+  --el-color-primary-light-3: color-mix(in srgb, var(--nt-primary) 70%, var(--nt-bg));
+  --el-color-primary-light-5: color-mix(in srgb, var(--nt-primary) 50%, var(--nt-bg));
+  --el-color-primary-light-7: color-mix(in srgb, var(--nt-primary) 30%, var(--nt-bg));
+  --el-color-primary-light-8: color-mix(in srgb, var(--nt-primary) 20%, var(--nt-bg));
+  --el-color-primary-light-9: color-mix(in srgb, var(--nt-primary) 10%, var(--nt-bg));
+  --el-color-primary-dark-2: var(--nt-primary-strong);
+
+  /* 语义色 */
+  --el-color-success: var(--nt-success);
+  --el-color-warning: var(--nt-warning);
+  --el-color-danger: var(--nt-danger);
+  --el-color-error: var(--nt-danger);
+  --el-color-info: var(--nt-ink-2);
+
+  /* 文本层级 */
+  --el-text-color-primary: var(--nt-ink);
+  --el-text-color-regular: var(--nt-ink-2);
+  --el-text-color-secondary: var(--nt-ink-muted);
+  --el-text-color-placeholder: var(--nt-ink-muted);
+  --el-text-color-disabled: var(--nt-ink-muted);
+
+  /* 边框与填充 */
+  --el-border-color: var(--nt-border);
+  --el-border-color-light: var(--nt-border);
+  --el-border-color-lighter: var(--nt-border);
+  --el-border-color-extra-light: var(--nt-border);
+  --el-border-color-hover: var(--nt-control-border-hover);
+  --el-border-color-darker: var(--nt-border-strong);
+  --el-fill-color: var(--nt-surface-2);
+  --el-fill-color-light: var(--nt-surface-2);
+  --el-fill-color-lighter: var(--nt-surface-2);
+  --el-fill-color-blank: var(--nt-control-bg);
+  --el-fill-color-darker: var(--nt-surface-hover);
+
+  /* 背景层 */
+  --el-bg-color: var(--nt-surface);
+  --el-bg-color-page: var(--nt-bg);
+  --el-bg-color-overlay: var(--nt-surface);
+
+  /* 圆角与字号：接到令牌，不跟 EP 默认值 */
+  --el-border-radius-base: var(--nt-radius);
+  --el-border-radius-small: var(--nt-radius-sm);
+  --el-font-size-base: var(--nt-fs-md);
+  --el-font-size-small: var(--nt-fs-sm);
+  --el-font-size-extra-small: var(--nt-fs-xs);
+
+  /* 遮罩：暗色下要更深，否则浮层与内容糊在一起 */
+  --el-overlay-color-lighter: rgba(15, 23, 42, 0.28);
+}
+
+[data-theme='dark'] {
+  --el-overlay-color-lighter: rgba(2, 6, 23, 0.6);
+}
+
+/* ---------- 按钮五态：与自绘控件同一档 ----------
+   全站统一 1.06 / 0.92：同一个操作条里 EP 按钮与自绘图标钮并排时，
+   点击手感必须一致。加载与禁用两态一律 transform: none，
+   否则连点会让按钮持续抖动。 */
+.el-button {
+  transition:
+    transform var(--nt-dur-fast) var(--nt-ease),
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    border-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.el-button:not(.is-text):not(.is-link):not(:disabled):not(.is-loading):hover {
+  transform: scale(1.06);
+}
+
+.el-button:not(.is-text):not(.is-link):not(:disabled):not(.is-loading):active {
+  transform: scale(0.92);
+}
+
+.el-button.is-text,
+.el-button.is-link {
+  /* 文字级控件：缩放会带动整行文字抖动，只给颜色反馈 */
+  transform: none !important;
+}
+
+.el-button:disabled,
+.el-button.is-loading {
+  transform: none !important;
+}
+
+/* 主按钮是全站唯一的大面积强调色：实底靛蓝 + 白字。
+   其余按钮一律中性描边 + 中性文字（DESIGN.md）。 */
+.el-button--primary {
+  --el-button-bg-color: var(--nt-primary);
+  --el-button-border-color: var(--nt-primary);
+  --el-button-text-color: var(--nt-primary-contrast);
+  --el-button-hover-bg-color: var(--nt-primary-strong);
+  --el-button-hover-border-color: var(--nt-primary-strong);
+  --el-button-hover-text-color: var(--nt-primary-contrast);
+  --el-button-active-bg-color: var(--nt-primary-strong);
+  --el-button-active-border-color: var(--nt-primary-strong);
+}
+
+/* 危险按钮 = 中性描边 + 危险色文字：彩色描边违反分层纪律，
+   语义交给文字与底色。 */
+.el-button--danger {
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--nt-border-strong);
+  --el-button-text-color: var(--nt-danger);
+  --el-button-hover-bg-color: var(--nt-danger-bg);
+  --el-button-hover-border-color: var(--nt-border-strong);
+  --el-button-hover-text-color: var(--nt-danger);
+}
+
+/* ---------- 表单控件：走 --nt-control-* 一组 ---------- */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  background: var(--nt-control-bg);
+  border-color: var(--nt-control-border);
+  box-shadow: 0 0 0 1px var(--nt-control-border) inset;
+  border-radius: var(--nt-radius-sm);
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  border-color: var(--nt-control-border-hover);
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: var(--nt-control-shadow-focus);
+}
+
+/* 密集界面：EP 默认 32px 控件偏高，接到令牌 */
+.el-input__wrapper {
+  padding: 0 var(--nt-sp-2);
+}
+
+.el-button--small {
+  height: var(--nt-ctl-h-sm);
+}
+
+.el-button--default {
+  height: var(--nt-ctl-h);
+}
+
+.el-button--large {
+  height: var(--nt-ctl-h-lg);
+}
+
+/* ---------- 弹层：接到令牌 ---------- */
+.el-dialog {
+  --el-dialog-bg-color: var(--nt-surface);
+  --el-dialog-title-font-size: var(--nt-fs-lg);
+  border-radius: var(--nt-radius-xl);
+  box-shadow: var(--nt-card-shadow);
+}
+
+.el-message-box {
+  --el-messagebox-title-font-size: var(--nt-fs-lg);
+}
+
+.el-popover,
+.el-select__popper,
+.el-dropdown__popper {
+  --el-popover-bg-color: var(--nt-surface);
+  --el-popover-border-color: var(--nt-border);
+  --el-bg-color-overlay: var(--nt-surface);
+}
+
+/* ---------- 表格 / 树：密集场景 ---------- */
+.el-table {
+  --el-table-border-color: var(--nt-border);
+  --el-table-header-bg-color: var(--nt-surface-2);
+  --el-table-row-hover-bg-color: var(--nt-surface-hover);
+  --el-table-bg-color: var(--nt-surface);
+  --el-table-tr-bg-color: var(--nt-surface);
+  font-size: var(--nt-fs-sm);
+}
+
+.el-tree {
+  background: transparent;
+  --el-tree-node-hover-bg-color: var(--nt-surface-hover);
+  font-size: var(--nt-fs-sm);
+}
+
+/* ---------- 开关 / 滑块 ---------- */
+.el-switch {
+  --el-switch-on-color: var(--nt-primary);
+}
+
+/* ---------- 菜单：右键与下拉 ---------- */
+.el-menu {
+  --el-menu-bg-color: var(--nt-surface);
+  --el-menu-border-color: var(--nt-border);
+  --el-menu-item-font-size: var(--nt-fs-sm);
+  --el-menu-item-height: var(--nt-ctl-h);
+  --el-menu-hover-bg-color: var(--nt-surface-hover);
+  --el-menu-active-color: var(--nt-primary);
+}
+
+/* ---------- Tabs：标签栏用 EP 的 segmented 形态 ---------- */
+.el-tabs__item {
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink-2);
+}
+
+.el-tabs__item.is-active {
+  color: var(--nt-primary);
+}
+
+.el-tabs__nav-wrap::after {
+  background: var(--nt-border);
+}
+
+/* ---------- 加载 / 消息 ---------- */
+.el-loading-mask {
+  background: color-mix(in srgb, var(--nt-surface) 70%, transparent);
+}
+
+.el-message {
+  --el-message-bg-color: var(--nt-surface);
+  --el-message-border-color: var(--nt-border);
+  border-radius: var(--nt-radius);
+  box-shadow: var(--nt-card-shadow);
+}
+
+/* ---------- 滚动条：EP 的下拉与表格内部也用细滚动条 ---------- */
+.el-scrollbar__bar.is-vertical {
+  width: 8px;
+}
+
+.el-scrollbar__bar.is-horizontal {
+  height: 8px;
+}
+
+.el-scrollbar__thumb {
+  background: var(--nt-border-strong);
+}

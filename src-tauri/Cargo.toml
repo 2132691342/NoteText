@@ -1,0 +1,57 @@
+[package]
+name = "notetext"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description.workspace = true
+
+# 二进制名与产物名：tauri build 产出 NoteText.exe。
+[[bin]]
+name = "NoteText"
+path = "src/main.rs"
+
+[lib]
+name = "notetext_lib"
+# lib 目标给集成测试用（cargo test 编译 lib 而不链接 WebView），
+# 二进制 main.rs 只做装配。这样测试不必带窗口。
+path = "src/lib.rs"
+
+[dependencies]
+# 序列化与错误：跨 invoke 边界的出入参与错误类型
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# 持久化：rusqlite bundled = 自带 SQLite C 源码，无需系统装 SQLite，也无 CGO 依赖链
+rusqlite = { workspace = true }
+
+# 文件监控：目录树外部变更与 tail -f
+notify = { workspace = true }
+
+# 日志：tracing 分层 + 文件落盘（替代 println）
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# 平台路径：%APPDATA% 解析（dirs 比手拼 env::var 可靠，含漫游场景）
+dirs = { workspace = true }
+
+# 壳层：Tauri 本体 + 对话框 + 单实例 + 托盘
+tauri = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-opener = "2"
+
+[dev-dependencies]
+tempfile = "3"
+# 集成测试里断言 JSON 出入参
+serde_json = { workspace = true }
+
+[features]
+# 默认特性：自定义协议（生产模式下前端资源由 Rust 服务，file:// 直开会被 CSP 挡）
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

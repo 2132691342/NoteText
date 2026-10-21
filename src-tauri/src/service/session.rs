@@ -1,0 +1,121 @@
+//! 会话服务：保存 / 恢复 / 窗口状态记忆。
+//!
+//! 分工（specs/06）：后端只存「布局与元数据」，正文归前端编辑器。
+//! 关闭时前端把标签列表（路径 + 光标 + 脏标记）一次性交给这里；
+//! 新建未保存标签的正文由 `userdata` 的草稿服务另存一份快照。
+
+use std::sync::Arc;
+
+use tauri::WebviewWindow;
+
+use crate::app::bootstrap::now_ms;
+use crate::db::Db;
+use crate::domain::session::{SessionDO, SessionRestoreVO, SessionSaveReq, TabDO};
+use crate::pkg::error::{codes, AppError, AppResult};
+use crate::repo::session::SessionRepo;
+
+pub struct SessionService {
+    db: Arc<Db>,
+}
+
+impl SessionService {
+    pub fn new(db: Arc<Db>) -> Self {
+        Self { db }
+    }
+
+    /// 读上次会话。库空时返回空恢复体（前端显示欢迎页）。
+    pub fn restore(&self) -> AppResult<SessionRestoreVO> {
+        self.db.with(SessionRepo::load)
+    }
+
+    /// 保存会话。前端在关闭前与标签布局变化时调。
+    pub fn save(&self, req: SessionSaveReq) -> AppResult<()> {
+        let now = now_ms();
+        self.db.with(|conn| {
+            let mut s = req.session.clone();
+            s.updated_at = now;
+            SessionRepo::save(conn, &s, &req.tabs)
+        })
+    }
+
+    /// 记住窗口大小：位置与尺寸变了就回写，下次启动放回原处。
+    ///
+    /// 只记「正常态」的尺寸：最大化时记的是最大化前的还原尺寸，
+    /// 否则恢复出来是个奇怪的大窗口。
+    pub fn remember_window(&self, window: &WebviewWindow) -> AppResult<()> {
+        let size = window
+            .inner_size()
+            .map_err(|e| AppError::wrap(codes::SHELL_FAILED, "读取窗口尺寸失败", e))?;
+        let maximized = window
+            .is_maximized()
+            .map_err(|e| AppError::wrap(codes::SHELL_FAILED, "读取窗口状态失败", e))?;
+
+        self.db.with(|conn| {
+            conn.execute(
+                "INSERT INTO sessions (id, window_width, window_height, window_maximized, updated_at)
+                 VALUES (1, ?1, ?2, ?3, ?4)
+                 ON CONFLICT(id) DO UPDATE SET
+                    window_width = excluded.window_width,
+                    window_height = excluded.window_height,
+                    window_maximized = excluded.window_maximized,
+                    updated_at = excluded.updated_at",
+                rusqlite::params![
+                    size.width as i64,
+                    size.height as i64,
+                    maximized as i64,
+                    now_ms()
+                ],
+            )
+            .map_err(|e| AppError::wrap(codes::DB_FAILED, "保存窗口状态失败", e))?;
+            Ok(())
+        })
+    }
+
+    /// 记一次布局变化（侧栏开关 / 分屏比例）。
+    pub fn patch_session(&self, f: impl FnOnce(&mut SessionDO)) -> AppResult<()> {
+        self.db.with(|conn| {
+            let mut s = SessionRepo::load(conn)?
+                .session
+                .unwrap_or_else(SessionDO::default_new);
+            f(&mut s);
+            s.updated_at = now_ms();
+            // tabs 不动：只改会话行。
+            let tabs = SessionRepo::load(conn)?.tabs;
+            SessionRepo::save(conn, &s, &tabs)
+        })
+    }
+
+    /// 取某个标签（前端关标签前确认它是否在会话里）。
+    pub fn get_tab(&self, id: i64) -> AppResult<Option<TabDO>> {
+        self.db.with(|conn| {
+            rusqlite::OptionalExtension::optional(
+                conn.query_row(
+                    "SELECT id, ord, path, title, language, encoding, line_ending, has_bom,
+                            cursor_line, cursor_col, scroll_ratio, dirty, split, view_type, updated_at
+                     FROM tabs WHERE id = ?1",
+                    rusqlite::params![id],
+                    |r| {
+                        Ok(TabDO {
+                            id: r.get(0)?,
+                            ord: r.get(1)?,
+                            path: r.get(2)?,
+                            title: r.get(3)?,
+                            language: r.get(4)?,
+                            encoding: r.get(5)?,
+                            line_ending: r.get(6)?,
+                            has_bom: r.get::<_, i64>(7)? != 0,
+                            cursor_line: r.get(8)?,
+                            cursor_col: r.get(9)?,
+                            scroll_ratio: r.get(10)?,
+                            dirty: r.get::<_, i64>(11)? != 0,
+                            split: r.get::<_, i64>(12)? != 0,
+                            view_type: r.get(13)?,
+                            updated_at: r.get(14)?,
+                        })
+                    },
+                ),
+            )
+            .map_err(|e| AppError::wrap(codes::DB_FAILED, "读取标签失败", e))
+        })
+    }
+}

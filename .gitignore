@@ -1,0 +1,41 @@
+# Rust / Tauri
+/target/
+/src-tauri/target/
+*.pdb
+*.exe
+*.dll
+Cargo.lock.bak
+# 构建产物：本地 tauri build 输出，**不入库**（含可执行文件与安装器）；
+# 安装器走 GitHub Actions tag 触发构建并上传到 GitHub Release，
+# 避免每次本地构建触发安装器体积 diff、git status 永远 modified。
+/src-tauri/target/release/NoteText.exe
+/src-tauri/target/release/bundle/
+
+# 前端
+/frontend/node_modules/
+/frontend/dist/
+*.tsbuildinfo
+# vue-tsc 增量构建缓存（vue-tsc -b 产物，不应入库）
+
+# 本地配置与数据：NOTETEXT_HOME 被指到源码树时的落盘产物
+/*.db
+/*.db-journal
+/*.db-wal
+/*.db-shm
+/config.local.json
+/logs/
+/tmp/
+.trash/
+# 验证脚本的本地输出（scripts/check.ps1 写入）
+/.check/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.suo
+*.user
+
+# OS
+Thumbs.db
+.DS_Store
