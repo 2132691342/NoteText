@@ -23,7 +23,8 @@ jobs:
       - name: 装 Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 锁文件由 npm 11（Node 24）生成，CI 必须同版本，否则 npm ci 读锁文件会崩。
+          node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
