@@ -1,6 +1,6 @@
 //! 批量操作链路：扫描不写盘、应用只改勾选的、冲突不覆盖。
 //!
-//! 坏了的表现：批量替换静默改掉用户没勾选的文件，或重命名把已有文件覆盖——
+//! 失败表现：批量替换静默改掉用户没勾选的文件；或重命名把已有文件覆盖——
 //! 两种都是「用户的文件没了」，且没有撤销键。
 
 use std::fs;
@@ -13,7 +13,7 @@ mod common;
 use common::boot;
 
 #[test]
-fn test_batch_find_replace_chain() {
+fn test_batch_safety_chain() {
     let dir = tempfile::tempdir().expect("建临时目录失败");
     let state = boot(&dir);
 
@@ -21,8 +21,10 @@ fn test_batch_find_replace_chain() {
     fs::create_dir_all(&root).expect("建目录失败");
     let a = root.join("a.txt");
     let b = root.join("b.txt");
+    let c = root.join("c.txt");
     fs::write(&a, "hello world\nhello again\n").expect("写 a 失败");
     fs::write(&b, "nothing here\n").expect("写 b 失败");
+    fs::write(&c, "x").expect("写 c 失败");
 
     // 扫描只报不改：扫完文件必须还是原样。
     let scan = state
@@ -67,21 +69,8 @@ fn test_batch_find_replace_chain() {
         before_b,
         "没勾选的文件不能被改"
     );
-}
 
-#[test]
-fn test_batch_rename_chain() {
-    let dir = tempfile::tempdir().expect("建临时目录失败");
-    let state = boot(&dir);
-
-    let root = dir.path().join("batch");
-    fs::create_dir_all(&root).expect("建目录失败");
-    let a = root.join("a.txt");
-    let b = root.join("b.txt");
-    fs::write(&a, "x").expect("写 a 失败");
-    fs::write(&b, "y").expect("写 b 失败");
-
-    // 重命名冲突必须挡住：目标已存在时标冲突且不可应用。
+    // 重命名冲突：目标已存在时标冲突，且不可应用。
     let plan = state
         .services
         .batch
@@ -112,8 +101,6 @@ fn test_batch_rename_chain() {
     assert!(!err.message.is_empty(), "错误要带一句人话");
 
     // 无冲突时要真的落地：新名字出现、旧名字消失。
-    let c = root.join("c.txt");
-    fs::write(&c, "x").expect("写 c 失败");
     let ok = state
         .services
         .batch

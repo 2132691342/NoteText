@@ -1,7 +1,7 @@
-//! 工具与文本变换链路：JSON / diff / 正则 / 哈希 / 注释切换的硬契约。
+//! 工具箱与文本变换链路：JSON / diff / 正则 / 哈希 / 注释切换的硬契约。
 //!
-//! 坏了的表现：浮窗给出错误结果或卡死；Ctrl+/ 把代码注释坏——
-//! 用户拿到的结果是错的但界面上看不出。
+//! 失败表现：浮窗给出错误结果但界面上看不出，用户照着错结果改代码；
+//! 或 Ctrl+/ 把代码注释坏——用户拿到错结果且没有任何提示。
 
 use notetext_lib::domain::diff::TextDiffReq;
 use notetext_lib::domain::hash::{HashAlgo, HashReq};
@@ -11,7 +11,7 @@ use notetext_lib::service::editor;
 use notetext_lib::service::tools::ToolsService;
 
 #[test]
-fn test_json_and_diff_chain() {
+fn test_tools_contract_chain() {
     let tools = ToolsService::new();
 
     // JSON：坏输入要带行列定位，只说「格式错误」用户找不到在哪。
@@ -39,13 +39,8 @@ fn test_json_and_diff_chain() {
     assert_eq!(diff.added, 1, "应有一行新增");
     assert_eq!(diff.removed, 1, "应有一行删除");
     assert_eq!(diff.lines.len(), 4, "1 相同 + 1 删 + 1 增 + 1 相同");
-}
 
-#[test]
-fn test_regex_and_hash_chain() {
-    let tools = ToolsService::new();
-
-    // 正则：捕获组编号与空匹配推进（不推进就死循环，整个界面挂住）。
+    // 正则：捕获组编号与多次匹配。空匹配不推进会直接挂死界面。
     let re = tools.regex_test(&RegexTestReq {
         pattern: r"(\d+)-(\w+)".into(),
         text: "12-ab 34-cd".into(),
@@ -59,8 +54,7 @@ fn test_regex_and_hash_chain() {
     assert_eq!(re.matches[0].groups.len(), 3, "整段 + 2 个捕获组");
     assert_eq!(re.matches[0].groups[1], "12", "第一组应是 12");
 
-    // 哈希：三种算法各对一组已知向量，与 certutil / Get-FileHash 对得上。
-    // 对不上用户就会误判文件被改。
+    // 哈希：三种算法对已知向量，能与 certutil / Get-FileHash 对照。
     for (algo, expected) in [
         (HashAlgo::Md5, "5d41402abc4b2a76b9719d911017c592"),
         (HashAlgo::Sha1, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"),
@@ -78,11 +72,8 @@ fn test_regex_and_hash_chain() {
         assert!(vo.ok, "{algo:?} 应成功");
         assert_eq!(vo.hex, expected, "{algo:?}(\"hello\") 应为 {expected}");
     }
-}
 
-#[test]
-fn test_comment_toggle_chain() {
-    // 注释切换：加 / 去往返——去完不一样用户就丢代码了。
+    // 注释切换：加 / 去往返必须还原，去完不一样用户就丢代码了。
     let src = "let a = 1;\nlet b = 2;";
     let commented = editor::toggle_line_comment("rust", src).expect("加注释失败");
     assert_eq!(commented, "// let a = 1;\n// let b = 2;", "两行都应被注释");
