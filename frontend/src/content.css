@@ -317,6 +317,38 @@
   color: var(--nt-warning);
 }
 
+/*
+  5 色标记（notepad-- 的 mark-1..5）。
+  颜色取语义色五档而不是五个新色相：视觉纪律是「同一个强调色相」，
+  标记靠「底色深浅 + 左侧竖条」区分，不引入第二个色相。
+  写在 content.css（全局）而不是组件 scoped：装饰由 ViewPlugin 生成，
+  元素挂在编辑器内部，scoped 选择器加不到 data 属性上去。
+*/
+.nt-mark {
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.nt-mark-1 {
+  background: var(--nt-danger-bg);
+  box-shadow: inset 0 -2px 0 var(--nt-danger);
+}
+.nt-mark-2 {
+  background: var(--nt-warning-bg);
+  box-shadow: inset 0 -2px 0 var(--nt-warning);
+}
+.nt-mark-3 {
+  background: var(--nt-success-bg);
+  box-shadow: inset 0 -2px 0 var(--nt-success);
+}
+.nt-mark-4 {
+  background: var(--nt-primary-soft);
+  box-shadow: inset 0 -2px 0 var(--nt-primary);
+}
+.nt-mark-5 {
+  background: var(--nt-elev-selected);
+  box-shadow: inset 0 -2px 0 var(--nt-ink-3);
+}
+
 /* 列块模式（Alt+X）：光标变十字 */
 .cm-columnMode .cm-cursor {
   border-left-width: 1px;

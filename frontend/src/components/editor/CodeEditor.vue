@@ -17,6 +17,10 @@
 <script lang="ts" setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import {
+  Decoration,
+  type DecorationSet,
+  ViewPlugin,
+  type PluginValue,
   EditorView,
   lineNumbers,
   gutter,
@@ -34,7 +38,7 @@ import {
   scrollPastEnd,
   type ViewUpdate,
 } from '@codemirror/view'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState, Compartment, RangeSetBuilder, type Extension } from '@codemirror/state'
 import {
   indentWithTab,
   history,
@@ -77,6 +81,21 @@ import {
   doIndent,
   doSelectLine,
   doDeleteSelection,
+  doCaseTransform,
+  doSortLines,
+  doDedupLines,
+  doTrimTrailing,
+  doReverseLines,
+  doConvertIndent,
+  doBookmarkLineOp,
+  doPasteBookmarkLines,
+  doMarkSelection,
+  doClearMarks,
+  bookmarkClip,
+  setMarksRenderer,
+  renderMarks,
+  allMarkWords,
+  type MarkColor,
   viewOf,
 } from '@/composables/useEditorActions'
 import { useCommandStore } from '@/stores/commands'
@@ -89,6 +108,70 @@ import { recordDocChange } from '@/composables/useEditorMacro'
 import { pushClip } from '@/composables/useClipboardHistory'
 
 const props = defineProps<{ tab: Tab; viewId?: 'main' | 'second'; readonly?: boolean }>()
+
+/**
+ * 5 色标记的装饰插件。
+ *
+ * 词集合由动作层持有（`allMarkWords`），这里只负责把它画出来。
+ * 分屏 / 多标签每个视图各挂一份：同一组标记在所有视图上都看得见，
+ * 与「标记是这份文件的看法」一致。词 → 颜色档固定，
+ * 用户不会因为点了两次就换个颜色。
+ */
+function markClassOf(word: string): number {
+  let h = 0
+  for (let i = 0; i < word.length; i += 1) h = (h * 31 + word.charCodeAt(i)) % 5
+  return h + 1
+}
+
+class MarkPluginValue implements PluginValue {
+  decorations: DecorationSet
+
+  constructor(
+    private view: EditorView,
+    private words: Set<string>,
+  ) {
+    this.decorations = this.build()
+  }
+
+  update(u: ViewUpdate) {
+    if (u.docChanged || u.viewportChanged) this.decorations = this.build()
+  }
+
+  private build(): DecorationSet {
+    if (this.words.size === 0) return Decoration.none
+    const builder = new RangeSetBuilder<Decoration>()
+    const doc = this.view.state.doc
+    // 只扫可见区间：给几万行的文件每个词都算一遍位置会卡住输入。
+    for (const { from, to } of this.view.visibleRanges) {
+      const text = doc.sliceString(from, to)
+      for (const word of this.words) {
+        if (!word) continue
+        let idx = text.indexOf(word)
+        while (idx >= 0) {
+          const start = from + idx
+          builder.add(
+            start,
+            start + word.length,
+            Decoration.mark({ class: `nt-mark nt-mark-${markClassOf(word)}` }),
+          )
+          idx = text.indexOf(word, idx + word.length)
+        }
+      }
+    }
+    return builder.finish()
+  }
+}
+
+/** 建一个标记插件扩展（每个视图一份，词集合快照进来）。 */
+function markExtension(words: Set<string>): Extension {
+  return ViewPlugin.fromClass(
+    class extends MarkPluginValue {
+      constructor(view: EditorView) {
+        super(view, words)
+      }
+    },
+  )
+}
 
 const settings = useSettingsStore()
 const editor = useEditorStore()
@@ -117,6 +200,8 @@ const gutterComp = new Compartment()
 // 书签 gutter：行号左侧一列点。状态存在视图里（不进 store：书签是
 // 「这个文件在这个位置有个标记」，与标签元数据无关）。
 const bookmarkComp = new Compartment()
+// 5 色标记装饰：词集合整体换，所以也是 reconfigure 而不是重建视图。
+const marksComp = new Compartment()
 
 let view: EditorView | null = null
 
@@ -212,6 +297,7 @@ onMounted(async () => {
       bracketComp.of(cfg().bracket_matching ? bracketMatching() : []),
       foldComp.of(cfg().fold_gutter ? foldGutter() : []),
       bookmarkComp.of(bookmarkGutter()),
+      marksComp.of(markExtension(allMarkWords())),
       gutterComp.of(cfg().indent_guides ? [] : []),
       whitespaceComp.of(
         cfg().show_whitespace ? highlightWhitespace() : placeholder(''),
@@ -643,8 +729,111 @@ const menuItems = computed<MenuItem[]>(() => {
       disabled: !props.tab.path,
       run: () => commands.run('bookmark.toggle'),
     },
+    { sep: true },
+    {
+      label: tr('menu.caseUpper'),
+      hint: 'Ctrl+Shift+U',
+      disabled: ro,
+      run: () => {
+        doCaseTransform(id, 'upper')
+        toast.ok(tr('toast.caseDone'))
+      },
+    },
+    {
+      label: tr('menu.caseLower'),
+      hint: 'Ctrl+Shift+L',
+      disabled: ro,
+      run: () => {
+        doCaseTransform(id, 'lower')
+        toast.ok(tr('toast.caseDone'))
+      },
+    },
+    {
+      label: tr('menu.caseTitle'),
+      disabled: ro,
+      run: () => {
+        doCaseTransform(id, 'title')
+        toast.ok(tr('toast.caseDone'))
+      },
+    },
+    { sep: true },
+    {
+      label: tr('menu.sortAsc'),
+      disabled: ro,
+      run: () => doSortLines(id, 'asc'),
+    },
+    {
+      label: tr('menu.sortDesc'),
+      disabled: ro,
+      run: () => doSortLines(id, 'desc'),
+    },
+    {
+      label: tr('menu.dedupLines'),
+      disabled: ro,
+      run: () => doDedupLines(id),
+    },
+    {
+      label: tr('menu.reverseLines'),
+      disabled: ro,
+      run: () => doReverseLines(id),
+    },
+    {
+      label: tr('menu.trimTrailing'),
+      disabled: ro,
+      run: () => doTrimTrailing(id),
+    },
+    { sep: true },
+    {
+      label: tr('menu.tabToSpaces'),
+      disabled: ro,
+      run: () => doConvertIndent(id, 'tab-to-space', cfg().tab_size, true),
+    },
+    {
+      label: tr('menu.spacesToTabs'),
+      disabled: ro,
+      run: () => doConvertIndent(id, 'space-to-tab', cfg().tab_size, true),
+    },
+    { sep: true },
+    {
+      label: tr('menu.copyBookmarkLines'),
+      disabled: bookmarkLines.value.length === 0,
+      run: () => doBookmarkLineOp(id, 'copy', new Set(bookmarkLines.value)),
+    },
+    {
+      label: tr('menu.cutBookmarkLines'),
+      disabled: ro || bookmarkLines.value.length === 0,
+      run: () => doBookmarkLineOp(id, 'cut', new Set(bookmarkLines.value)),
+    },
+    {
+      label: tr('menu.deleteBookmarkLines'),
+      disabled: ro || bookmarkLines.value.length === 0,
+      run: () => doBookmarkLineOp(id, 'delete', new Set(bookmarkLines.value)),
+    },
+    {
+      label: tr('menu.deleteUnmarkedLines'),
+      disabled: ro || bookmarkLines.value.length === 0,
+      run: () => doBookmarkLineOp(id, 'delete-unmarked', new Set(bookmarkLines.value)),
+    },
+    {
+      label: tr('menu.pasteBookmarkLines'),
+      disabled: ro || !bookmarkClip(),
+      run: () => doPasteBookmarkLines(id),
+    },
+    { sep: true },
+    {
+      label: tr('menu.markSelection'),
+      disabled: ro || !hasSel,
+      run: () => doMarkSelection(id, currentMarkColor.value),
+    },
+    {
+      label: tr('menu.clearMarks'),
+      run: () => doClearMarks(),
+    },
   ]
 })
+
+/** 当前标记颜色档：右键「标记」用它，5 色轮换。 */
+const currentMarkColor = ref<MarkColor>(1)
 
 /** 别处（命令层 / 侧栏）改了书签，这里跟着重绘。 */
 function onBookmarksChanged() {
@@ -653,14 +842,36 @@ function onBookmarksChanged() {
 
 onMounted(() => {
   document.addEventListener('bookmarks-changed', onBookmarksChanged)
+  document.addEventListener('nt-marks-changed', onMarksChanged)
   host.value?.addEventListener('mousedown', onGutterClick)
   document.addEventListener('keydown', onKeyFallback, true)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('bookmarks-changed', onBookmarksChanged)
+  document.removeEventListener('nt-marks-changed', onMarksChanged)
   host.value?.removeEventListener('mousedown', onGutterClick)
   document.removeEventListener('keydown', onKeyFallback, true)
+  if (marksRendererMine) setMarksRenderer(null)
 })
+
+/**
+ * 标记变了重绘：装饰插件在 ViewPlugin 里，不订阅动作层的状态，
+ * 所以这里把渲染函数注册进去，动作层改完集合后调它。
+ * 分屏两个视图都要重绘：主视图注册，第二视图只被动响应。
+ */
+const marksRendererMine = computed(() => props.viewId !== 'second')
+
+function onMarksChanged() {
+  renderMarks()
+}
+
+if (marksRendererMine.value) {
+  setMarksRenderer(() => {
+    // 词集合整体换： decorations 依赖构造时传进来的快照，
+    // 所以这里直接 reconfigure 一次 marksComp。
+    view?.dispatch({ effects: marksComp.reconfigure(markExtension(allMarkWords())) })
+  })
+}
 </script>
 
 <style scoped>

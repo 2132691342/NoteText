@@ -287,3 +287,306 @@ function wordAt(view: EditorView): string {
 export function textOf(tabId: number | null | undefined): string {
   return tabId != null ? getText(tabId) : ''
 }
+
+/**
+ * 选区所在的行区间（多光标时取第一个选区的首尾行）。
+ *
+ * 行操作统一走它：先算区间再一次 dispatch。逐行 dispatch 会让
+ * 一次「排序选中行」进 N 步撤销栈，用户按一次 Ctrl+Z 只退回一行。
+ */
+function selectedLineRange(view: EditorView): { from: number; to: number; text: string } | null {
+  const sel = view.state.selection.main
+  const startLine = view.state.doc.lineAt(sel.from)
+  const endLine = view.state.doc.lineAt(sel.to)
+  const from = startLine.from
+  const to = Math.min(sel.to === startLine.to ? startLine.to : endLine.to, view.state.doc.length)
+  return { from, to, text: view.state.sliceDoc(from, to) }
+}
+
+/** 用一段新文本替换行区间，并把选区收在新文本两端。 */
+function replaceRange(view: EditorView, from: number, to: number, text: string) {
+  view.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from, head: from + text.length },
+  })
+}
+
+/** 大小写三种：大写 / 小写 / 首字母大写。有选区改选区，无选区改当前词。 */
+export function doCaseTransform(
+  tabId: number | null | undefined,
+  kind: 'upper' | 'lower' | 'title',
+): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const { from, to } = v.state.selection.main
+  const empty = from === to
+  const source = empty ? wordAt(v) : v.state.sliceDoc(from, to)
+  if (!source) return false
+  const out =
+    kind === 'upper'
+      ? source.toUpperCase()
+      : kind === 'lower'
+        ? source.toLowerCase()
+        : source.replace(/\b\p{L}+/gu, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+  if (out === source) return true
+  const targetFrom = empty ? from - source.length : from
+  v.dispatch({
+    changes: { from: targetFrom, to: targetFrom + source.length, insert: out },
+    selection: { anchor: targetFrom, head: targetFrom + out.length },
+  })
+  return true
+}
+
+/** 排序选中行：升序 / 降序。只按行文本比，不动缩进与空行。 */
+export function doSortLines(
+  tabId: number | null | undefined,
+  dir: 'asc' | 'desc',
+): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const range = selectedLineRange(v)
+  if (!range) return false
+  const lines = range.text.split('\n')
+  if (lines.length < 2) return false
+  // 中文按 localeCompare：按码点排会把「变量」排到「ABC」后面，看不出顺序意义。
+  const sorted = [...lines].sort((a, b) =>
+    dir === 'asc' ? a.localeCompare(b, 'zh-Hans-CN') : b.localeCompare(a, 'zh-Hans-CN'),
+  )
+  if (sorted.join('\n') === range.text) return true
+  replaceRange(v, range.from, range.to, sorted.join('\n'))
+  return true
+}
+
+/**
+ * 去重复行：保序去重（保留第一次出现的位置）。
+ *
+ * 保序是关键：用户拿它整理配置清单，顺序本身有意义；
+ * 换成按字母排等于顺手改了他的语义。
+ */
+export function doDedupLines(tabId: number | null | undefined): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const range = selectedLineRange(v)
+  if (!range) return false
+  const lines = range.text.split('\n')
+  const seen = new Set<string>()
+  const kept = lines.filter((l) => {
+    const key = l.trim()
+    if (key === '' || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  if (kept.length === lines.length) return true
+  replaceRange(v, range.from, range.to, kept.join('\n'))
+  return true
+}
+
+/** 去行尾空白：每行右侧的空白一律清掉。 */
+export function doTrimTrailing(tabId: number | null | undefined): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const range = selectedLineRange(v)
+  if (!range) return false
+  const out = range.text
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+$/, ''))
+    .join('\n')
+  if (out === range.text) return true
+  replaceRange(v, range.from, range.to, out)
+  return true
+}
+
+/** 反转选中行的顺序。 */
+export function doReverseLines(tabId: number | null | undefined): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const range = selectedLineRange(v)
+  if (!range) return false
+  if (range.text.split('\n').length < 2) return false
+  replaceRange(v, range.from, range.to, range.text.split('\n').reverse().join('\n'))
+  return true
+}
+
+/**
+ * Tab ↔ 空格互转：作用于选中行（无选区时是全文）。
+ *
+ * `leading` 只转行首的空白：正文里的制表符（比如 Markdown 表格）不该动，
+ * 那是内容的一部分，不是缩进。
+ */
+export function doConvertIndent(
+  tabId: number | null | undefined,
+  dir: 'tab-to-space' | 'space-to-tab',
+  tabSize: number,
+  leadingOnly = false,
+): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const sel = v.state.selection.main
+  const empty = sel.from === sel.to
+  const range = empty
+    ? { from: 0, to: v.state.doc.length, text: v.state.doc.toString() }
+    : selectedLineRange(v)
+  if (!range) return false
+
+  const convertLine = (line: string): string => {
+    if (dir === 'tab-to-space') {
+      if (leadingOnly) return line.replace(/^\t+/, (m) => ' '.repeat(m.length * tabSize))
+      return line.replace(/\t/g, ' '.repeat(tabSize))
+    }
+    // 空格转 Tab：按 tabSize 取整，不足以凑一整组的保留为空格
+    // （硬转会把对齐结构打乱）。
+    if (leadingOnly) {
+      return line.replace(/^ +/, (m) => {
+        const tabs = Math.floor(m.length / tabSize)
+        return '\t'.repeat(tabs) + ' '.repeat(m.length - tabs * tabSize)
+      })
+    }
+    return line.replace(/ {2,}/g, (m) => {
+      const tabs = Math.floor(m.length / tabSize)
+      return '\t'.repeat(tabs) + ' '.repeat(m.length - tabs * tabSize)
+    })
+  }
+
+  const out = range.text.split('\n').map(convertLine).join('\n')
+  if (out === range.text) return true
+  v.dispatch({
+    changes: { from: range.from, to: range.to, insert: out },
+    selection: empty
+      ? { anchor: sel.from }
+      : { anchor: range.from, head: range.from + out.length },
+  })
+  return true
+}
+
+/**
+ * 书签行操作：对「有书签的行」整批做一件事。
+ *
+ * 行号集合由调用方给（gutter 存在 CodeEditor 里，动作层不持有 UI 状态）。
+ * 从后往前改：从前往后改会让后续行号全部失效。
+ */
+export type BookmarkLineOp = 'copy' | 'cut' | 'delete' | 'delete-unmarked'
+
+export function doBookmarkLineOp(
+  tabId: number | null | undefined,
+  op: BookmarkLineOp,
+  markedLines: Set<number>,
+): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const total = v.state.doc.lines
+  const lines: string[] = []
+  for (let n = 1; n <= total; n += 1) lines.push(v.state.doc.line(n).text)
+
+  let changed = false
+  if (op === 'copy' || op === 'cut') {
+    const picked = lines.filter((_, i) => markedLines.has(i + 1))
+    if (picked.length === 0) return false
+    bookmarkClipboard = picked.join('\n')
+    if (op === 'copy') return true
+    changed = true
+  }
+
+  // 删除与剪切都要把行剔掉：删除只剔书签行，剪切剔书签行，
+  // 「删非书签行」反过来剔。三种在 forEach 里一次走完。
+  const kept: string[] = []
+  lines.forEach((l, i) => {
+    const marked = markedLines.has(i + 1)
+    if (op === 'delete' && marked) return
+    if (op === 'delete-unmarked' && !marked) return
+    if (op === 'cut' && marked) return
+    kept.push(l)
+  })
+  if (!changed) return false
+  replaceRange(v, 0, v.state.doc.length, kept.join('\n'))
+  return true
+}
+
+/** 书签行剪贴板：模块级单例，与书签集合一样不跨标签共享。 */
+let bookmarkClipboard = ''
+
+/** 取书签行剪贴板（粘贴书签行用）。 */
+export function bookmarkClip(): string {
+  return bookmarkClipboard
+}
+
+/** 在光标处插入书签行剪贴板。 */
+export function doPasteBookmarkLines(tabId: number | null | undefined): boolean {
+  const v = viewOf(tabId)
+  if (!v || !bookmarkClipboard) return false
+  const pos = v.state.selection.main.head
+  const line = v.state.doc.lineAt(pos)
+  const insert = bookmarkClipboard + '\n'
+  v.dispatch({
+    changes: { from: line.to, insert },
+    selection: { anchor: line.to + insert.length },
+  })
+  return true
+}
+
+/**
+ * 5 色标记：给选中的词 / 选区加一层背景色装饰。
+ *
+ * 用 ViewPlugin 的装饰而不是改正文：标记是「看法」不是「内容」，
+ * 写进正文会让用户保存出一份带颜色代码的文件。
+ */
+export type MarkColor = 1 | 2 | 3 | 4 | 5
+
+/** 当前所有标记：颜色 → 词集合。 */
+const marks = new Map<MarkColor, Set<string>>()
+
+/** 取某个颜色的标记词集合（空集合表示没有）。 */
+export function markWords(color: MarkColor): ReadonlySet<string> {
+  return marks.get(color) ?? new Set<string>()
+}
+
+/** 所有标记的并集：用来决定要不要挂装饰插件。 */
+export function allMarkWords(): Set<string> {
+  const all = new Set<string>()
+  for (const set of marks.values()) for (const w of set) all.add(w)
+  return all
+}
+
+/** 给选区 / 光标处的词上标记。 */
+export function doMarkSelection(
+  tabId: number | null | undefined,
+  color: MarkColor,
+): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const { from, to } = v.state.selection.main
+  const word = from === to ? wordAt(v) : v.state.sliceDoc(from, to)
+  if (!word.trim()) return false
+  if (!marks.has(color)) marks.set(color, new Set())
+  marks.get(color)!.add(word.trim())
+  notifyMarksChanged()
+  return true
+}
+
+/** 清一个颜色的全部标记。 */
+export function doClearMarks(color?: MarkColor): boolean {
+  if (color == null) marks.clear()
+  else marks.delete(color)
+  notifyMarksChanged()
+  return true
+}
+
+/**
+ * 标记变了要重绘所有视图：装饰在 ViewPlugin 里，插件本身不订阅这里的状态。
+ *
+ * 用一个自定义事件而不是 import 各组件：动作层不能反向依赖组件层
+ * （依赖方向是组件 → composable）。
+ */
+function notifyMarksChanged() {
+  window.dispatchEvent(new CustomEvent('nt-marks-changed'))
+}
+
+/** 标记载体：把标记词集合传进来的渲染函数。由 CodeEditor 提供。 */
+let marksRenderer: ((words: Set<string>) => void) | null = null
+
+export function setMarksRenderer(fn: ((words: Set<string>) => void) | null) {
+  marksRenderer = fn
+}
+
+export function renderMarks() {
+  marksRenderer?.(allMarkWords())
+}

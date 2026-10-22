@@ -22,6 +22,12 @@ import {
   doToggleComment,
   doIndent,
   doGotoLine,
+  doCaseTransform,
+  doSortLines,
+  doDedupLines,
+  doTrimTrailing,
+  doReverseLines,
+  doConvertIndent,
 } from '@/composables/useEditorActions'
 import { baseName, nextUntitledIndex, readClipboard } from '@/utils'
 import { toggleFullscreen } from '@/utils/window'
@@ -373,6 +379,80 @@ export function registerCommands() {
       run: () => {
         doDeleteLine(targetId())
       },
+    },
+    {
+      id: 'edit.caseUpper',
+      group: 'edit',
+      labelKey: 'menu.caseUpper',
+      key: 'Control+Shift+U',
+      enabled: () => hasTab(),
+      run: () => doCaseTransform(targetId(), 'upper'),
+    },
+    {
+      id: 'edit.caseLower',
+      group: 'edit',
+      labelKey: 'menu.caseLower',
+      key: 'Control+Shift+L',
+      enabled: () => hasTab(),
+      run: () => doCaseTransform(targetId(), 'lower'),
+    },
+    {
+      id: 'edit.caseTitle',
+      group: 'edit',
+      labelKey: 'menu.caseTitle',
+      enabled: () => hasTab(),
+      run: () => doCaseTransform(targetId(), 'title'),
+    },
+    {
+      id: 'edit.sortAsc',
+      group: 'edit',
+      labelKey: 'menu.sortAsc',
+      enabled: () => hasTab(),
+      run: () => doSortLines(targetId(), 'asc'),
+    },
+    {
+      id: 'edit.sortDesc',
+      group: 'edit',
+      labelKey: 'menu.sortDesc',
+      enabled: () => hasTab(),
+      run: () => doSortLines(targetId(), 'desc'),
+    },
+    {
+      id: 'edit.dedupLines',
+      group: 'edit',
+      labelKey: 'menu.dedupLines',
+      enabled: () => hasTab(),
+      run: () => doDedupLines(targetId()),
+    },
+    {
+      id: 'edit.reverseLines',
+      group: 'edit',
+      labelKey: 'menu.reverseLines',
+      enabled: () => hasTab(),
+      run: () => doReverseLines(targetId()),
+    },
+    {
+      id: 'edit.trimTrailing',
+      group: 'edit',
+      labelKey: 'menu.trimTrailing',
+      enabled: () => hasTab(),
+      run: () => doTrimTrailing(targetId()),
+    },
+    {
+      id: 'edit.tabToSpaces',
+      group: 'edit',
+      labelKey: 'menu.tabToSpaces',
+      enabled: () => hasTab(),
+      run: () =>
+        doConvertIndent(targetId(), 'tab-to-space', settings.config.editor.tab_size, true),
+    },
+    {
+      id: 'edit.spacesToTabs',
+      group: 'edit',
+      labelKey: 'menu.spacesToTabs',
+      enabled: () => hasTab(),
+      run: () =>
+        doConvertIndent(targetId(), 'space-to-tab', settings.config.editor.tab_size, true),
     },
 
     // ---- 视图 ----
