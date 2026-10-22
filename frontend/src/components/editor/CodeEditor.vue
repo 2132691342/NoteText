@@ -192,7 +192,7 @@ onMounted(async () => {
       props.tab.has_bom = c.has_bom
       props.tab.encoding_uncertain = c.truncated && c.encoding !== 'utf-8'
     } catch (e) {
-      toast.bad(`打开失败：${normalizeErr(e)}`)
+      toast.bad(tr('toast.openFailed', { reason: normalizeErr(e) }))
       return
     }
   }
@@ -478,7 +478,7 @@ defineExpose({ gutterClick: onGutterClick })
 function normalizeErr(e: unknown): string {
   if (typeof e === 'string') return e
   const o = e as { message?: string }
-  return o?.message ?? '未知错误'
+  return o?.message ?? tr('error.unknown', { reason: '' })
 }
 
 /**

@@ -11,6 +11,7 @@ pub mod batch;
 pub mod dialog;
 pub mod editor;
 pub mod file;
+pub mod file_ops;
 pub mod session;
 pub mod system;
 pub mod tools;
@@ -36,7 +37,6 @@ macro_rules! command_handlers {
             commands::file::save_file_as,
             commands::file::read_dir,
             commands::file::stat_file,
-            commands::file::create_file,
             commands::file::open_file_dialog,
             commands::file::open_folder_dialog,
             commands::file::save_file_dialog,
@@ -44,6 +44,13 @@ macro_rules! command_handlers {
             commands::file::watch_dir,
             commands::file::unwatch_dir,
             commands::file::get_recent_files,
+            // 文件操作（文件树右键 / 拖拽）
+            commands::file_ops::create_file,
+            commands::file_ops::create_dir,
+            commands::file_ops::rename_path,
+            commands::file_ops::move_paths,
+            commands::file_ops::copy_paths,
+            commands::file_ops::delete_paths,
             // 编辑器
             commands::editor::get_languages,
             commands::editor::toggle_line_comment,

@@ -50,6 +50,7 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { tr } from '@/i18n'
 import { ElButton, ElCheckbox, ElInputNumber, ElRadioButton, ElRadioGroup } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import { api } from '@/api'
@@ -89,12 +90,12 @@ async function run() {
     result.value = r
     if (!r.ok && r.error_line) {
       // 定位到出错行列：把「哪一行」标出来，用户不用自己数。
-      toast.warn(`${t('error.jsonInvalid', { reason: r.error_message ?? '' })}（第 ${r.error_line} 行）`)
+      toast.warn(tr('tool.jsonErrorAtLine', { reason: r.error_message ?? '', line: r.error_line }))
     }
     return
   }
   if (mode.value === 'query') {
-    const r = await api.jsonQuery({ text: input.value, path: prompt('JSONPath', '$') ?? '$' })
+    const r = await api.jsonQuery({ text: input.value, path: prompt(tr('toast.pathPrompt'), '$') ?? '$' })
     result.value = {
       ok: r.ok,
       output: r.ok ? JSON.stringify(r.matches, null, 2) : (r.error_message ?? ''),
@@ -104,7 +105,7 @@ async function run() {
     }
     return
   }
-  const lang = (prompt('目标语言（go/ts/java/python/rust）', 'rust') ?? 'rust') as never
+  const lang = (prompt(tr('toast.structLangPrompt'), 'rust') ?? 'rust') as never
   const r = await api.jsonToStruct({ text: input.value, lang, root_name: 'Root' })
   result.value = {
     ok: r.ok,

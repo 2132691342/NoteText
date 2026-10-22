@@ -4,6 +4,7 @@
 // 浏览器里无后端时返回 `code: 'no-backend'`，界面显示空态而不是崩。
 
 import { invoke } from '@tauri-apps/api/core'
+import { tr } from '@/i18n'
 import type { AppError, AppInfoVO } from '@/types/api'
 
 export { CONTRACT_VERSION } from '@/types/api'
@@ -15,8 +16,8 @@ export const isDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' 
 /** 无后端时的统一错误：浏览器开发态用。 */
 const NO_BACKEND: AppError = {
   code: 'no-backend',
-  message: '未连接到应用后端（浏览器预览模式）',
-  details: '请用 `npm run tauri dev` 启动，或使用构建产物。',
+  message: tr('toast.noBackend'),
+  details: tr('toast.noBackendDetail'),
 }
 
 /**
@@ -54,7 +55,7 @@ export function normalizeError(e: unknown): AppError {
     if (typeof o.code === 'string') {
       return {
         code: o.code,
-        message: o.message ?? '出现异常',
+        message: o.message ?? tr('error.unknown', { reason: '' }),
         details: o.details ?? '',
       }
     }
@@ -62,7 +63,7 @@ export function normalizeError(e: unknown): AppError {
       return { code: 'unknown', message: o.message, details: '' }
     }
   }
-  return { code: 'unknown', message: '出现异常', details: String(e) }
+  return { code: 'unknown', message: tr('error.unknown', { reason: '' }), details: String(e) }
 }
 
 // ---- 按域分组的薄封装 ----
@@ -78,6 +79,7 @@ import type {
   BookmarkDO,
   BookmarkVO,
   CaseTarget,
+  DeleteReq,
   DetectResultVO,
   DirDiffVO,
   DirEntry,
@@ -86,6 +88,7 @@ import type {
   EncodingInfo,
   FileContentVO,
   FileMeta,
+  FileOpVO,
   HashReq,
   HashVO,
   JsonDiffReq,
@@ -100,11 +103,14 @@ import type {
   LineOp,
   MacroSaveReq,
   MacroVO,
+  MkdirReq,
+  MoveCopyReq,
   ReadMode,
   RecentFileVO,
   RegexTestReq,
   RegexTestVO,
   RenameApplyReq,
+  RenameReq,
   SessionRestoreVO,
   SessionSaveReq,
   SnippetSaveReq,
@@ -151,7 +157,27 @@ export const api = {
     }),
   readDir: (dir: string) => call<DirEntry[]>('read_dir', { dir }),
   statFile: (path: string) => call<FileMeta>('stat_file', { path }),
-  createFile: (path: string) => call<void>('create_file', { path }),
+  // 文件树右键 / 拖拽：目标已存在一律拒绝（见 api.fileOps）
+  fileOps: {
+    createFile: (path: string) =>
+      call<FileOpVO>('create_file', { req: { path } satisfies MkdirReq }),
+    createDir: (path: string) =>
+      call<FileOpVO>('create_dir', { req: { path } satisfies MkdirReq }),
+    rename: (from: string, to: string) =>
+      call<FileOpVO>('rename_path', { req: { from, to } satisfies RenameReq }),
+    move: (paths: string[], destDir: string, autoSuffix = false) =>
+      call<FileOpVO>(
+        'move_paths',
+        { req: { paths, dest_dir: destDir, auto_suffix: autoSuffix } satisfies MoveCopyReq },
+      ),
+    copy: (paths: string[], destDir: string, autoSuffix = false) =>
+      call<FileOpVO>(
+        'copy_paths',
+        { req: { paths, dest_dir: destDir, auto_suffix: autoSuffix } satisfies MoveCopyReq },
+      ),
+    remove: (paths: string[]) =>
+      call<FileOpVO>('delete_paths', { req: { paths } satisfies DeleteReq }),
+  },
   openFileDialog: (suggestedDir?: string) =>
     call<string | null>('open_file_dialog', { suggested_dir: suggestedDir ?? null }),
   openFolderDialog: (suggestedDir?: string) =>

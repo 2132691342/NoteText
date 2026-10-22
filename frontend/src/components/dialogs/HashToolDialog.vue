@@ -33,9 +33,9 @@
         <div class="nt-hash-out">{{ result.hex }}</div>
         <div class="nt-hash-out nt-hash-out-upper">{{ result.hex.toUpperCase() }}</div>
         <div class="nt-hash-actions">
-          <ElButton size="small" @click="copy(result.hex)">{{ t('tool.copyHash') }}（小写）</ElButton>
+          <ElButton size="small" @click="copy(result.hex)">{{ t('tool.copyHashLower') }}</ElButton>
           <ElButton size="small" @click="copy(result.hex.toUpperCase())">
-            {{ t('tool.copyHash') }}（大写）
+            {{ t('tool.copyHashUpper') }}
           </ElButton>
         </div>
       </div>

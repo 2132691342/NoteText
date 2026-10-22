@@ -90,12 +90,6 @@ pub fn stat_file(
     state.services.file.stat(&path)
 }
 
-/// 新建空文件。已存在则报错（不静默覆盖）。
-#[tauri::command]
-pub fn create_file(state: State<'_, AppState>, path: String) -> AppResult<()> {
-    state.services.file.create(&path)
-}
-
 /// 打开文件对话框。
 #[tauri::command]
 pub async fn open_file_dialog(suggested_dir: Option<String>) -> AppResult<Option<String>> {

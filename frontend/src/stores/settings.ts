@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { api, normalizeError } from '@/api'
-import { setLocale } from '@/i18n'
+import { setLocale, tr } from '@/i18n'
 import type { AppConfig } from '@/types/api'
 import { useToastStore } from './toast'
 
@@ -87,7 +87,7 @@ export const useSettingsStore = defineStore('settings', () => {
       // 用户看到的是「设置是默认的」，而不是「应用坏了」。
       const err = normalizeError(e)
       if (err.code !== 'no-backend') {
-        useToastStore().warn(`读取设置失败，已用默认值：${err.message}`)
+        useToastStore().warn(tr('toast.settingsReadFailed', { reason: err.message }))
       }
     }
     loaded.value = true
@@ -135,7 +135,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       await api.saveConfig(config.value)
     } catch (e) {
-      useToastStore().bad(`设置保存失败：${normalizeError(e).message}`)
+      useToastStore().bad(tr('toast.settingsSaveFailed', { reason: normalizeError(e).message }))
     }
   }
 

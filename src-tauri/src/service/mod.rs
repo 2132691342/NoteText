@@ -8,6 +8,7 @@ pub mod batch;
 pub mod editor;
 pub mod encoding;
 pub mod file;
+pub mod file_ops;
 pub mod session;
 pub mod tools;
 pub mod userdata;
@@ -17,6 +18,7 @@ use std::sync::Arc;
 use crate::db::Db;
 use crate::service::batch::BatchService;
 use crate::service::file::FileService;
+use crate::service::file_ops::FileOpsService;
 use crate::service::session::SessionService;
 use crate::service::tools::ToolsService;
 use crate::service::userdata::UserDataService;
@@ -28,6 +30,7 @@ use crate::service::userdata::UserDataService;
 #[derive(Clone)]
 pub struct Services {
     pub file: Arc<FileService>,
+    pub file_ops: Arc<FileOpsService>,
     pub session: Arc<SessionService>,
     pub tools: Arc<ToolsService>,
     pub userdata: Arc<UserDataService>,
@@ -38,6 +41,7 @@ impl Services {
     pub fn new(db: Arc<Db>) -> Self {
         Self {
             file: Arc::new(FileService::new(db.clone())),
+            file_ops: Arc::new(FileOpsService::new()),
             session: Arc::new(SessionService::new(db.clone())),
             tools: Arc::new(ToolsService::new()),
             userdata: Arc::new(UserDataService::new(db.clone())),

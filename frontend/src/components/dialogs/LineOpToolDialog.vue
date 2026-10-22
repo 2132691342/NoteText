@@ -20,7 +20,7 @@
         <div class="nt-tool-col-head">
           <span>{{ t('common.result') }}</span>
           <span class="nt-readout">
-            {{ before }} → {{ after }} 行
+            {{ t('tool.lineCountChange', { before, after }) }}
           </span>
         </div>
         <pre class="nt-tool-io">{{ output }}</pre>

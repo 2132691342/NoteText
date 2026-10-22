@@ -35,10 +35,10 @@ const route = useRoute()
 const router = useRouter()
 
 const DOCS = [
-  { name: 'getting-started', title: '快速上手' },
-  { name: 'shortcuts', title: '快捷键' },
-  { name: 'features', title: '功能' },
-  { name: 'faq', title: '常见问题' },
+  { name: 'getting-started', title: t('help.gettingStarted') },
+  { name: 'shortcuts', title: t('help.shortcuts') },
+  { name: 'features', title: t('help.features') },
+  { name: 'faq', title: t('help.faq') },
 ] as const
 
 const current = computed(() => (route.params.name as string) || 'getting-started')

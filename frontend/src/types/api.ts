@@ -559,6 +559,45 @@ export interface RenameApplyReq {
   items: RenamePair[]
 }
 
+// ---- 文件操作域（文件树右键 / 拖拽） ----
+//
+// 与后端 domain/file_ops.rs 一一对应。目标已存在一律拒绝（不覆盖），
+// 目录不能进自己的子目录，路径必须绝对且不含 `..`。
+
+export interface RenameReq {
+  from: string
+  to: string
+}
+
+export interface MoveCopyReq {
+  paths: string[]
+  dest_dir: string
+  /** 同名时追加序号而不是拒绝。默认 false。 */
+  auto_suffix?: boolean
+}
+
+export interface DeleteReq {
+  paths: string[]
+}
+
+export interface MkdirReq {
+  path: string
+}
+
+export interface FileOpResultVO {
+  from: string
+  /** 操作后的路径；删除时为空串。 */
+  to: string
+  ok: boolean
+  message: string
+}
+
+export interface FileOpVO {
+  results: FileOpResultVO[]
+  succeeded: number
+  failed: number
+}
+
 // ---- 系统域 ----
 
 export interface AppInfoVO {

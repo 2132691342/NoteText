@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { api, normalizeError } from '@/api'
 import type { DirEntry } from '@/types/api'
 import { useToastStore } from './toast'
+import { tr } from '@/i18n'
 
 export const useFileTreeStore = defineStore('fileTree', () => {
   /** 当前工作目录：空表示「未打开文件夹」。 */
@@ -19,6 +20,10 @@ export const useFileTreeStore = defineStore('fileTree', () => {
   const dirtyPaths = ref<Set<string>>(new Set())
   /** 剪切 / 复制的路径（树内操作）。 */
   const clipboard = ref<{ paths: string[]; cut: boolean } | null>(null)
+  /** 树内拖拽的源路径：null = 没在拖。 */
+  const dragPath = ref<string | null>(null)
+  /** 拖拽悬停的目标目录：高亮 + 落点提示。 */
+  const dropTarget = ref<string | null>(null)
   const loading = ref(false)
 
   /** 打开一个文件夹为根。 */
@@ -31,7 +36,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
       await api.watchDir(dir)
       await refresh(dir)
     } catch (e) {
-      useToastStore().bad(`打开文件夹失败：${normalizeError(e).message}`)
+      useToastStore().bad(tr('toast.folderOpenFailed', { reason: normalizeError(e).message }))
     } finally {
       loading.value = false
     }
@@ -63,7 +68,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
         }
       }
     } catch (e) {
-      useToastStore().bad(`读取目录失败：${normalizeError(e).message}`)
+      useToastStore().bad(tr('toast.dirReadFailed', { reason: normalizeError(e).message }))
     }
   }
 
@@ -95,12 +100,22 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     clipboard.value = { paths, cut }
   }
 
+  function setDragPath(path: string | null) {
+    dragPath.value = path
+  }
+
+  function setDropTarget(path: string | null) {
+    dropTarget.value = path
+  }
+
   return {
     root,
     expanded,
     children,
     dirtyPaths,
     clipboard,
+    dragPath,
+    dropTarget,
     loading,
     open,
     close,
@@ -109,5 +124,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     toggle,
     markDirty,
     setClipboard,
+    setDragPath,
+    setDropTarget,
   }
 })

@@ -39,6 +39,7 @@ import { useShellIntent } from '@/composables/useShellIntent'
 import { useQuitGuard } from '@/composables/useQuitGuard'
 import { useFileDrop } from '@/composables/useFileDrop'
 import { useAutoSave } from '@/composables/useAutoSave'
+import { tr } from '@/i18n'
 
 const settings = useSettingsStore()
 const editor = useEditorStore()
@@ -68,7 +69,7 @@ onMounted(async () => {
       if (restored.missing.length > 0) {
         const { useToastStore } = await import('@/stores/toast')
         useToastStore().warn(
-          `${restored.missing.length} 个上次打开的文件已不存在`,
+          tr('toast.missingOnRestore', { n: restored.missing.length }),
         )
       }
     } catch {

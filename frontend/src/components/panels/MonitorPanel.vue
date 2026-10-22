@@ -25,7 +25,7 @@
         <span class="nt-monitor-file" :title="editor.active.path">
           {{ editor.active.title }}
         </span>
-        <span class="nt-readout">{{ tail.length }} 行</span>
+        <span class="nt-readout">{{ t('monitor.lineCount', { n: tail.length }) }}</span>
       </div>
       <div ref="scroll" class="nt-monitor-body">
         <div

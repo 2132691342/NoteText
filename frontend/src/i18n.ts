@@ -25,3 +25,14 @@ export function setLocale(locale: Locale) {
   i18n.global.locale.value = locale
   document.documentElement.setAttribute('lang', locale)
 }
+
+/**
+ * 组件外的翻译入口：store / 工具函数 / API 层没有组件实例，拿不到 `useI18n()`。
+ *
+ * 这些地方也必须走 i18n——「界面一会中文一会英文」的根因就是它们
+ * 各自写死了中文字符串。类型签名跟随 vue-i18n 的 composer，
+ * 缺 key 时返回 key 本身（dev 下另有警告），比静默显示原文好定位。
+ */
+export function tr(key: string, named?: Record<string, unknown>): string {
+  return i18n.global.t(key, named ?? {}) as unknown as string
+}

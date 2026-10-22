@@ -33,7 +33,7 @@
           <span class="nt-snippet-name">{{ s.name }}</span>
           <span class="nt-snippet-meta">
             <span v-if="s.abbrev" class="nt-snippet-abbrev">{{ s.abbrev }}</span>
-            <span class="nt-snippet-lines">{{ s.lines }} 行</span>
+            <span class="nt-snippet-lines">{{ t('snippet.lineCount', { n: s.lines }) }}</span>
           </span>
         </span>
       </button>

@@ -10,7 +10,7 @@
       <div class="nt-set-row">
         <span class="nt-set-label">{{ t('settings.defaultEncoding') }}</span>
         <ElSelect v-model="defaultEncoding" size="small" filterable class="nt-set-ctl">
-          <ElOption label="自动探测" value="auto" />
+          <ElOption :label="t('settings.encodingAuto')" value="auto" />
           <ElOption v-for="e in encodings" :key="e.id" :label="e.label" :value="e.id" />
         </ElSelect>
         <ElCheckbox v-model="autoDetect">{{ t('settings.autoDetectEncoding') }}</ElCheckbox>
@@ -19,8 +19,8 @@
       <div class="nt-set-row">
         <span class="nt-set-label">{{ t('settings.newLineEnding') }}</span>
         <ElRadioGroup v-model="newLineEnding" size="small">
-          <ElRadioButton value="crlf">CRLF（Windows）</ElRadioButton>
-          <ElRadioButton value="lf">LF</ElRadioButton>
+          <ElRadioButton value="crlf">{{ t('settings.eolCrlf') }}</ElRadioButton>
+          <ElRadioButton value="lf">{{ t('settings.eolLf') }}</ElRadioButton>
           <ElRadioButton value="system">{{ t('menu.themeSystem') }}</ElRadioButton>
         </ElRadioGroup>
       </div>

@@ -7,7 +7,7 @@ import enUs from 'element-plus/es/locale/lang/en'
 
 import App from './App.vue'
 import router from './router'
-import { i18n, LOCALES, setLocale } from './i18n'
+import { i18n, LOCALES, setLocale, tr } from './i18n'
 import { useSettingsStore } from './stores/settings'
 import { useToastStore } from './stores/toast'
 import './themes.css'
@@ -22,7 +22,7 @@ const app = createApp(App)
 app.config.errorHandler = (err, _inst, info) => {
   console.error('[NoteText]', info, err)
   try {
-    useToastStore().bad(`界面出现异常：${(err as Error)?.message || '请重启应用'}`)
+    useToastStore().bad(tr('toast.uiError', { reason: (err as Error)?.message || tr('toast.restartHint') }))
   } catch {
     /* toast 还没装好（pinia 之前）：只落 console */
   }

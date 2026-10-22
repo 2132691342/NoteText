@@ -15,6 +15,7 @@ pub mod draft;
 pub mod editor;
 pub mod encoding;
 pub mod file;
+pub mod file_ops;
 pub mod hash;
 pub mod json;
 pub mod macro_def;
@@ -37,6 +38,7 @@ pub use encoding::{
     CaseConvertReq, CaseTarget, ConvertReq, DetectResultVO, EncodingInfo, LineEndingReq,
 };
 pub use file::{DirEntry, FileContentVO, FileMeta, ReadMode, WriteResultVO};
+pub use file_ops::{DeleteReq, FileOpResultVO, FileOpVO, MkdirReq, MoveCopyReq, RenameReq};
 pub use hash::{HashAlgo, HashReq, HashVO};
 pub use json::{
     JsonDiffReq, JsonDiffVO, JsonFormat, JsonFormatReq, JsonFormatVO, JsonQueryReq, JsonQueryVO,

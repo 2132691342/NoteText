@@ -42,11 +42,11 @@ const { t } = useI18n()
 const settings = useSettingsStore()
 
 /** 界面字体三档：只改 --nt-font-ui，正文与标题的字族不变。 */
-const FONTS = [
-  { id: 'sans', label: 'Segoe UI（默认）' },
-  { id: 'yahei', label: '微软雅黑' },
-  { id: 'mono', label: '等宽（Cascadia Mono）' },
-]
+const FONTS = computed(() => [
+  { id: 'sans', label: t('settings.fontSans') },
+  { id: 'yahei', label: t('settings.fontYahei') },
+  { id: 'mono', label: t('settings.fontMono') },
+])
 
 const theme = computed({
   get: () => settings.config.theme,

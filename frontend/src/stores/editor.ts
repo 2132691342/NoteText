@@ -14,6 +14,8 @@ import type {
   ViewType,
 } from '@/types/api'
 import { useToastStore } from './toast'
+import { tr } from '@/i18n'
+import { baseName } from '@/utils'
 
 /** 一个标签页。`path` 为空 = 新建未保存的草稿标签。 */
 export interface Tab {
@@ -142,6 +144,25 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
+   * 节点在磁盘上换了路径（重命名 / 移动 / 删除）。
+   *
+   * `path` 与 `title` 必须一起换：只换 path 的后果是标签还显示旧名字，
+   * 用户以为改的是另一个文件。`newPath` 为空串表示节点被删除：关掉标签。
+   * 文件树的脏标记由调用方（树面板）自己同步，store 之间不互相引用。
+   */
+  function renamePath(oldPath: string, newPath: string) {
+    if (!oldPath) return
+    const tab = findByPath(oldPath)
+    if (!tab) return
+    if (!newPath) {
+      close(tab.id, true)
+      return
+    }
+    tab.path = newPath
+    tab.title = baseName(newPath)
+  }
+
+  /**
    * 打开一个文件。
    *
    * 已打开则聚焦；否则读文件 → 建标签。读失败只报错不建标签——
@@ -184,7 +205,7 @@ export const useEditorStore = defineStore('editor', () => {
       return tab
     } catch (e) {
       const err = normalizeError(e)
-      useToastStore().bad(`打开失败：${err.message}`)
+      useToastStore().bad(tr('toast.openFailed', { reason: err.message }))
       return null
     }
   }
@@ -216,7 +237,7 @@ export const useEditorStore = defineStore('editor', () => {
       tab.has_bom = c.has_bom
       tab.encoding_uncertain = c.truncated && c.encoding !== 'utf-8'
     } catch (e) {
-      useToastStore().bad(`重新载入失败：${normalizeError(e).message}`)
+      useToastStore().bad(tr('toast.reloadFailed', { reason: normalizeError(e).message }))
     }
   }
 
@@ -313,6 +334,7 @@ export const useEditorStore = defineStore('editor', () => {
     setPosition,
     setScroll,
     setSplit,
+    renamePath,
     openPath,
     reload,
     applyContent,

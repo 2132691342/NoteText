@@ -373,20 +373,6 @@ impl FileService {
         }
     }
 
-    /// 新建空文件：路径不存在才建，存在则报错（不静默覆盖）。
-    pub fn create(&self, path: &str) -> AppResult<()> {
-        let p = Path::new(path);
-        if p.exists() {
-            return Err(AppError::new(codes::PATH_ESCAPE, "文件已存在，未覆盖")
-                .with_detail(format!("路径：{path}")));
-        }
-        if let Some(parent) = p.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(p, b"")?;
-        Ok(())
-    }
-
     /// 监听目录：文件树的外部变更通知。
     ///
     /// 复用同一个 watcher：每次 `watch` 都新建一个会让 inotify/FSEvents

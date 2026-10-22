@@ -84,7 +84,7 @@ export function registerCommands() {
       key: 'Control+N',
       run: () => {
         const taken = editor.tabs
-          .map((x) => /(?:未命名|Untitled)-(\d+)$/.exec(x.title))
+          .map((x) => new RegExp(`^(?:${t('tab.untitled')}|Untitled)-(\d+)$`).exec(x.title))
           .filter(Boolean)
           .map((m) => Number(m![1]))
         editor.newTab({

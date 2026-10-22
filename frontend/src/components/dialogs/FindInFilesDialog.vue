@@ -24,7 +24,7 @@
         <ElCheckbox v-model="matchCase">{{ t('dialog.matchCase') }}</ElCheckbox>
         <ElCheckbox v-model="regex">{{ t('dialog.regex') }}</ElCheckbox>
         <div class="nt-fif-flags-right">
-          <span v-if="running" class="nt-readout">搜索中… {{ scanned }} 个文件</span>
+          <span v-if="running" class="nt-readout">{{ t('toast.scanning', { n: scanned }) }}</span>
           <ElButton v-if="running" size="small" @click="stop">{{ t('dialog.stop') }}</ElButton>
           <ElButton v-else size="small" type="primary" @click="run">{{ t('dialog.search') }}</ElButton>
         </div>
@@ -110,7 +110,7 @@ function stop() {
  */
 async function run() {
   if (!dir.value || !query.value) {
-    toast.warn('先选目录并输入关键字')
+    toast.warn(t('toast.needDirAndKeyword'))
     return
   }
   running.value = true
@@ -170,7 +170,7 @@ async function run() {
 
   running.value = false
   if (hits.value.length >= MAX_RESULTS) {
-    toast.warn(`结果过多，仅显示前 ${MAX_RESULTS} 条`)
+    toast.warn(t('toast.tooManyResults', { n: MAX_RESULTS }))
   }
 
   // 同步一份到侧栏面板：浮窗关掉后结果还在，用户能反复点开。
