@@ -392,7 +392,9 @@ export function registerCommands() {
       id: 'edit.caseLower',
       group: 'edit',
       labelKey: 'menu.caseLower',
-      key: 'Control+Shift+L',
+      // Ctrl+Shift+G：Ctrl+Shift+L 已被「行编辑」占用，而 Ctrl+Shift+K
+      // 是「删除当前行」——大小写在编辑菜单里与它们同级，键位要错开。
+      key: 'Control+Shift+G',
       enabled: () => hasTab(),
       run: () => doCaseTransform(targetId(), 'lower'),
     },

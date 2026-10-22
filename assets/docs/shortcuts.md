@@ -28,6 +28,7 @@ NoteText 的快捷键可以在「设置 → 快捷键」里改。下面是默认
 | `Ctrl+L` | 删除当前行 |
 | `Alt+↑` / `Alt+↓` | 上/下移动当前行 |
 | `Ctrl+/` | 切换行注释 |
+| `Ctrl+Shift+U` / `Ctrl+Shift+G` | 转为大写 / 小写 |
 
 ## 视图
 
@@ -48,6 +49,7 @@ NoteText 的快捷键可以在「设置 → 快捷键」里改。下面是默认
 | `Ctrl+Shift+R` | 正则测试 |
 | `Ctrl+Shift+E` | 编码转换 |
 | `Ctrl+Shift+L` | 行编辑 |
+| `Ctrl+Shift+C` | 格式转换（JSON/YAML/TOML/XML） |
 | `F2` | 切换书签 |
 | `F1` | 用户手册 |
 

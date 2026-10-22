@@ -13,11 +13,12 @@
 
 | | 能力 |
 |---|---|
-| 编辑内核 | 多标签（每个标签独立撤销历史）、分屏、30 种语言高亮、代码折叠、括号配对着色、列块编辑、选中即高亮、右键菜单、行号点选整行、书签（gutter 点一下即标记）、转到行 |
+| 编辑内核 | 多标签（每个标签独立撤销历史）、分屏、30 种语言高亮、代码折叠、括号配对着色、列块编辑、选中即高亮、右键菜单（撤销/剪切复制/行操作/大小写/排序/去重/Tab 空格/书签行/5 色标记）、行号点选整行、书签（gutter 点一下即标记）、转到行 |
+| 文件树 | 懒展开、右键全套（新建文件/文件夹、重命名、删除、剪切/复制/粘贴、创建副本、复制路径、资源管理器显示）、树内拖拽移动到目标文件夹 |
 | 编码 | 打开时探测（BOM 优先），状态栏一键切换，24 种编码互转；行尾独立切换，保存按原样写回 |
 | 查找替换 | 本文件 `Ctrl+F` / `Ctrl+H`（实时计数、结果带行号、替换全部一次撤销），文件夹级 `Ctrl+Shift+F`（支持 glob 与超大文件跳过） |
-| 工具箱 | JSON（格式化/校验/JSONPath/转结构体）、文本与目录 Diff、哈希、正则测试、编码转换、11 种行编辑 |
-| 视图器 | Markdown 渲染、图片、日志（ERROR/WARN 着色）、十六进制、文档预览（xlsx / docx / pdf） |
+| 视图器 | Markdown 三态（编辑/分屏/预览，Mermaid 图表 + KaTeX 公式 + 代码高亮 + 导出 HTML）、图片、日志（ERROR/WARN 着色）、十六进制、文档预览（xlsx / docx / pdf） |
+| 工具箱 | JSON（格式化/校验/JSONPath/转结构体）、格式转换（JSON/YAML/TOML/XML 互转）、文本与目录 Diff、哈希、正则测试、编码转换、11 种行编辑、取色器、日志查看器 |
 | 批量操作 | 目录级查找替换（先扫描预览再勾选应用）、批量重命名（三种模式，冲突项标红） |
 | 效率工具 | 宏录制回放、列编辑模式、小地图、剪贴板历史、最近文件（可钉住） |
 | 壳层 | 单实例、托盘常驻、文件关联、会话恢复（含未保存草稿）、自动保存（仅已命名文件）、文件监控（外部改动静默重载、本地有改动时只提示）、拖入文件/文件夹即打开、备份导入导出 |
@@ -106,14 +107,16 @@ NoteText/
 | UI | Element Plus 2.9（按需引入，变量接到 `--nt-*`） |
 | 原子 CSS | UnoCSS 0.58（刻度接 `--nt-*` 令牌） |
 | 代码编辑 | CodeMirror 6（30 种语言，静态 + 动态按需加载） |
-| 富文本 / Markdown | WangEditor 5、Mavon-Editor |
+| Markdown | markdown-it + highlight.js + Mermaid + KaTeX（编辑 / 分屏 / 预览三态） |
+| 格式转换 | js-yaml、@iarna/toml、fast-xml-parser（JSON / YAML / TOML / XML 互转） |
 | 文档预览 | XLSX、docx-preview、vue-pdf-embed |
 | 图表 | ECharts 5.5 |
 | 国际化 | Vue I18n 9.10（zh-CN 默认 + en） |
 | 数据库 | SQLite（WAL，rusqlite bundled 无 CGO） |
 
-**不引入**：微前端（Qiankun）、图编排（AntV X6 / BPMN-JS）、Axios——纯 Tauri invoke
-通信，前端没有 HTTP 客户端。
+**不引入**：微前端（Qiankun）、图编排（AntV X6 / BPMN-JS）、Axios、WangEditor——
+纯 Tauri invoke 通信，前端没有 HTTP 客户端；Markdown 走 markdown-it 一条链路，
+不再挂第二个富文本编辑器运行时。
 
 ## 文档
 
@@ -135,7 +138,7 @@ NoteText/
 
 ## 测试
 
-11 条链，分 5 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
+13 条链，分 6 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -148,6 +151,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | `text_chain.rs` | 注释切换（含半注释块）、行编辑、行列换算、统计按 char |
 | `tools_chain.rs` | JSON / diff / 正则硬契约、三种哈希已知向量 |
 | `batch_chain.rs` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
+| `file_ops_chain.rs` | 文件树操作护栏：目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账 |
 
 只看某一个域：`pwsh scripts/check.ps1 -Chain file`。
 

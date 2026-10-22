@@ -17,7 +17,8 @@
 | UI 组件库 | Element Plus | ^2.9.x（按需引入，变量接到 `--nt-*`） |
 | 原子 CSS | UnoCSS | ^0.58.x（布局与间距；色值仍走 `--nt-*` 令牌） |
 | 代码编辑器 | CodeMirror 6 | ^6.x（30 种语言，静态 + 动态按需加载） |
-| 富文本 / Markdown | WangEditor · Mavon-Editor | 5.1.x / 2.10.x |
+| Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
+| 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
 | 文档预览 | XLSX · docx-preview · vue-pdf-embed | 按扩展名分流 |
 | 图表 | ECharts | ^5.5.x（按需引入，色值取 `--nt-ch-*`） |
 | 国际化 | Vue I18n | ^9.10.x（zh-CN 默认 + en；设置页可切换，EP 文案同步） |
@@ -41,6 +42,8 @@
   **要扩展编码清单时优先换 encoding_rs**，别继续往表里加；
 - **regex crate**：工具箱的正则测试器只需常见语法，手写引擎省 ~1MB 体积。
   要支持 `{n,m}` 量词与命名组时换 regex crate。
+- **WangEditor**：富文本编辑器没有对应场景（NoteText 是代码 / 纯文本向的），
+  Markdown 走 markdown-it 一条链路，不再挂第二个编辑器运行时。
 
 **视觉分层纪律不变**：Element Plus 只是基元供给方，视觉语言仍由 `themes.css` 的
 靛蓝五档令牌说了算——EP 的 CSS 变量经 `ep-theme.css` 全部接到 `--nt-*`，
@@ -438,7 +441,7 @@ mod dialog_stub;
 
 ### 3.4 测试索引
 
-11 条链，分 5 个文件（`src-tauri/tests/`），一条链一个域。
+13 条链，分 6 个文件（`src-tauri/tests/`），一条链一个域。
 
 | 文件 | 链 | 覆盖的链路 |
 |---|---|---|
@@ -453,6 +456,8 @@ mod dialog_stub;
 | | `test_regex_and_hash_chain` | **正则与哈希**：捕获组编号、三种哈希对已知向量 |
 | `batch_chain.rs` | `test_batch_find_replace_chain` | **批量查找替换护栏**：扫描阶段不改文件、应用只改勾选的 |
 | | `test_batch_rename_chain` | **批量重命名护栏**：冲突整体拒绝不覆盖、无冲突真的落地 |
+| `file_ops_chain.rs` | `test_file_ops_chain` | **文件树操作护栏**：重命名落地、目标已存在整体拒绝且不覆盖、目录不进自己子目录、移动 / 复制（auto_suffix 落序号名）、删除逐个记账、新建目录与文件已存在即拒 |
+| | `test_file_ops_rejects_relative_and_dotdot` | **路径形式护栏**：相对路径与含 `..` 的路径一律拒绝 |
 
 **改这里 → 只跑这条**：
 

@@ -184,3 +184,28 @@ offset_at_line_col(text, line, col) -> Option<usize>
 
 **不引 Vim / Emacs 键位模式**：目标用户是 Windows 桌面用户，
  modal editing 的学习成本与收益不成比例。
+
+## 右键菜单与文本变换
+
+菜单项与命令是两份数据：菜单在 `CodeEditor.vue` 的 `menuItems` computed 里
+（每次打开按当前状态算：有选区 / 是否只读），命令在 `useCommands.ts` 注册表里
+（快捷键与菜单共用一份 label）。新增能力只改命令注册处，菜单自动长出来。
+
+**行操作一律「算区间 → 一次 dispatch」**：先算选中行区间，再一次
+`changes` 提交。逐行 dispatch 会让一次「排序选中行」进 N 步撤销栈，
+用户按一次 Ctrl+Z 只退回一行。
+
+**大小写 / 排序 / 去重 / 去空白 / Tab 空格互转**：只作用于选区，
+无选区时作用于当前词（大小写）或全文（缩进转换）。中文排序用
+`localeCompare('zh-Hans-CN')`——按码点排会把「变量」排到「ABC」后面，
+看不出顺序意义。去重是**保序**的：用户拿它整理配置清单，顺序本身有意义。
+
+**书签行操作**（`doBookmarkLineOp`）：copy / cut / delete / delete-unmarked 四种，
+行号集合由调用方（gutter 所在组件）给，动作层不持有 UI 状态。
+删除从后往前改会让后续行号失效，所以这里重建整个文档再一次 dispatch。
+
+**5 色标记**（`doMarkSelection`）：`Decoration.mark` 而不是改正文——
+标记是「看法」不是「内容」，写进正文会让用户保存出一份带颜色代码的文件。
+词集合在动作层，渲染在 `CodeEditor` 的 ViewPlugin 里，靠 `nt-marks-changed`
+事件通知重绘（动作层不能反向依赖组件层）。词 → 颜色档固定（哈希取模），
+用户不会因为点了两次就换个颜色。

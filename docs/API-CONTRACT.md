@@ -24,7 +24,6 @@
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
 | `read_dir` | `dir` | `DirEntry[]` |
 | `stat_file` | `path` | `FileMeta` |
-| `create_file` | `path` | `()` |
 | `open_file_dialog` | `suggested_dir?` | `string \| null` |
 | `open_folder_dialog` | `suggested_dir?` | `string \| null` |
 | `save_file_dialog` | `suggested_name?` | `string \| null` |
@@ -38,6 +37,25 @@
 
 `FileContentVO` 的 `truncated` 是「或」语义：被截断**或**编码置信度低都为 true。
 前端据此提示用户，不自己分辨是哪一种。
+
+## 文件操作（文件树右键 / 拖拽）
+
+域模型见 `domain/file_ops.rs`。所有写操作的拒绝标准统一在
+`service::file_ops::validate_target`：**目标已存在即拒**（不覆盖）、
+**目录不能进自己的子目录**、**路径必须绝对且不含 `..`**。
+
+| 命令 | 入参 | 出参 |
+|---|---|---|
+| `create_file` | `req: MkdirReq` | `FileOpVO` |
+| `create_dir` | `req: MkdirReq` | `FileOpVO` |
+| `rename_path` | `req: RenameReq` | `FileOpVO` |
+| `move_paths` | `req: MoveCopyReq` | `FileOpVO` |
+| `copy_paths` | `req: MoveCopyReq` | `FileOpVO` |
+| `delete_paths` | `req: DeleteReq` | `FileOpVO` |
+
+`FileOpVO.results` 逐条记账（`succeeded` / `failed` 分开计数）：批量操作里
+「部分成功」比「整体失败」有用，但失败项必须报出来。
+`MoveCopyReq.auto_suffix` 为 true 时同名不拒绝，落到 `name (2).ext` 起的序号名。
 
 ## 编辑器
 

@@ -2,7 +2,7 @@
 
 ## 定位
 
-`src-tauri/tests/`（按域分文件，11 条链）+ `scripts/check.ps1`（验证入口）。
+`src-tauri/tests/`（按域分文件，13 条链）+ `scripts/check.ps1`（验证入口）。
 完整的测试规范在 [AGENTS.md §3](../AGENTS.md)，这里只讲「为什么这么组织」。
 
 ## 设计
