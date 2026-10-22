@@ -2,7 +2,7 @@
 //
 // 三入口收敛（AGENTS.md §2.10）：菜单、工具栏、按键都走命令表，
 // 于是「菜单能用的功能按键一定能按」。优先级：输入框内不抢按键
-// （除了 Esc 与功能键），否则用户在查找框里打字会触发编辑器命令。
+
 import { onMounted, onUnmounted } from 'vue'
 import { DEFAULT_KEYBINDINGS, useCommandStore } from '@/stores/commands'
 import { useSettingsStore } from '@/stores/settings'

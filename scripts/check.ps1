@@ -1,5 +1,5 @@
 <#
-验证入口：一个脚本收口全部验证动作。按「改了多大」选档。
+验证入口：一个脚本收口全部验证动作，按「改了多大」选档。
 
   pwsh scripts/check.ps1              快门：格式 → 编译 → 全量测试（日常）
   pwsh scripts/check.ps1 -Chain 行尾   只跑名字命中的那条链
@@ -54,12 +54,17 @@ function Write-FailureSummary {
     }
 }
 
+# 测试入口：src-tauri/tests/ 下按域分的文件。
+# 一个域一个文件，改某个域只读那个文件，不必通读全部测试。
+$TestDir = 'src-tauri/tests'
+
 if ($List) {
-    $file = 'src-tauri/tests/integration.rs'
-    Write-Host $file -ForegroundColor Cyan
-    Get-Content $file |
-        Select-String -Pattern '^fn (test_\w+chain)\(' |
-        ForEach-Object { '  {0}' -f $_.Matches[0].Groups[1].Value }
+    Get-ChildItem -Path $TestDir -Filter '*_chain.rs' | Sort-Object Name | ForEach-Object {
+        Write-Host $_.Name -ForegroundColor Cyan
+        Get-Content $_.FullName |
+            Select-String -Pattern '^fn (test_\w+)\(' |
+            ForEach-Object { '  {0}' -f $_.Matches[0].Groups[1].Value }
+    }
     exit 0
 }
 
@@ -103,13 +108,13 @@ if ($Full) {
 if ($Chain) {
     $filter = if ($Chain -match '^test_\w+chain') { $Chain } else { $Chain }
     Invoke-Step "cargo test $Chain" {
-        cargo test --manifest-path src-tauri/Cargo.toml --test integration -- $filter 2>&1 |
+        cargo test --manifest-path src-tauri/Cargo.toml -- $filter 2>&1 |
             Tee-Object -FilePath $TestLog | Out-Null
     }
 }
 else {
     Invoke-Step 'cargo test' {
-        cargo test --manifest-path src-tauri/Cargo.toml --lib --test integration 2>&1 |
+        cargo test --manifest-path src-tauri/Cargo.toml 2>&1 |
             Tee-Object -FilePath $TestLog | Out-Null
         if ($Detail) { Get-Content $TestLog | Select-String -Pattern '^test ' }
     }

@@ -143,18 +143,30 @@ ol {
   color: var(--nt-ink);
 }
 
-/* ---------- 图标基元 ---------- */
+/* ---------- 图标基元 ----------
+   NtIcon 的根元素**本身就是 `<svg>`**，所以尺寸必须直接写在 .nt-icon 上。
+   写成 `.nt-icon svg` 是后代选择器，永远选不到自己，SVG 会退化成
+   auto 尺寸、被父容器内容高度撑满（实测 31.2px，预期 16px）。
+   尺寸三档固定，不用 em：图标不跟随字号缩胀（见 themes.css 注释）。 */
 .nt-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
+  vertical-align: middle;
+  width: var(--nt-icon-md);
+  height: var(--nt-icon-md);
   flex: none;
+  stroke-width: var(--nt-icon-stroke);
+  overflow: visible;
 }
 
-.nt-icon svg {
-  width: 1em;
-  height: 1em;
-  stroke-width: var(--nt-icon-stroke);
+/* 三档：按载体选，不由容器字号决定 */
+.nt-icon.is-sm {
+  width: var(--nt-icon-sm);
+  height: var(--nt-icon-sm);
+}
+
+.nt-icon.is-lg {
+  width: var(--nt-icon-lg);
+  height: var(--nt-icon-lg);
 }
 
 /* 图标钮：控件高度四档之外的单列，全站同一尺寸 */
@@ -169,7 +181,8 @@ ol {
   transition:
     transform var(--nt-dur-fast) var(--nt-ease),
     background-color var(--nt-dur-fast) var(--nt-ease),
-    color var(--nt-dur-fast) var(--nt-ease);
+    color var(--nt-dur-fast) var(--nt-ease),
+    box-shadow var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-icon-btn:hover:not(:disabled):not(.is-loading) {
@@ -179,18 +192,37 @@ ol {
 }
 
 .nt-icon-btn:active:not(:disabled):not(.is-loading) {
+  background: var(--nt-surface-selected);
   transform: scale(0.92);
 }
 
 .nt-icon-btn:disabled,
 .nt-icon-btn.is-disabled {
-  opacity: 0.5;
+  opacity: 0.42;
   transform: none;
+  cursor: not-allowed;
 }
 
 .nt-icon-btn.is-on {
   background: var(--nt-surface-selected);
   color: var(--nt-primary);
+}
+
+/* 加载态：图标换成旋转环，尺寸与图标位一致，不推动布局 */
+.nt-icon-btn.is-loading {
+  pointer-events: none;
+  transform: none;
+  color: var(--nt-ink-muted);
+}
+
+.nt-icon-btn.is-loading .nt-icon {
+  animation: nt-spin 720ms linear infinite;
+}
+
+@keyframes nt-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ---------- 五态：每个可点元素必须给全五个状态 ----------
@@ -212,8 +244,21 @@ ol {
   color: var(--nt-ink);
 }
 
+/* 文字控件只换色不缩放：缩放会带动整行文字抖 */
+.nt-text-btn:active:not(:disabled) {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
+}
+
 .nt-text-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.42;
+  color: var(--nt-ink-muted);
+  cursor: not-allowed;
+}
+
+.nt-text-btn.is-loading {
+  pointer-events: none;
+  color: var(--nt-ink-muted);
 }
 
 /* 整行元素（会话行 / 设置项）不悬停放大：宽度 100% 的行放大 1%
@@ -229,7 +274,8 @@ ol {
   background: var(--nt-surface-hover);
 }
 
-.nt-row-item:active {
+.nt-row-item:active:not(.is-on) {
+  background: var(--nt-surface-selected);
   transform: scale(0.995);
 }
 
@@ -239,6 +285,27 @@ ol {
   background: var(--nt-surface-selected);
   color: var(--nt-primary);
   box-shadow: inset 2px 0 0 var(--nt-primary);
+}
+
+/* 行项目的禁用态：置灰且不响应悬停 */
+.nt-row-item.is-disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+/* ---------- 主题切换过渡 ----------
+   只在切换瞬间挂 .nt-theme-switching，过渡结束由 JS 摘掉。
+   常驻过渡会让窗口缩放、侧栏拖拽都跟着变质。 */
+.nt-theme-switching,
+.nt-theme-switching *,
+.nt-theme-switching *::before,
+.nt-theme-switching *::after {
+  transition:
+    background-color 200ms var(--nt-ease),
+    border-color 200ms var(--nt-ease),
+    color 200ms var(--nt-ease),
+    fill 200ms var(--nt-ease),
+    stroke 200ms var(--nt-ease) !important;
 }
 
 /* ---------- 减少动效 ---------- */

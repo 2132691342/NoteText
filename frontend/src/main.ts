@@ -14,6 +14,7 @@ import './themes.css'
 import './base.css'
 import './ep-theme.css'
 import './content.css'
+import './print.css'
 import 'virtual:uno.css'
 
 // 渲染层异常必须浮出水面：无声白屏是「文件内容全没了」这类报告的温床。

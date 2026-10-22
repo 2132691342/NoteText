@@ -22,7 +22,7 @@
         @click="onJump(b)"
         @contextmenu.prevent="onMenu($event, b)"
       >
-        <NtIcon name="bookmark" class="nt-bookmark-icon" />
+        <NtIcon size="sm" name="bookmark" class="nt-bookmark-icon" />
         <span class="nt-bookmark-main">
           <span class="nt-bookmark-file">{{ b.file_name }}:{{ b.line }}</span>
           <span class="nt-bookmark-text">{{ b.label || b.line_text }}</span>

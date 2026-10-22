@@ -56,7 +56,7 @@
           :max="600"
           :step="5"
         />
-        <span v-if="autoSave" class="nt-readout">秒</span>
+        <span v-if="autoSave" class="nt-readout">{{ t('settings.seconds') }}</span>
       </div>
     </section>
   </div>

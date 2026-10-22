@@ -19,9 +19,9 @@
 | 工具箱 | JSON（格式化/校验/JSONPath/转结构体）、文本与目录 Diff、哈希、正则测试、编码转换、11 种行编辑 |
 | 视图器 | Markdown 渲染、图片、日志（ERROR/WARN 着色）、十六进制、文档预览（xlsx / docx / pdf） |
 | 批量操作 | 目录级查找替换（先扫描预览再勾选应用）、批量重命名（三种模式，冲突项标红） |
-| 效率工具 | 宏录制回放、列编辑模式、小地图、剪贴板历史 |
+| 效率工具 | 宏录制回放、列编辑模式、小地图、剪贴板历史、最近文件（可钉住） |
 | 壳层 | 单实例、托盘常驻、文件关联、会话恢复（含未保存草稿）、自动保存、文件监控、备份导入导出 |
-| 外观 | 浅/深/跟随系统三档主题，界面字号 80%–140% 缩放 |
+| 外观 | 浅/深/跟随系统三档主题，界面字号 80%–140% 缩放，全屏 `F11`，打印 `Ctrl+P` |
 
 ## 快速开始
 
@@ -79,7 +79,7 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/integration.rs   # 5 条长链路测试（一个域一条）
+│   └── tests/                 # 按域分文件：session / file / text / tools / batch
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
@@ -88,10 +88,10 @@ NoteText/
 │       ├── stores/            # Pinia：settings / editor / fileTree / commands / dialogs / toast
 │       ├── locales/           # zh-CN / en
 │       ├── utils/             # 纯函数
-│       └── *.css              # themes / base / ep-theme / content 四个 CSS
+│       └── *.css              # themes / base / ep-theme / content / print 五个 CSS
 ├── assets/docs/               # 内置用户手册（帮助页渲染）
 ├── docs/ specs/               # 项目级文档与子系统规格
-└── scripts/                   # 验证脚本（check.ps1，唯一入口）
+└── scripts/                   # 验证入口（check.ps1）+ 实测工具（inspect-*.mjs）
 ```
 
 ## 技术栈
@@ -129,25 +129,27 @@ NoteText/
 | [docs/ERROR-CODES.md](docs/ERROR-CODES.md) | 错误码段位与前端分流 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、验证入口、数据位置、改代码时看什么 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 构建、安装器、CI 与 Release |
-| specs/ | 子系统规格（01–12，一个子系统一篇） |
+| specs/ | 子系统规格（01–13，一个子系统一篇） |
 
 内置用户手册在 `assets/docs/`，面向用户；`docs/` 与 `specs/` 面向开发，两者不重复维护同一份话术。
 
 ## 测试
 
-5 条集成测试，一条链一个域，聚焦长链路与硬契约，全量 < 1 秒：
+11 条链，分 5 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-| 入口 | 覆盖 |
+| 文件 | 覆盖 |
 |---|---|
-| `test_bootstrap_chain` | 装配 → 建表 → 会话与书签往返 → 空数组序列化契约 |
-| `test_file_roundtrip_chain` | 编码探测、行尾按原样写回、BOM 剥离补回、原子写不留痕 |
-| `test_text_pipeline_chain` | 注释切换（含半注释块）、行编辑、行列换算、统计按 char |
-| `test_tools_chain` | JSON / diff / 正则硬契约、三种哈希已知向量 |
-| `test_batch_chain` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
+| `session_chain.rs` | 装配 → 建表 → 会话与书签往返 → 空数组序列化契约 |
+| `file_chain.rs` | 编码探测、行尾按原样写回、BOM 剥离补回、原子写不留痕 |
+| `text_chain.rs` | 注释切换（含半注释块）、行编辑、行列换算、统计按 char |
+| `tools_chain.rs` | JSON / diff / 正则硬契约、三种哈希已知向量 |
+| `batch_chain.rs` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
+
+只看某一个域：`pwsh scripts/check.ps1 -Chain file`。
 
 ## 许可证
 

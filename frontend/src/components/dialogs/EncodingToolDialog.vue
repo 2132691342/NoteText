@@ -29,9 +29,9 @@
       </div>
 
       <div class="nt-enc-note">
-        <p>转换会立即写回当前文件。行尾与编码按上面的选择落盘，编辑器里的文本不变。</p>
+        <p>{{ t('tool.encodingConvertHint') }}</p>
         <p v-if="uncertain" class="nt-enc-warn">
-          当前编码是探测出来的、置信度不高——先确认上面「源编码」选对了再转。
+          {{ t('tool.encodingLowConfidence') }}
         </p>
       </div>
 

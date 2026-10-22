@@ -4,7 +4,7 @@
 // 内容通过 import.meta.glob 懒加载，改文档不用改代码。
 <template>
   <div class="nt-help">
-    <header class="nt-help-head">
+    <header class="nt-help-head" data-tauri-drag-region>
       <button class="nt-text-btn" @click="router.back()">← {{ t('help.title') }}</button>
       <span class="nt-help-current">{{ currentTitle }}</span>
     </header>
@@ -20,15 +20,13 @@
           {{ doc.title }}
         </button>
       </nav>
-      <article class="nt-md nt-help-content">
-        <component :is="currentComp" v-if="currentComp" />
-      </article>
+      <article ref="host" class="nt-md nt-help-content" />
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
@@ -46,10 +44,49 @@ const DOCS = [
 const current = computed(() => (route.params.name as string) || 'getting-started')
 const currentTitle = computed(() => DOCS.find((d) => d.name === current.value)?.title ?? '')
 
-// 手册按需加载：帮助页不该把四篇文档全打进首屏。
-const currentComp = computed(() =>
-  defineAsyncComponent(() => import(`../../assets/docs/${current.value}.md`)),
-)
+// 手册以原始文本打包：它们是 Markdown，不是 Vue 组件，走 ?raw 才不会在构建期失解。
+const DOC_RAW = import.meta.glob('../../../assets/docs/*.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+
+const host = ref<HTMLElement | null>(null)
+/** 挂载后的 Markdown 子应用：只需要 unmount，不存整个 App 实例。 */
+let mdApp: { unmount: () => void } | null = null
+
+/** 用 mavon 的预览态渲染 Markdown：依赖里已经有一个 Markdown 实现，不再引第二个。 */
+async function render() {
+  if (!host.value) return
+  const raw = DOC_RAW[`../../../assets/docs/${current.value}.md`]
+  mdApp?.unmount()
+  mdApp = null
+  host.value.innerHTML = ''
+  if (!raw) return
+  const mod = (await import('mavon-editor')) as unknown as {
+    default?: { mavonEditor?: unknown }
+    mavonEditor?: unknown
+  }
+  const comp = (mod.mavonEditor ?? (mod.default as { mavonEditor?: unknown })?.mavonEditor) as unknown
+  if (!comp) return
+  const { createApp, h } = await import('vue')
+  const app = createApp({
+    render: () =>
+      h(comp as never, {
+        modelValue: raw,
+        defaultOpen: 'preview',
+        editable: false,
+        toolbarsFlag: false,
+        subfield: false,
+        boxShadow: false,
+      }),
+  })
+  app.mount(host.value)
+  mdApp = app
+}
+
+onMounted(() => void nextTick(render))
+watch(current, () => void nextTick(render))
 </script>
 
 <style scoped>

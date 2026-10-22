@@ -1,10 +1,8 @@
 // 退出守卫：关窗时先检查未保存内容。
 //
-// 链路（specs/04）：前端点 X → 后端发 `app:before-close` → 这里弹确认 →
+// 链路（specs/04）：前端点 X → 后端发 `app:before-close` → 弹确认 →
 // 用户确认 → 调 `confirm_quit` + `force_quit` → 后端放行 CloseRequested。
-//
-// 关键点：**不能在确认前直接关**。后端 OnBeforeClose 默认拦下关闭请求，
-// 前端不置确认位，窗口会「点了 X 没反应」。
+
 import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useEditorStore } from '@/stores/editor'
@@ -85,7 +83,7 @@ export function useQuitGuard() {
         await api.writeFile(tab.path, getText(tab.id), tab.encoding, tab.line_ending, tab.has_bom)
         editor.markDirty(tab.id, false)
       } catch (e) {
-        toast.bad(`「${tab.title}」保存失败，已放弃修改`)
+        toast.bad(t('toast.saveOnExitFailed', { name: tab.title }))
       }
     }
     await api.confirmQuit()

@@ -1,8 +1,7 @@
 // 编辑器实例注册表：store 只存元数据，正文由这里按 tabId 取。
 //
-// 为什么分开：每次按键都把正文同步进 store 会让 Vue 的响应式系统
-// 处理整篇文档的 diff，几百 KB 的日志文件直接卡死。所以 CodeMirror 的
-// EditorState 由组件层持有，store 与外部代码通过这里的 getter 访问。
+// 分开的原因：每次按键都把正文同步进 store，会让 Vue 的响应式系统
+// 处理整篇文档的 diff，几百 KB 的日志文件直接卡死。
 import { type EditorView } from '@codemirror/view'
 
 const views = new Map<number, EditorView>()

@@ -1,5 +1,5 @@
 /* 主题令牌：全项目唯一色值与尺寸刻度定义处，语义名一律 --nt-*，组件不写死色值。
-   设计语言（单色相靛蓝五档、两套主题、三条纪律）见 DESIGN.md。 */
+   设计语言（纯灰阶 + 靛蓝强调五档、两套主题、三条纪律）见 DESIGN.md。 */
 
 /* ============================================================
    刻度层：与主题无关的尺寸 / 字体 / 动效
@@ -30,16 +30,18 @@
      也有一套可用尺寸。 */
   --nt-vw-scale: 1;
 
-  /* 字号 8 级：字号 = 基准 × 用户字号缩放 × 视口比例。
-     变量里再乘 --nt-fs-scale 是为了让「外观设置只改一个值」继续成立。 */
-  --nt-fs-2xs: calc(10px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-xs: calc(11px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-sm: calc(12px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-md: calc(13px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-lg: calc(15px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-xl: calc(20px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-2xl: calc(28px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-3xl: calc(32px * var(--nt-fs-scale) * var(--nt-vw-scale));
+  /* 字号 8 级：字号 = 基准 × 用户字号缩放。
+     **字号不乘 --nt-vw-scale**：窗口变窄不该把字变小，那会把「小屏看清」
+     变成「小屏看不见」。窗口宽只影响间距与控件高度（见 --nt-sp-* / --nt-ctl-*），
+     文字大小只由外观设置里的 80%~140% 决定，用户能自己调回去。 */
+  --nt-fs-2xs: calc(10px * var(--nt-fs-scale));
+  --nt-fs-xs: calc(11.5px * var(--nt-fs-scale));
+  --nt-fs-sm: calc(13px * var(--nt-fs-scale));
+  --nt-fs-md: calc(14px * var(--nt-fs-scale));
+  --nt-fs-lg: calc(16px * var(--nt-fs-scale));
+  --nt-fs-xl: calc(20px * var(--nt-fs-scale));
+  --nt-fs-2xl: calc(26px * var(--nt-fs-scale));
+  --nt-fs-3xl: calc(32px * var(--nt-fs-scale));
   --nt-lh-tight: 1.25;
   --nt-lh-base: 1.6;
   --nt-lh-loose: 1.75;
@@ -85,9 +87,18 @@
   --nt-tile: calc(40px * var(--nt-vw-scale));
   --nt-tile-lg: calc(52px * var(--nt-vw-scale));
 
-  --nt-fs-ctl: calc(12.5px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-label: calc(12px * var(--nt-fs-scale) * var(--nt-vw-scale));
-  --nt-fs-hint: calc(11px * var(--nt-fs-scale) * var(--nt-vw-scale));
+  /* 图标三档：**固定尺寸，不跟随 font-size**。
+     图标曾经写成 width:1em，于是容器字号一变（11px 的提示行 vs 28px 的标题）
+     图标跟着胀缩，全站没有统一观感。三档按载体选，不由字号决定。 */
+  --nt-icon-sm: calc(14px * var(--nt-vw-scale));
+  --nt-icon-md: calc(16px * var(--nt-vw-scale));
+  --nt-icon-lg: calc(18px * var(--nt-vw-scale));
+
+  --nt-fs-ctl: calc(13.5px * var(--nt-fs-scale));
+  /* 与 --nt-fs-sm 同值：label 是「字段名」语义，sm 是「次要正文」语义。
+     两者目前同档，但分开命名，将来调一档不会牵动另一档。 */
+  --nt-fs-label: calc(13px * var(--nt-fs-scale));
+  --nt-fs-hint: calc(12.5px * var(--nt-fs-scale));
 
   /* 布局宽度 */
   --nt-w-sidebar: calc(260px * var(--nt-vw-scale));
@@ -113,21 +124,47 @@
 }
 
 /* ============================================================
+   中性九档：全站唯一灰阶。
+   第 1 / 3 / 5 / 7 / 9 档是给定的五个锚点，2 / 4 / 6 / 8 是补齐的中间档——
+   没有中间档时 hover 与 selected 只能靠透明度硬造，叠在深色上就糊成一片。
+   九档同色相、纯灰（R=G=B），不夹任何蓝紫偏色。
+   ============================================================ */
+:root {
+  --nt-gray-1: #212529;
+  --nt-gray-2: #343a40;
+  --nt-gray-3: #495057;
+  --nt-gray-4: #6c757d;
+  --nt-gray-5: #adb5bd;
+  --nt-gray-6: #ced4da;
+  --nt-gray-7: #dee2e6;
+  --nt-gray-8: #e9ecef;
+  --nt-gray-9: #f8f9fa;
+
+  /* 五个锚点的原始命名：保留这组别名，让配色表能一对一对上 */
+  --minimalist_gray-color-1: var(--nt-gray-1);
+  --minimalist_gray-color-2: var(--nt-gray-3);
+  --minimalist_gray-color-3: var(--nt-gray-5);
+  --minimalist_gray-color-4: var(--nt-gray-7);
+  --minimalist_gray-color-5: var(--nt-gray-9);
+}
+
+/* ============================================================
    表面阶梯：六级中性面
-   window（窗底） < workspace（区底） ≤ surface（表单行）
-   ≤ raised（卡片 / 面板） < hover < selected
-   相邻两级只差 2%~5% 亮度——读起来是一片连续工作区，而不是卡片叠卡片。
+   window（窗底） < workspace（区底） ≤ surface（面板 / chrome）
+   ≤ raised（卡片 / 弹窗） < hover < selected
+   浅色系里 chrome 落在灰 9、内容落在纯白：整片工作区只有两级亮度差，
+   靠 1px 描边分界，而不是靠卡片叠卡片。
    ============================================================ */
 :root,
 [data-theme='light'] {
   color-scheme: light;
 
-  --nt-elev-window: #f8fafc;
+  --nt-elev-window: var(--nt-gray-9);
   --nt-elev-workspace: #ffffff;
-  --nt-elev-surface: #f8fafc;
+  --nt-elev-surface: var(--nt-gray-9);
   --nt-elev-raised: #ffffff;
-  --nt-elev-hover: #eef2ff;
-  --nt-elev-selected: #e0e7ff;
+  --nt-elev-hover: var(--nt-gray-8);
+  --nt-elev-selected: var(--nt-gray-7);
 
   /* 语义名：新代码一律写 --nt-elev-*，下面这些是指向阶梯的别名（兼容既有引用） */
   --nt-bg: var(--nt-elev-window);
@@ -135,18 +172,29 @@
   --nt-surface-2: var(--nt-elev-surface);
   --nt-surface-hover: var(--nt-elev-hover);
   --nt-surface-selected: var(--nt-elev-selected);
+  /* 旧名 --nt-elev-1：凹陷内容区（十六进制体 / 图片底），等价于区底 */
+  --nt-elev-1: var(--nt-elev-surface);
 
-  --nt-border: #e2e8f0;
-  --nt-border-strong: #cbd5e1;
+  /* chrome：外壳六层（标题/菜单/工具/标签/状态栏/侧栏）统一落灰底，
+     编辑区落纯白。整窗只有「壳」与「内容」两级亮度，靠 1px 描边分界。 */
+  --nt-chrome: var(--nt-gray-9);
 
-  --nt-ink: #1e293b;
-  --nt-ink-2: #475569;
-  --nt-ink-muted: #94a3b8;
+  --nt-border: var(--nt-gray-7);
+  --nt-border-strong: var(--nt-gray-6);
 
-  /* 强调色五档：同一个靛蓝色相，没有第二个色相 */
-  --nt-primary: #6366f1;
-  --nt-primary-strong: #4f46e5;
-  --nt-primary-soft: #e0e7ff;
+  /* 墨色四级阶梯，对比度逐个递减但仍可读：
+     1 正文 15.4:1 · 2 次要 11.7:1 · 3 三级 8.2:1 · muted 4.7:1（占位/禁用）。
+     muted 卡在 AA 边缘：它承载占位符与禁用态，低于 4.5 就真的读不清了。 */
+  --nt-ink: var(--nt-gray-1);
+  --nt-ink-2: var(--nt-gray-2);
+  --nt-ink-3: var(--nt-gray-3);
+  --nt-ink-muted: var(--nt-gray-4);
+
+  /* 强调色五档：同一个靛蓝色相，没有第二个色相。
+     取 #5b5fe8 而不是 #6366f1：后者在灰 9 壳底上只有 4.24:1，低于 AA。 */
+  --nt-primary: #5b5fe8;
+  --nt-primary-strong: #4a4ede;
+  --nt-primary-soft: #e6e8fe;
   --nt-live: #818cf8;
   --nt-primary-contrast: #ffffff;
 
@@ -159,7 +207,7 @@
   --nt-danger-bg: rgba(220, 38, 38, 0.09);
 
   /* 图表序列（可视化：编辑器内的用量图 / 目录统计） */
-  --nt-ch-1: #6366f1;
+  --nt-ch-1: #5b5fe8;
   --nt-ch-2: #818cf8;
   --nt-ch-3: #a5b4fc;
   --nt-ch-4: #c7d2fe;
@@ -167,51 +215,56 @@
   /* 控件令牌：控件要有「可以点进去」的浮凸感，与普通面的描边平铺区分开 */
   --nt-control-bg: #ffffff;
   --nt-control-bg-hover: #ffffff;
-  --nt-control-bg-disabled: #f1f5f9;
-  --nt-control-border: #cbd5e1;
-  --nt-control-border-hover: #6366f1;
-  --nt-control-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --nt-control-shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.18);
+  --nt-control-bg-disabled: var(--nt-gray-9);
+  --nt-control-border: var(--nt-gray-6);
+  --nt-control-border-hover: var(--nt-primary);
+  --nt-control-shadow: 0 1px 2px rgba(33, 37, 41, 0.06);
+  --nt-control-shadow-focus: 0 0 0 3px rgba(91, 95, 232, 0.2);
 
-  --nt-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --nt-card-shadow: 0 1px 2px rgba(33, 37, 41, 0.05);
 
   /* 编辑器表面：与界面分离，代码区可独立压暗 */
   --nt-editor-bg: #ffffff;
-  --nt-editor-gutter-bg: #f8fafc;
-  --nt-editor-gutter-ink: #94a3b8;
-  --nt-editor-active-line: rgba(99, 102, 241, 0.06);
-  --nt-editor-selection: rgba(99, 102, 241, 0.2);
-  --nt-editor-cursor: #6366f1;
+  --nt-editor-gutter-bg: var(--nt-gray-9);
+  --nt-editor-gutter-ink: var(--nt-gray-5);
+  --nt-editor-active-line: rgba(91, 95, 232, 0.06);
+  --nt-editor-selection: rgba(91, 95, 232, 0.18);
+  --nt-editor-cursor: var(--nt-primary);
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --nt-elev-window: #0b1220;
-  --nt-elev-workspace: #131c31;
-  --nt-elev-surface: #1e293b;
-  --nt-elev-raised: #1e293b;
-  --nt-elev-hover: #263449;
-  --nt-elev-selected: #23305a;
+  /* 深色同一套灰阶对位：壳底压到灰 1 以下，内容抬到灰 1，靠描边分界 */
+  --nt-elev-window: #191c1f;
+  --nt-elev-workspace: var(--nt-gray-1);
+  --nt-elev-surface: #191c1f;
+  --nt-elev-raised: #262a2e;
+  --nt-elev-hover: var(--nt-gray-2);
+  --nt-elev-selected: var(--nt-gray-3);
 
   --nt-bg: var(--nt-elev-window);
   --nt-surface: var(--nt-elev-raised);
   --nt-surface-2: var(--nt-elev-surface);
   --nt-surface-hover: var(--nt-elev-hover);
   --nt-surface-selected: var(--nt-elev-selected);
+  --nt-elev-1: var(--nt-elev-surface);
+  --nt-chrome: #191c1f;
 
-  --nt-border: #334155;
-  --nt-border-strong: #475569;
+  --nt-border: var(--nt-gray-2);
+  --nt-border-strong: var(--nt-gray-3);
 
-  --nt-ink: #e2e8f0;
-  --nt-ink-2: #cbd5e1;
-  --nt-ink-muted: #94a3b8;
+  --nt-ink: var(--nt-gray-9);
+  --nt-ink-2: var(--nt-gray-6);
+  --nt-ink-3: var(--nt-gray-5);
+  /* 深色下灰 4 只有 3.65:1：占位符与禁用态够用，绝不能再往下压 */
+  --nt-ink-muted: var(--nt-gray-4);
 
   --nt-primary: #a5b4fc;
   --nt-primary-strong: #c7d2fe;
   --nt-primary-soft: #312e81;
   --nt-live: #818cf8;
-  --nt-primary-contrast: #0b1220;
+  --nt-primary-contrast: #191c1f;
 
   --nt-success: #4ade80;
   --nt-warning: #fbbf24;
@@ -225,20 +278,20 @@
   --nt-ch-3: #6366f1;
   --nt-ch-4: #4f46e5;
 
-  --nt-control-bg: #1e293b;
-  --nt-control-bg-hover: #263449;
-  --nt-control-bg-disabled: #131c31;
-  --nt-control-border: #475569;
-  --nt-control-border-hover: #a5b4fc;
+  --nt-control-bg: #262a2e;
+  --nt-control-bg-hover: var(--nt-gray-2);
+  --nt-control-bg-disabled: #191c1f;
+  --nt-control-border: var(--nt-gray-3);
+  --nt-control-border-hover: var(--nt-primary);
   --nt-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   --nt-control-shadow-focus: 0 0 0 3px rgba(165, 180, 252, 0.22);
 
-  --nt-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --nt-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 
-  --nt-editor-bg: #0f172a;
-  --nt-editor-gutter-bg: #131c31;
-  --nt-editor-gutter-ink: #64748b;
+  --nt-editor-bg: var(--nt-gray-1);
+  --nt-editor-gutter-bg: #191c1f;
+  --nt-editor-gutter-ink: var(--nt-gray-4);
   --nt-editor-active-line: rgba(165, 180, 252, 0.08);
-  --nt-editor-selection: rgba(165, 180, 252, 0.25);
-  --nt-editor-cursor: #a5b4fc;
+  --nt-editor-selection: rgba(165, 180, 252, 0.22);
+  --nt-editor-cursor: var(--nt-primary);
 }

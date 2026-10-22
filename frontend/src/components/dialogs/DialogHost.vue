@@ -35,6 +35,7 @@ const COMPONENTS = {
   hex: () => import('@/components/dialogs/HexViewerDialog.vue'),
   batchFindReplace: () => import('@/components/dialogs/BatchFindReplaceDialog.vue'),
   batchRename: () => import('@/components/dialogs/BatchRenameDialog.vue'),
+  recentFiles: () => import('@/components/dialogs/RecentFilesDialog.vue'),
 } as const
 
 const current = computed(() => dialogs.active)
@@ -67,6 +68,7 @@ const currentTitle = computed(() => {
     hex: 'tool.hexViewer',
     batchFindReplace: 'tool.batchFindReplace',
     batchRename: 'tool.batchRename',
+    recentFiles: 'menu.recentFiles',
   }
   return t(map[key] ?? key)
 })

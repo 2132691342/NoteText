@@ -24,8 +24,8 @@ pub mod window;
 /// 不会散到多个文件里。
 ///
 /// 漏注册一个的后果是前端 invoke 报 `command not found`，编译期发现不了——
-/// 由 `tests/command_contract.rs` 兜：它断言清单里每个函数都在前端
-/// `src/api/commands.ts` 的调用表里有对应项。
+/// 后端清单与前端 `src/api/index.ts` 的调用表必须一一对应，
+/// 由 `tests/session_chain.rs` 的装配链覆盖。
 macro_rules! command_handlers {
     () => {
         tauri::generate_handler![

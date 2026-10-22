@@ -11,7 +11,7 @@
   align-items: center;
   height: var(--nt-h-menu);
   padding: 0 var(--nt-sp-1);
-  background: var(--nt-surface);
+  background: var(--nt-chrome);
   border-bottom: 1px solid var(--nt-border);
   -webkit-app-region: drag;
   user-select: none;
@@ -31,12 +31,21 @@
   font-size: var(--nt-fs-sm);
   color: var(--nt-ink-2);
   white-space: nowrap;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-menu-item:hover,
 .nt-menu-item.is-open {
   background: var(--nt-surface-hover);
   color: var(--nt-ink);
+}
+
+/* 菜单项是文字级控件：按下只换底与字色，不缩放（会带动整行抖） */
+.nt-menu-item:active:not(.is-open) {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
 }
 
 /* 工具栏 34px：图标钮 + 分隔组 */
@@ -46,7 +55,7 @@
   gap: var(--nt-sp-1);
   height: var(--nt-h-toolbar);
   padding: 0 var(--nt-sp-2);
-  background: var(--nt-surface);
+  background: var(--nt-chrome);
   border-bottom: 1px solid var(--nt-border);
   flex: none;
   overflow-x: auto;
@@ -65,12 +74,14 @@
   flex: none;
 }
 
-/* 标签栏 32px：横向滚动 + 关闭钮 + 脏标记圆点 */
+/* 标签栏 32px：横向滚动 + 关闭钮 + 脏标记圆点。
+   未选中标签融在壳底里，选中标签抬到内容白底并与下方编辑区连成一片——
+   用户不需要猜「现在编辑的是哪一个」。 */
 .nt-tabbar {
   display: flex;
   align-items: stretch;
   height: var(--nt-h-tab);
-  background: var(--nt-surface);
+  background: var(--nt-chrome);
   border-bottom: 1px solid var(--nt-border);
   flex: none;
   overflow-x: auto;
@@ -86,20 +97,31 @@
   font-size: var(--nt-fs-sm);
   color: var(--nt-ink-2);
   border-right: 1px solid var(--nt-border);
+  box-shadow: inset 0 2px 0 transparent;
   white-space: nowrap;
   position: relative;
   flex: none;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease),
+    box-shadow var(--nt-dur-fast) var(--nt-ease);
 }
 
-.nt-tab:hover {
+.nt-tab:hover:not(.is-on) {
   background: var(--nt-surface-hover);
+  color: var(--nt-ink);
+}
+
+/* 按下：底色再压一档。标签是横向整行元素，不做缩放 */
+.nt-tab:active:not(.is-on) {
+  background: var(--nt-surface-selected);
 }
 
 .nt-tab.is-on {
-  background: var(--nt-surface-selected);
-  color: var(--nt-primary);
-  /* 选中态 = 淡底 + 左侧 2px 竖条：与侧栏选中同一语言 */
-  box-shadow: inset 2px 0 0 var(--nt-primary);
+  /* 抬到内容白底 + 顶部 2px 主色：与下方编辑区连成一片 */
+  background: var(--nt-surface);
+  color: var(--nt-ink);
+  box-shadow: inset 0 2px 0 var(--nt-primary);
 }
 
 .nt-tab-label {
@@ -133,7 +155,11 @@
   color: var(--nt-ink-muted);
   flex: none;
   opacity: 0;
-  transition: opacity var(--nt-dur-fast) var(--nt-ease);
+  transition:
+    opacity var(--nt-dur-fast) var(--nt-ease),
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-tab:hover .nt-tab-close,
@@ -144,6 +170,11 @@
 .nt-tab-close:hover {
   background: var(--nt-danger-bg);
   color: var(--nt-danger);
+  transform: scale(1.06);
+}
+
+.nt-tab-close:active {
+  transform: scale(0.92);
 }
 
 /* 状态栏 26px：左「已修改」、中读数、右编码 / 行尾 */
@@ -153,7 +184,7 @@
   gap: var(--nt-sp-3);
   height: var(--nt-h-status);
   padding: 0 var(--nt-sp-3);
-  background: var(--nt-surface);
+  background: var(--nt-chrome);
   border-top: 1px solid var(--nt-border);
   font-size: var(--nt-fs-hint);
   color: var(--nt-ink-2);
@@ -203,10 +234,19 @@
   color: var(--nt-ink-2);
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-tree-row:hover {
   background: var(--nt-surface-hover);
+}
+
+/* 行不复用 .nt-row-item 的 scale(0.995)：文件树是密集列表，
+   整行位移会让树看起来在抖。按下只压底色。 */
+.nt-tree-row:active {
+  background: var(--nt-surface-selected);
 }
 
 .nt-tree-row.is-on {
@@ -560,9 +600,23 @@
   font-weight: 700;
 }
 
+.nt-welcome-title {
+  font-family: var(--font-display);
+  font-size: var(--nt-fs-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--nt-ink);
+}
+
 .nt-welcome-actions {
   display: flex;
   gap: var(--nt-sp-3);
+  margin-top: var(--nt-sp-2);
+}
+
+/* 按钮里的图标与文字：图标不跟随字号缩放，靠 flex 对齐 */
+.nt-btn-text {
+  margin-left: var(--nt-sp-2);
 }
 
 /* ============================================================

@@ -1,10 +1,7 @@
 // 宏录制与回放：把一串编辑动作收成 MacroStep，再按序派发回去。
 //
-// 权威源在前端（AGENTS.md 的 domain/macro_def.rs 注释已写明）：
-// 回放要驱动编辑器命令与文档变更，后端只做持久层，不执行编辑。
-//
-// 录制策略：只收「文档变更」与「命令」两类。
-// 光标移动不录——回放时每一步都会重算光标，录进去只会让宏变脆。
+// 权威源在前端：回放要驱动编辑器命令与文档变更，后端只做持久层。
+// 只收「文档变更」与「命令」两类——光标移动每步都会重算，录进去只会让宏变脆。
 import { ref } from 'vue'
 import type { EditorView } from '@codemirror/view'
 import type { MacroStep } from '@/types/api'

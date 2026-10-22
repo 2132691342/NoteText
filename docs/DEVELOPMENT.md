@@ -33,7 +33,8 @@ npm --prefix frontend run dev       # 浏览器预览（无后端，空态）
 ```powershell
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --lib --test integration
+cargo test  --manifest-path src-tauri/Cargo.toml          # 全部域
+cargo test  --manifest-path src-tauri/Cargo.toml -- file    # 只跑文件域
 cd frontend; npx vue-tsc -b; npx vite build
 ```
 
@@ -69,8 +70,8 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 | `src-tauri/src/domain` | 入参 / 出参 / 实体都放这里，三层不得就地声明结构体 |
 | `src-tauri/src/repo` | 只写 SQL，不写业务规则；参数绑定是唯一写法 |
 | `src-tauri/src/service` | 编排层：一个关注点一个文件；不知道窗口与托盘的存在 |
-| `src-tauri/src/service/encoding` | 编码表是手写的子集，**要扩展时优先换 encoding_rs** |
-| `src-tauri/src/service/tools` | 哈希与迷你正则引擎都是手写实现，改前先看测试向量 |
+| `src-tauri/src/service/encoding.rs` | 编码表是手写的子集，**要扩展时优先换 encoding_rs** |
+| `src-tauri/src/service/tools.rs` | 哈希与迷你正则引擎都是手写实现，改前先看测试向量 |
 | `src-tauri/src/commands` | 薄 handler；新增命令必须同时进 `command_handlers!` 清单与前端 `api/index.ts` |
 | `src-tauri/src/app` | 组合根在这里；失败模式见 [ARCHITECTURE](ARCHITECTURE.md) 的启动时序 |
 | `src-tauri/src/shell` | 关闭策略的不变量见 [specs/04](specs/04-desktop-shell.md)，改前先读 |
@@ -99,6 +100,17 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 浏览器里看界面：`npm run dev` 会因为没有后端而显示空态——
 要连真后端请用 `./frontend/node_modules/.bin/tauri dev`。
 
+**视觉实测工具**（需要先起 dev server 与浏览器）：
+
+```bash
+node scripts/inspect-visual.mjs   # 图标真实尺寸、字号分布、各层高度
+node scripts/inspect-chunks.mjs   # 分包体积与各 chunk 拉进的库
+node scripts/shot.mjs 9225 .check/shot.png
+```
+
+`inspect-visual` 量的是**渲染结果**而不是样式表：CSS 规则写错时
+（如选择器匹配不到目标元素），样式表看起来完全正常，渲染出来却是错的。
+
 ## 常见问题
 
 | 现象 | 先看 |
@@ -107,7 +119,7 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 | 前端 invoke 报 `command not found` | 命令没进 `command_handlers!` 清单，或名字不一致 |
 | 前端类型全变 `undefined` | 后端字段名与 `types/api.ts` 不一致；查 json tag |
 | 保存后整个文件行尾变了 | `write_file` 没传 `line_ending`，或前端传了 `null` |
-| 大文件打开卡死 | 走了 `ReadMode::Full`；应在 `stat_file` 后提示用户选 `head` |
+| 大文件打开卡死 | 不会自动降级：超过 32MB 应只读前段并标「已截断」，见 [specs/05](specs/05-file-domain.md) |
 | 界面样式全丢 | 引用了不存在的 CSS 变量——那会静默失效，最危险 |
 | 深色下浮层与内容糊在一起 | `ep-theme.css` 的 `--el-overlay-color-lighter` 没按主题分开 |
 | 测试改了用户真实数据 | 用了 `AppPaths::resolve()` 而不是 `from_root(tempdir)` |

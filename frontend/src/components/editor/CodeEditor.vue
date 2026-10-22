@@ -1,11 +1,7 @@
 // CodeMirror 容器：一个标签一个实例，切换不销毁。
 //
-// 关键机制：
-// - 各关注点一个 compartment，运行时切换走 reconfigure（不销毁重建）；
-// - 标签首次挂载时读文件正文；切换回来时保留实例与撤销历史；
-// - 光标 / 统计通过自定义事件推给状态栏；
-// - 脏标记按「与载入时的快照不同」判，而不是按有没有输入过——
-//   用户改了又改回来，标签该是干净的。
+// 各关注点一个 compartment，运行时切换走 reconfigure；脏标记按
+// 「与载入时的快照不同」判——用户改了又改回来，标签该是干净的。
 <template>
   <div ref="host" class="nt-code-editor" />
 </template>
@@ -20,7 +16,7 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter,
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 
-import { undo, redo, selectAll, deleteLine, copyLineDown } from '@codemirror/commands'
+import { undo, redo, selectAll, deleteLine, copyLineDown, moveLineUp, moveLineDown } from '@codemirror/commands'
 import type { Tab } from '@/stores/editor'
 import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
@@ -211,6 +207,12 @@ function onEditorCmd(e: Event) {
       break
     case 'deleteLine':
       deleteLine(view)
+      break
+    case 'moveLineUp':
+      moveLineUp(view)
+      break
+    case 'moveLineDown':
+      moveLineDown(view)
       break
     case 'duplicateLine':
       // CodeMirror 没有 duplicateLine：copyLineDown 是「向下复制一行」，

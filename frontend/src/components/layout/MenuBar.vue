@@ -99,7 +99,11 @@ function keyOf(cmd: { id: string }): string {
   return accel.replace('Control', 'Ctrl').replace('+', ' + ')
 }
 
-function onDocClick() {
+function onDocClick(e: MouseEvent) {
+  // 菜单按钮与下拉本体内的点击不归这里管：那个 click 会先设 open，
+  // 随后冒泡到 document。不区分的话菜单会在同一帧里被自己关掉。
+  const el = e.target as HTMLElement | null
+  if (el?.closest('.nt-menu-wrap, .nt-menu-dropdown')) return
   open.value = null
 }
 
@@ -148,11 +152,19 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   font-size: var(--nt-fs-sm);
   color: var(--nt-ink);
   text-align: left;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-menu-entry:hover:not(:disabled) {
   background: var(--nt-surface-selected);
   color: var(--nt-primary);
+}
+
+.nt-menu-entry:active:not(:disabled) {
+  background: var(--nt-primary-soft);
+  color: var(--nt-primary-strong);
 }
 
 .nt-menu-entry:disabled {

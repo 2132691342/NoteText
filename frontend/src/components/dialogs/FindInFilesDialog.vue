@@ -36,7 +36,7 @@
           <span class="nt-readout">{{ hits.length }}</span>
         </div>
         <div class="nt-fif-results-body">
-          <div v-if="!hits.length && !running" class="nt-empty-sm">输入关键字后点「搜索」</div>
+          <div v-if="!hits.length && !running" class="nt-empty-sm">{{ t('dialog.searchHint') }}</div>
           <button
             v-for="(h, i) in hits"
             :key="i"

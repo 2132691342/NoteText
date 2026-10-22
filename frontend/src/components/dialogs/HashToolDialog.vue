@@ -2,7 +2,7 @@
 //
 // 默认算当前编辑器内容；「算文件」走文件对话框。
 // 结果给大写与小写两份：certutil 出大写、Get-FileHash 出大写，
-// 而文档里常写小写——两处都要能对上。
+
 <template>
   <NtModal :title="t('tool.hash')" width="560" @close="emit('close')">
     <div class="nt-hash-tool">

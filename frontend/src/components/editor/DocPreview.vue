@@ -1,15 +1,16 @@
-// 文档预览：按扩展名分流到 xlsx / docx / pdf / 图片 / Markdown。
+// 文档预览：按扩展名分流到 xlsx / docx / pdf / 图片 / Markdown / 纯文本。
 //
-// 为什么不让 CodeMirror 直接吃二进制：二进制解成文本是一屏乱码，
-// 而用户点开 .xlsx 想看的是表格，不是乱码。扩展名分流在打开时就做，
-// 不让二进制进编辑器。
-//
-// 所有预览包都是动态 import：一个只写 Markdown 的人不该付 xlsx 的钱。
+// 二进制不进 CodeMirror：解成文本是一屏乱码，而用户点开 .xlsx 想看的是表格。
+// 所有预览包都是动态 import——只写 Markdown 的人不该付 xlsx 的钱。
 <template>
   <div class="nt-doc-preview">
     <div class="nt-doc-head">
       <span class="nt-readout">{{ fileName }}</span>
       <div class="nt-doc-spacer" />
+      <ElButton size="small" @click="emit('toggleEdit')">
+        <NtIcon name="braces" size="sm" />
+        <span class="nt-btn-text">{{ t('tool.backToEdit') }}</span>
+      </ElButton>
       <ElButton size="small" @click="openExternal">{{ t('tool.openExternal') }}</ElButton>
     </div>
 
@@ -44,10 +45,11 @@ import { readFile } from '@tauri-apps/plugin-fs'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { api, normalizeError } from '@/api'
 import { useToastStore } from '@/stores/toast'
+import NtIcon from '@/components/common/NtIcon.vue'
 import { baseName, extName } from '@/utils'
 
 const props = defineProps<{ path: string }>()
-const emit = defineEmits<{ openHex: [] }>()
+const emit = defineEmits<{ openHex: []; toggleEdit: [] }>()
 
 const { t } = useI18n()
 const toast = useToastStore()
@@ -67,7 +69,16 @@ const MAX_PREVIEW = 20 * 1024 * 1024
 const fileName = computed(() => baseName(props.path))
 const ext = computed(() => extName(props.path))
 
-type Kind = 'xlsx' | 'docx' | 'pdf' | 'image' | 'markdown' | 'unsupported' | 'tooLarge' | 'loading'
+type Kind =
+  | 'xlsx'
+  | 'docx'
+  | 'pdf'
+  | 'image'
+  | 'markdown'
+  | 'plain'
+  | 'unsupported'
+  | 'tooLarge'
+  | 'loading'
 const kind = ref<Kind>('loading')
 const src = computed(() => convertFileSrc(props.path))
 
@@ -98,7 +109,8 @@ async function classify() {
     await renderPdf()
     return
   }
-  kind.value = 'unsupported'
+  // 其余一律按纯文本预览：用户主动按了「预览」，就该看到只读全文。
+  await renderPlainText()
 }
 
 /**
@@ -114,6 +126,11 @@ async function renderMarkdown() {
     if (!host.value) return
     const data = await readFile(props.path)
     mdText.value = new TextDecoder('utf-8').decode(data)
+    // 体积守卫：Markdown 渲染要把整篇插进 DOM，几 MB 就能卡死界面。
+    if (mdText.value.length > MAX_PREVIEW) {
+      kind.value = 'tooLarge'
+      return
+    }
     const mod = (await import('mavon-editor')) as unknown as {
       default?: { mavonEditor?: unknown }
       mavonEditor?: unknown
@@ -146,6 +163,34 @@ async function renderMarkdown() {
     toast.bad(normalizeError(e).message)
     kind.value = 'unsupported'
   }
+}
+
+async function renderPlainText() {
+  if (!host.value) return
+  const data = await readFile(props.path)
+  if (data.length > MAX_PREVIEW) {
+    kind.value = 'tooLarge'
+    return
+  }
+  // 二进制不进纯文本预览：解成文本是一屏 NUL 与乱码，改用十六进制。
+  if (looksBinary(data)) {
+    kind.value = 'unsupported'
+    return
+  }
+  // 纯文本预览：不解析，原样展示。之前按「预览」对 .txt 什么也不做
+  // （命令被错接到了十六进制视图）。
+  host.value.textContent = new TextDecoder('utf-8').decode(data)
+  host.value.classList.add('is-plain')
+  kind.value = 'plain'
+}
+
+/** 前 8KB 出现 NUL 就当二进制：足够区分文本与可执行文件 / 压缩包。 */
+function looksBinary(data: Uint8Array): boolean {
+  const n = Math.min(data.length, 8192)
+  for (let i = 0; i < n; i += 1) {
+    if (data[i] === 0) return true
+  }
+  return false
 }
 
 async function renderXlsx() {
@@ -250,6 +295,19 @@ watch(() => props.path, () => {
   overflow: auto;
   background: var(--nt-surface);
   padding: var(--nt-sp-4);
+}
+
+/* 纯文本预览：只读全文，保留换行与等宽对齐 */
+.nt-doc-host.is-plain {
+  font-family: var(--nt-font-editor);
+  font-size: var(--nt-fs-md);
+  line-height: var(--nt-lh-base);
+  color: var(--nt-ink);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 4;
+  user-select: text;
+  cursor: text;
 }
 
 .nt-doc-image {

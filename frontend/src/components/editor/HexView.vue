@@ -1,13 +1,7 @@
 // Hex 视图主体：按 16 字节一行显示偏移 / 十六进制 / ASCII 三列。
 //
-// 与浮窗壳分开：内嵌进编辑区时不需要遮罩与焦点圈，
-// 浮窗场景由 HexViewerDialog 包一层 NtModal。
-//
 // 二进制不走 invoke（字节数组会序列化成数字数组，几 MB 就堵死通道），
-// 走 plugin-fs 前端直读——与后端 commands/file.rs 的注释一致。
-//
-// 只渲染可视区：100MB 的文件全量建 DOM 会直接把界面卡死，
-// 所以按滚动位置切片，窗口外的行不建节点。
+// 走 plugin-fs 前端直读。只渲染可视区：100MB 的文件全量建 DOM 会卡死界面。
 <template>
   <div class="nt-hex">
     <div class="nt-hex-head">

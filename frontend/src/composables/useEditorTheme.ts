@@ -2,7 +2,7 @@
 //
 // 为什么手写而不是引 @codemirror/theme-one-dark：EP 的主题包写死色值，
 // 而我们的纪律是「色值只在 themes.css 定义」。这里用 EditorView.theme
-// 引用 CSS 变量，主题切换自动跟随。
+
 import { EditorView } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'

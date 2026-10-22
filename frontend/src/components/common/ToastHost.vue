@@ -102,11 +102,20 @@ function iconOf(kind: ToastKind): string {
   border-radius: var(--nt-radius-xs);
   color: var(--nt-ink-muted);
   flex: none;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-toast-close:hover {
   background: var(--nt-surface-hover);
   color: var(--nt-ink);
+  transform: scale(1.06);
+}
+
+.nt-toast-close:active {
+  transform: scale(0.92);
 }
 
 /* 进出场：淡出 + 缩放 0.96，不做瞬时消失 */

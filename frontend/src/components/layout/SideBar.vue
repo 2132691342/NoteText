@@ -138,7 +138,7 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--nt-surface);
+  background: var(--nt-chrome);
   border-right: 1px solid var(--nt-border);
   flex: none;
   min-width: 0;
@@ -155,27 +155,47 @@ onUnmounted(() => {
   padding: var(--nt-sp-1);
   border-bottom: 1px solid var(--nt-border);
   flex: none;
+  /* 6 个页签在 180px 宽的侧栏里放不下：允许横向滚动，
+     而不是换行把侧栏头挤成两行。滚动条隐藏，靠滚轮 / 拖拽。 */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nt-sidebar-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .nt-sidebar-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  flex: none;
+  min-width: var(--nt-ctl-h-sm);
   height: var(--nt-ctl-h-sm);
   border-radius: var(--nt-radius-xs);
   color: var(--nt-ink-2);
   font-size: var(--nt-fs-sm);
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease),
+    box-shadow var(--nt-dur-fast) var(--nt-ease);
 }
 
-.nt-sidebar-tab:hover {
+.nt-sidebar-tab:hover:not(.is-on) {
   background: var(--nt-surface-hover);
   color: var(--nt-ink);
+  transform: scale(1.06);
+}
+
+.nt-sidebar-tab:active {
+  transform: scale(0.92);
 }
 
 .nt-sidebar-tab.is-on {
-  background: var(--nt-surface-selected);
+  background: var(--nt-surface);
   color: var(--nt-primary);
+  box-shadow: var(--nt-card-shadow);
 }
 
 .nt-sidebar-body {
@@ -189,10 +209,11 @@ onUnmounted(() => {
   position: absolute;
   top: 0;
   right: -2px;
-  width: 4px;
+  width: var(--nt-sp-1);
   height: 100%;
   cursor: col-resize;
   z-index: 1;
+  transition: background-color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-sidebar-resize:hover {

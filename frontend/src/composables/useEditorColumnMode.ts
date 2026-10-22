@@ -2,7 +2,7 @@
 //
 // CodeMirror 的 `rectangularSelection` 只负责「能选出矩形」，
 // 真正往每一行的同一列插东西（Alt+拖动之后的输入）要自己算：
-// 矩形选区在 state 里是多个 Range，每个 Range 的 from/to 按行切片。
+
 import { ref } from 'vue'
 import type { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'

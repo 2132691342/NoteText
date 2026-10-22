@@ -2,7 +2,7 @@
 //
 // 与 ElMessage 的分工：ElMessage 是 EP 的现成件，但它的队列在多个
 // 浮窗同时报错时会互相顶掉。这里自绘一个「可选中复制、悬停不计时」的宿主，
-// 因为「复制错误码给开发者」是排障的高频动作。
+
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 

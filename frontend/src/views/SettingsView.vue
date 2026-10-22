@@ -1,8 +1,7 @@
 // 设置视图：左侧分组 + 右侧表单。
 //
-// 每项改动即时生效 + 防抖回写（settings store 的 scheduleSave）。
-// 用路由 /settings/:tab 而不是弹窗：刷新与前进后退都能停在原处，
-// 而且设置内容多，弹窗装不下。
+// 每项改动即时生效 + 防抖回写。用路由 /settings/:tab 而不是弹窗：
+// 刷新与前进后退都能停在原处。
 <template>
   <div class="nt-settings">
     <header class="nt-settings-head">

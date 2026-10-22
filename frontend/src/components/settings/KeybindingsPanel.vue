@@ -166,10 +166,21 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, { capture: true
   font-size: var(--nt-fs-hint);
   color: var(--nt-ink-2);
   text-align: center;
+  transition:
+    border-color var(--nt-dur-fast) var(--nt-ease),
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-key-btn:hover {
   border-color: var(--nt-control-border-hover);
+  color: var(--nt-ink);
+}
+
+.nt-key-btn:active {
+  background: var(--nt-surface-selected);
+  transform: scale(0.97);
 }
 
 .nt-key-btn.is-editing {

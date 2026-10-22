@@ -11,7 +11,8 @@ import { useToastStore } from '@/stores/toast'
 import { useI18n } from 'vue-i18n'
 import { api, normalizeError } from '@/api'
 import { getText, getSelection, focusedTabId, get } from '@/composables/useEditorRegistry'
-import { baseName, nextUntitledIndex } from '@/utils'
+import { baseName, nextUntitledIndex, readClipboard } from '@/utils'
+import { toggleFullscreen } from '@/utils/window'
 import {
   recording,
   steps,
@@ -71,6 +72,13 @@ export function registerCommands() {
           toast.ok(t('toast.opened', { name: baseName(p) }))
         }
       },
+    },
+    {
+      id: 'file.openRecent',
+      group: 'file',
+      labelKey: 'menu.recentFiles',
+      key: 'Control+Shift+O',
+      run: () => dialogs.open('recentFiles'),
     },
     {
       id: 'file.openFolder',
@@ -201,6 +209,49 @@ export function registerCommands() {
       labelKey: 'menu.selectAll',
       run: () => emitEditorCmd('selectAll'),
     },
+    // 剪贴板三件套：默认键位表里一直有 Ctrl+X/C/V，但没有任何命令用这三个 id，
+    // 按下完全无响应。不拦默认：CodeMirror 自己的 keymap 先拿到，
+    // 这里只是让它们能注册、能被键位表与菜单引用。
+    {
+      id: 'edit.cut',
+      group: 'edit',
+      labelKey: 'menu.cut',
+      enabled: () => hasTab(),
+      run: () => document.execCommand('cut'),
+    },
+    {
+      id: 'edit.copy',
+      group: 'edit',
+      labelKey: 'menu.copy',
+      enabled: () => hasTab(),
+      run: () => document.execCommand('copy'),
+    },
+    {
+      id: 'edit.paste',
+      group: 'edit',
+      labelKey: 'menu.paste',
+      enabled: () => hasTab(),
+      run: async () => {
+        const text = await readClipboard()
+        if (!text) return
+        emitEditorCmd('insert', text)
+      },
+    },
+    // 行移动：CodeMirror 自带这两个命令，只是之前没接到命令表。
+    {
+      id: 'edit.moveLineUp',
+      group: 'edit',
+      labelKey: 'menu.moveLineUp',
+      enabled: () => hasTab(),
+      run: () => emitEditorCmd('moveLineUp'),
+    },
+    {
+      id: 'edit.moveLineDown',
+      group: 'edit',
+      labelKey: 'menu.moveLineDown',
+      enabled: () => hasTab(),
+      run: () => emitEditorCmd('moveLineDown'),
+    },
     {
       id: 'edit.find',
       group: 'edit',
@@ -303,6 +354,27 @@ export function registerCommands() {
       run: () => {
         const next = settings.resolvedTheme === 'dark' ? 'light' : 'dark'
         settings.update({ theme: next })
+      },
+    },
+    {
+      id: 'view.fullscreen',
+      group: 'view',
+      labelKey: 'menu.fullscreen',
+      key: 'F11',
+      // 全屏是窗口态，不进配置（那是后端持久化的契约，
+      // 存一个重启后为假的字段只会把两边弄不一致）。
+      run: () => void toggleFullscreen(),
+    },
+    {
+      id: 'file.print',
+      group: 'file',
+      labelKey: 'menu.print',
+      key: 'Control+P',
+      enabled: () => hasTab(),
+      run: () => {
+        // 打印走 WebView 自带对话框：打印样式表已把chrome隐藏（print.css），
+        // 打印出来只有正文。不引入 PDF 库——系统打印对话框自带「另存为 PDF」。
+        window.print()
       },
     },
     {
@@ -463,7 +535,10 @@ export function registerCommands() {
       enabled: () => hasFile(),
       run: () => {
         const tab = editor.active
-        if (tab) tab.view_type = 'hex'
+        if (!tab) return
+        // 预览与编辑两种视图来回切：按扩展名决定能不能预览，
+        // 不支持的格式由 DocPreview 自己给空态提示。
+        tab.showing_preview = !tab.showing_preview
       },
     },
 
@@ -497,6 +572,27 @@ export function registerCommands() {
       },
     },
     {
+      id: 'bookmark.next',
+      group: 'tools',
+      labelKey: 'menu.bookmarkNext',
+      enabled: () => hasFile(),
+      run: async () => {
+        const tab = editor.active
+        if (!tab?.path) return
+        const list = await api.listFileBookmarks(tab.path)
+        if (list.length === 0) {
+          toast.warn(t('toast.noBookmarksInFile'))
+          return
+        }
+        // 下一个：按行号升序找第一个大于当前光标行的，没有则回到第一个。
+        const cur = tab.position.line
+        const next = list.map((b) => b.line).sort((a, b) => a - b).find((n) => n > cur) ?? list[0].line
+        document.dispatchEvent(
+          new CustomEvent('editor-goto-line', { detail: { tabId: tab.id, line: next } }),
+        )
+      },
+    },
+    {
       id: 'help.manual',
       group: 'help',
       labelKey: 'menu.userManual',
@@ -513,6 +609,11 @@ export function registerCommands() {
   async function saveTab(id: number) {
     const tab = editor.tabs.find((x) => x.id === id)
     if (!tab?.path || tab.path.startsWith('draft:')) return
+    // 截断的标签只有部分内容：写回就是把剩余部分删掉，直接拒绝。
+    if (tab.truncated) {
+      toast.warn(t('toast.saveBlockedTruncated'))
+      return
+    }
     const text = getText(id)
     try {
       await api.writeFile(tab.path, text, tab.encoding, tab.line_ending, tab.has_bom)

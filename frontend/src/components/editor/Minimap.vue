@@ -1,8 +1,6 @@
 // Minimap：整篇文档的缩略轮廓，点击跳转、滚动跟随。
 //
-// 只画「每行非空内容的缩进与长度」，不渲染文字：
-// 几万行的日志用 canvas 画字必掉帧，而缩略图本来就只看形状。
-// 刷新按 rAF 节流——滚动事件每秒几十次，每次重画没有意义。
+// 只画每行的缩进与长度，不渲染文字：几万行的日志用 canvas 画字必掉帧。
 <template>
   <div class="nt-minimap" @click="onJump" @mousedown.prevent>
     <canvas ref="cv" class="nt-minimap-canvas" />
@@ -49,7 +47,7 @@ function draw() {
 
   // 色值走令牌：CSS 变量里取，不在 canvas 里写死 hex。
   const css = getComputedStyle(document.documentElement)
-  const ink = css.getPropertyValue('--nt-ink-3').trim() || '#888'
+  const ink = css.getPropertyValue('--nt-ink-3').trim()
 
   const text = view.state.doc.toString()
   const lines = text.split('\n')

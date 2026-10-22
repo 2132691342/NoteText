@@ -74,6 +74,11 @@ EditorView.vue
 | 查找 / 替换 | `dialogs/FindDialog.vue`（ReplaceDialog 是薄包装） | 本文件查找 + 结果列表 |
 | 文件夹查找 | `dialogs/FindInFilesDialog.vue` | 并发上限 4；每 200 个文件让出一帧更新进度 |
 | 转到行 | `dialogs/GotoLineDialog.vue` | 上限取当前行数，超范围按钮置灰 |
+| 剪贴板历史 | `dialogs/ClipboardDialog.vue` | 编辑器内的复制 / 剪切攒 50 条，点击回插 |
+| 十六进制 | `dialogs/HexViewerDialog.vue` | 主体复用 `editor/HexView.vue`，内嵌时不带遮罩 |
+| 批量查找替换 | `dialogs/BatchFindReplaceDialog.vue` | 先扫描预览再勾选应用，扫完才允许写盘 |
+| 批量重命名 | `dialogs/BatchRenameDialog.vue` | 三种模式；冲突项标红且不可选 |
+| 最近文件 | `dialogs/RecentFilesDialog.vue` | 可钉住、显示所在目录、右键移除 / 显位置 |
 | 关于 | `dialogs/AboutDialog.vue` | 版本 / 数据目录 / 日志目录（排障第一步） |
 
 **为什么查找与替换共用一个组件**：交互几乎相同（同一套选项、同一套跳转），

@@ -151,10 +151,20 @@ offset_at_line_col(text, line, col) -> Option<usize>
 | 条件 | 容器 |
 |---|---|
 | `view_type = 'hex'` | `HexView.vue`（虚拟滚动，只渲染可视区） |
-| 扩展名属于 xlsx / docx / pdf / 图片 / md | `DocPreview.vue`（动态 import 对应预览器） |
+| `showing_preview` 为真 | `DocPreview.vue`（动态 import 对应预览器） |
+| 扩展名属于 xlsx / docx / pdf / 图片 / md | `DocPreview.vue` |
 | 其余 | `CodeEditor.vue` |
 
 预览器全部动态 `import`：一个只写纯文本的人不该付 xlsx 的钱。
+
+**`showing_preview` 与 `view_type` 正交**：`view_type` 是后端持久化的契约
+（`domain::editor::ViewType`，按扩展名推断、写进会话表），而预览只是
+「同一个文件换个看法」，不改变它的类型、也不必存进会话。
+所以给 tab 加一个独立开关，而不是给 `ViewType` 加一档 `preview`——
+后者会让后端语义与前端渲染互相污染。
+
+预览态下 `DocPreview` 顶部有「返回编辑」按钮：按扩展名自动进预览的文件
+（如 `.xlsx`）没有「编辑」可言，按钮对它们不显示。
 
 ## 约束
 

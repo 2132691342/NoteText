@@ -25,7 +25,7 @@
         <div class="nt-tool-col">
           <div class="nt-tool-col-head">
             <span>{{ t('tool.matches') }}</span>
-            <span v-if="truncated" class="nt-readout">仅前 1000 条</span>
+            <span v-if="truncated" class="nt-readout">{{ t('dialog.onlyFirst', { n: 1000 }) }}</span>
           </div>
           <div class="nt-regex-results">
             <div v-if="!matches.length && !error" class="nt-empty-sm">

@@ -1,0 +1,98 @@
+/* 打印样式：只印正文。
+   桌面编辑器打印出来该是一篇文档，不是一张界面截图——
+   所以 chrome 五层、侧栏、状态栏、浮窗全隐藏，只留编辑器正文。
+   色值一律转黑：打印机的「彩色」通常是灰，深色主题印出来会糊成一块。 */
+
+@media print {
+  /* 界面骨架：全隐 */
+  .nt-titlebar,
+  .nt-menubar,
+  .nt-toolbar,
+  .nt-tabbar,
+  .nt-sidebar,
+  .nt-statusbar,
+  .nt-modal-backdrop,
+  .nt-toast-host,
+  .nt-drop-target,
+  .nt-minimap,
+  .nt-welcome {
+    display: none !important;
+  }
+
+  /* 布局归零：去掉所有定位与滚动，让正文自然分页 */
+  html,
+  body,
+  #app,
+  .nt-root,
+  .nt-body,
+  .nt-main,
+  .nt-editor-area,
+  .nt-split {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    border: 0 !important;
+  }
+
+  /* CodeMirror：把滚动容器摊平，只留文本 */
+  .cm-editor,
+  .cm-scroller {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .cm-gutters,
+  .cm-activeLine,
+  .cm-activeLineGutter,
+  .cm-selectionBackground,
+  .cm-cursor,
+  .cm-panels,
+  .cm-tooltip {
+    display: none !important;
+  }
+
+  .cm-content {
+    padding: 0 !important;
+    /* 等宽字体保证列对齐；打印字号固定 10pt，纸张尺寸不受屏幕影响 */
+    font-family: var(--nt-font-editor) !important;
+    font-size: 10pt !important;
+    line-height: 1.45 !important;
+  }
+
+  /* 语法高亮一律转黑：彩打也未必真彩，灰阶纸上彩色会变浅 */
+  .cm-content * {
+    color: #000000 !important;
+    background: transparent !important;
+  }
+
+  /* 纯文本预览同样可打印 */
+  .nt-doc-host.is-plain {
+    font-size: 10pt !important;
+    color: #000000 !important;
+  }
+
+  /* 分页控制：标题不落页尾 */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  pre,
+  blockquote,
+  table {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

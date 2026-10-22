@@ -1,15 +1,15 @@
 // 内联 SVG 图标：24 网格线性图标。
 //
-// 为什么自绘而不用 EP 的图标包：编辑器有 40+ 个工具栏图标，
-// 按需引一个图标包会让首屏多几十个组件；而自绘只打包真正用到的
-// 那几个 path。禁 Unicode 字符或 Emoji 冒充图标（DESIGN.md）。
+// 尺寸走三档（sm 14 / md 16 / lg 18），**不跟随 font-size**：图标曾经是 1em，
+// 于是 11px 的提示行与 28px 的标题里图标尺寸差出 2.5 倍。
+
 <template>
   <svg
     class="nt-icon"
+    :class="`is-${size}`"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="1.7"
     stroke-linecap="round"
     stroke-linejoin="round"
     aria-hidden="true"
@@ -21,7 +21,14 @@
 <script lang="ts" setup>
 import { computed } from 'vue'
 
-const props = defineProps<{ name: string }>()
+const props = withDefaults(
+  defineProps<{
+    name: string
+    /** 尺寸档位：sm 14 / md 16（缺省）/ lg 18，固定像素，不跟随字号。 */
+    size?: 'sm' | 'md' | 'lg'
+  }>(),
+  { size: 'md' },
+)
 
 /** 24×24 线性图标的 path 集合。新增图标只在这里加一条。 */
 const PATHS: Record<string, string[]> = {

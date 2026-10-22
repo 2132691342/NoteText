@@ -15,7 +15,7 @@
       <span class="nt-dot" :class="{ 'is-clean': !tab.dirty }" />
       <span class="nt-tab-label" :title="tab.path || tab.title">{{ displayName(tab) }}</span>
       <button class="nt-tab-close" @click.stop="onClose(tab)">
-        <NtIcon name="x" />
+        <NtIcon name="x" size="sm" />
       </button>
     </div>
     <div class="nt-tabbar-spacer" />
@@ -136,6 +136,16 @@ function onMenu(e: MouseEvent, tab: Tab) {
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius);
   box-shadow: var(--nt-card-shadow);
+  /* 从触发位置弹出来：缩放锚点在左上，符合「从那一行长出来」的直觉 */
+  transform-origin: top left;
+  animation: nt-menu-in var(--nt-dur-fast) var(--nt-ease);
+}
+
+@keyframes nt-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 
 .nt-ctx-item {
@@ -147,11 +157,20 @@ function onMenu(e: MouseEvent, tab: Tab) {
   font-size: var(--nt-fs-sm);
   color: var(--nt-ink);
   text-align: left;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-ctx-item:hover {
   background: var(--nt-surface-selected);
   color: var(--nt-primary);
+}
+
+/* 菜单项是整行文字：按下压深一档，不缩放 */
+.nt-ctx-item:active {
+  background: var(--nt-primary-soft);
+  color: var(--nt-primary-strong);
 }
 
 .nt-menu-sep {

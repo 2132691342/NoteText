@@ -2,13 +2,13 @@
 //
 // 为什么不引 tree-sitter：真正的 AST 解析器体积大且要 wasm，
 // 而「跳到函数」这个需求用每种语言的正则就够。误判的代价是列表里多几项，
-// 用户点一下发现不对就换一个——可接受。
+
 <template>
   <div class="nt-panel">
     <div class="nt-panel-head">
       <span>{{ t('sidebar.functions') }}</span>
       <button class="nt-icon-btn" :title="t('common.refresh')" @click="scan">
-        <NtIcon name="refresh" />
+        <NtIcon name="refresh" size="sm" />
       </button>
     </div>
     <div v-if="!editor.active" class="nt-empty">

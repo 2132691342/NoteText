@@ -1,8 +1,8 @@
 // 查找 / 替换浮窗：CodeMirror 的搜索面板不够（要「在文件中查找」），
-// 所以这里自绘一版，把「本文件查找 / 替换 / 目录查找」三件事放一起。
 //
+// 所以这里自绘一版，把「本文件查找 / 替换 / 目录查找」三件事放一起。
 // 查找逻辑在编辑器侧（CodeMirror 的 search），目录查找走后端
-// （service::file + tools::FindReplaceService，见 specs/09）。
+
 <template>
   <NtModal :title="mode === 'replace' ? t('dialog.replace') : t('dialog.find')" width="520" @close="emit('close')">
     <div class="nt-find">

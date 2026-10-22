@@ -87,7 +87,7 @@ onMounted(() => {
   align-items: center;
   height: var(--nt-h-menu);
   padding: 0 var(--nt-sp-1) 0 var(--nt-sp-3);
-  background: var(--nt-surface);
+  background: var(--nt-chrome);
   border-bottom: 1px solid var(--nt-border);
   flex: none;
   user-select: none;
@@ -104,13 +104,13 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: var(--nt-sp-5);
+  height: var(--nt-sp-5);
   border-radius: var(--nt-radius-xs);
   background: var(--nt-primary);
   color: var(--nt-primary-contrast);
   font-family: var(--font-display);
-  font-size: 11px;
+  font-size: var(--nt-fs-xs);
   font-weight: 700;
 }
 
@@ -134,7 +134,7 @@ onMounted(() => {
 
 .nt-titlebar-dirty {
   color: var(--nt-primary);
-  font-size: 8px;
+  font-size: var(--nt-fs-xs);
   vertical-align: middle;
   margin-left: 2px;
 }
@@ -148,7 +148,7 @@ onMounted(() => {
 
 .nt-titlebar-sep {
   width: 1px;
-  height: 16px;
+  height: var(--nt-sp-4);
   background: var(--nt-border);
   margin: 0 2px;
 }

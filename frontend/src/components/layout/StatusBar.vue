@@ -47,7 +47,10 @@
       </button>
     </template>
 
-    <span v-if="tab?.read_only" class="nt-readout nt-status-readonly">
+    <span v-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
+      {{ t('status.partial') }}
+    </span>
+    <span v-else-if="tab?.read_only" class="nt-readout nt-status-readonly">
       {{ t('status.readOnly') }}
     </span>
 
@@ -77,7 +80,7 @@ import { useCommandStore } from '@/stores/commands'
 import { getPosition } from '@/composables/useEditorRegistry'
 import { getText } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
-import { debounce } from '@/utils'
+import { debounce, formatSize } from '@/utils'
 
 const { t } = useI18n()
 const editor = useEditorStore()
@@ -85,6 +88,11 @@ const settings = useSettingsStore()
 const commands = useCommandStore()
 
 const tab = computed(() => editor.active)
+
+/** 截断提示：告诉用户读到了哪里，以及为何不能保存。 */
+const truncatedTitle = computed(() =>
+  t('status.partialHint', { size: formatSize(tab.value?.truncated_bytes ?? 0) }),
+)
 const ui = computed(() => settings.config.ui)
 
 const pos = ref({ line: 1, col: 1, selection_len: 0 })
@@ -219,11 +227,20 @@ onUnmounted(() => {
   font-size: var(--nt-fs-hint);
   color: var(--nt-ink-2);
   font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-status-btn:hover {
   background: var(--nt-surface-hover);
   color: var(--nt-ink);
+}
+
+/* 状态栏是读数带：按下只换底，不缩放（一行读数跟着颤很奇怪） */
+.nt-status-btn:active {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
 }
 
 .nt-status-btn.is-warn {

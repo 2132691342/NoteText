@@ -253,6 +253,10 @@ function toggleAll(v: boolean) {
   background: var(--nt-surface-hover);
 }
 
+.nt-batch-item:active {
+  background: var(--nt-surface-selected);
+}
+
 .nt-batch-path {
   flex: none;
   max-width: 40%;

@@ -330,9 +330,8 @@ fn encode_sjis(text: &str) -> Vec<u8> {
 
 // ---- 码表 ----
 //
-// 表是「常用字符」子集，不是完整 Unicode 映射：覆盖中文常用 3000 字 +
-// 标点 + 西欧重音。表里没有的字符解成 U+FFFD / 编成 `?`。
-// 完整映射请换 encoding_rs（见 decode 的注释）。
+// 表是「常用字符」子集，不是完整 Unicode 映射：覆盖中文常用 3000 字 + 标点 + 西欧重音。
+// 表里没有的字符解成 U+FFFD / 编成 `?`。完整映射请换 encoding_rs。
 
 fn table_1252() -> BTreeMap<u16, char> {
     let mut m = BTreeMap::new();

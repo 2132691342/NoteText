@@ -409,7 +409,8 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- 入口统一叫 `Test<Domain>Chain`，一个子测试名就是一句「坏的现象」
+- **一个域一个测试文件**（`src-tauri/tests/<domain>_chain.rs`），公共设施在 `common/mod.rs`。
+  改某个域只读那个文件，不必通读全部测试
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
 - 不写 `-short` 隔离：当前没有依赖真实网络 / 真实 git 的链路，
@@ -436,15 +437,21 @@ mod dialog_stub;
 
 ### 3.4 测试索引
 
-5 个入口 / 1 个文件（`src-tauri/tests/integration.rs`），共 5 条链，一条链一个域。
+11 条链，分 5 个文件（`src-tauri/tests/`），一条链一个域。
 
-| 入口 | 覆盖的链路 |
-|---|---|
-| `test_bootstrap_chain` | **装配与往返**：首次启动写默认配置、空库恢复给空标签、会话顺序与窗口尺寸往返、书签增查删与幂等、空数组必须序列化成 `[]` |
-| `test_file_roundtrip_chain` | **文件往返**：CRLF 读出归一成 LF、不指定行尾按原样写回、显式切换才改、原子写不留临时文件、编码探测与 BOM 剥离补回 |
-| `test_text_pipeline_chain` | **文本变换**：注释切换（半注释块补齐、空行不动）、不支持行注释报错、行编辑去空行/去重/排序、行列换算（多字节不算多列）、统计按 char |
-| `test_tools_chain` | **工具箱硬契约**：坏 JSON 给行列号、行级 diff 对齐、正则捕获组与空匹配推进、三种哈希对已知向量 |
-| `test_batch_chain` | **批量操作护栏**：扫描阶段不改文件、应用只改勾选的、重命名遇冲突整体拒绝不覆盖 |
+| 文件 | 链 | 覆盖的链路 |
+|---|---|---|
+| `session_chain.rs` | `test_bootstrap_chain` | **装配与往返**：首次启动写默认配置、空库恢复给空标签、会话顺序与窗口尺寸往返、书签增查删与幂等 |
+| | `test_serialization_contract_chain` | **序列化契约**：空列表必须序列化成 `[]` 而不是 `null`（前端按数组读就崩） |
+| `file_chain.rs` | `test_file_roundtrip_chain` | **文件往返**：CRLF 读出归一成 LF、不指定行尾按原样写回、显式切换才改、原子写不留临时文件、目标目录不存在不静默创建 |
+| | `test_encoding_detection_chain` | **编码探测**：BOM 判 utf-8-bom、合法 UTF-8 判 utf-8、GBK 字节判 gb18030、空文件按 UTF-8、BOM 剥离与补回 |
+| `text_chain.rs` | `test_text_pipeline_chain` | **注释切换**：加去往返、半注释块补齐、空行不动、不支持行注释报错 |
+| | `test_line_op_chain` | **行编辑**：去空行、去重保序、升序排序 |
+| | `test_position_and_stats_chain` | **位置与统计**：多字节不算多列、行列反查、越界给 None、统计按 char |
+| `tools_chain.rs` | `test_json_and_diff_chain` | **JSON 与 Diff**：坏 JSON 给行列号、行级 diff 对齐与增删计数 |
+| | `test_regex_and_hash_chain` | **正则与哈希**：捕获组编号、三种哈希对已知向量 |
+| `batch_chain.rs` | `test_batch_find_replace_chain` | **批量查找替换护栏**：扫描阶段不改文件、应用只改勾选的 |
+| | `test_batch_rename_chain` | **批量重命名护栏**：冲突整体拒绝不覆盖、无冲突真的落地 |
 
 **改这里 → 只跑这条**：
 

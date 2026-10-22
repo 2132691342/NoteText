@@ -56,16 +56,22 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
+          // 文档预览族（xlsx / docx-preview / vue-pdf-embed + 它们内嵌的 pdfjs）
+          // 必须是第一个分支：这些包里混着 webpack UMD 产物，
+          // 它们和 vue-i18n 都在 vendor 里时会互相 import 形成 ESM 环，
+          // 顶层求值命中 TDZ（Cannot access 'require$$0' before initialization），
+          // 整个入口模块崩掉、#app 永不挂载——表现为白屏。
+          if (id.includes('docx-preview') || id.includes('xlsx') || id.includes('pdf') || id.includes('jszip')) {
+            return 'vendor-doc'
+          }
           if (id.includes('codemirror') || id.includes('@codemirror') || id.includes('@lezer')) {
             return 'vendor-cm'
           }
           if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts'
-          if (id.includes('xlsx') || id.includes('docx-preview') || id.includes('pdf')) {
-            return 'vendor-doc'
-          }
           if (id.includes('@wangeditor')) return 'vendor-wang'
-          // EP 不归堆：按需导入的组件归进单个 chunk 会把内部依赖一起拉回首屏，
-          // 让 tree-shaking 与各视图的懒加载同时失效。
+          // vue-pdf-embed / mavon 走单独 chunk：它们内嵌 webpack UMD bundle，
+          // 顶层就要执行 require 包装器，不能与任何 import 它们的 chunk 形成环。
+          if (id.includes('mavon')) return 'vendor-md'
           if (id.includes('element-plus') || id.includes('@element-plus')) return undefined
           if (id.includes('vue') || id.includes('pinia') || id.includes('vue-router') || id.includes('vue-i18n')) {
             return 'vendor'

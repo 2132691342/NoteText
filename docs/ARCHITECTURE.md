@@ -148,5 +148,8 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
+测试按域分文件（`src-tauri/tests/<domain>_chain.rs`），公共设施在 `common/mod.rs`，
+每个测试二进制各自编译一次 `common`——所以 `common` 里允许 `#![allow(dead_code)]`：
+不是每个域都用得上全部 helper。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。

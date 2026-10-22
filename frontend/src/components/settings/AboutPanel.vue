@@ -39,7 +39,7 @@
       </div>
 
       <p class="nt-set-note">
-        备份包含书签、代码片段、宏、草稿与最近文件；界面偏好按本机保存，不随备份走。
+        {{ t('settings.backupScope') }}
       </p>
     </section>
   </div>

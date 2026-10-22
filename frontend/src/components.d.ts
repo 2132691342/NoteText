@@ -40,6 +40,7 @@ declare module 'vue' {
     MonitorPanel: typeof import('./components/panels/MonitorPanel.vue')['default']
     NtIcon: typeof import('./components/common/NtIcon.vue')['default']
     NtModal: typeof import('./components/common/NtModal.vue')['default']
+    RecentFilesDialog: typeof import('./components/dialogs/RecentFilesDialog.vue')['default']
     RegexToolDialog: typeof import('./components/dialogs/RegexToolDialog.vue')['default']
     ReplaceDialog: typeof import('./components/dialogs/ReplaceDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

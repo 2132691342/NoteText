@@ -7,7 +7,7 @@
     <div class="nt-panel-head">
       <span>{{ t('sidebar.findResults') }}</span>
       <button class="nt-icon-btn" :title="t('common.clear')" @click="clear">
-        <NtIcon name="trash" />
+        <NtIcon name="trash" size="sm" />
       </button>
     </div>
 

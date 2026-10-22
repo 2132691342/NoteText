@@ -14,7 +14,7 @@
       </div>
 
       <p class="nt-about-desc">
-        轻量级 Windows 桌面文本编辑器。Tauri 2 + Rust + Vue 3。
+        {{ t('about.tagline') }}
       </p>
 
       <div class="nt-about-rows">

@@ -259,6 +259,10 @@ function baseOf(p: string): string {
   background: var(--nt-surface-hover);
 }
 
+.nt-rename-item:active {
+  background: var(--nt-surface-selected);
+}
+
 /* 不可应用的行压暗：让用户一眼看出哪几行是「不会动的」 */
 .nt-rename-item.is-blocked {
   opacity: 0.55;

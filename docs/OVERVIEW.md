@@ -33,7 +33,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | 小地图 | 编辑器 | 配置开关；canvas 只画轮廓不画字，虚拟滚动跟随 |
 | 剪贴板历史 | 剪贴板浮窗 | 编辑器内复制 / 剪切攒 50 条，点击回插 |
 | Hex 查看 | Hex 视图 | 16 字节一行（偏移 / hex / ASCII），只渲染可视区 |
-| 文档预览 | 预览视图 | 按扩展名分流 xlsx / docx / pdf / 图片 / Markdown |
+| 文档预览 | 预览视图 | 按扩展名分流 xlsx / docx / pdf / 图片 / Markdown / 纯文本 |
 | 批量查找替换 | 批量浮窗 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 批量浮窗 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
 | 查找结果 | 侧栏面板 | 目录级查找命中常驻，点击跳文件 + 行 |
@@ -41,6 +41,10 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | 会话恢复 | 壳层 | 启动恢复标签 / 光标 / 窗口大小；未保存草稿也恢复 |
 | 托盘与单实例 | 壳层 | 关闭到托盘；二次启动转交文件路径 |
 | 备份 | 设置 → 关于 | 导出 / 导入书签、片段、宏、草稿、最近文件 |
+| 最近文件 | 菜单 + 欢迎页 | `Ctrl+Shift+O`；可钉住、显示所在目录、移除、清空 |
+| 大文件降级 | 编辑器页 | 超过 32MB 自动只读前段，状态栏标「已截断」，**拦截写回** |
+| 全屏 | 菜单 | `F11`；走窗口 API，标题栏一起消失 |
+| 打印 | 菜单 | `Ctrl+P`；只印正文，界面骨架不印，语法高亮转黑 |
 
 **界面只做「用户每天都做的那一件事」**：不自研插件系统、不做多窗口、不做云同步。
 这条边界让功能面收得住，代价是高级需求要靠外部工具。
@@ -67,12 +71,12 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 |---|---|---|
 | `src-tauri/src/app` | 路径解析、装配（组合根）、生命周期 | [04](specs/04-desktop-shell.md) |
 | `src-tauri/src/shell` | 单实例、托盘、关闭策略 | [04](specs/04-desktop-shell.md) |
-| `src-tauri/src/service/file` | 读 / 写 / 目录树 / 编码探测 / 原子写 / 监控 | [05](specs/05-file-domain.md) |
-| `src-tauri/src/service/editor` | 语言清单、注释切换、行编辑、行列换算 | [06](specs/06-editor-domain.md) |
-| `src-tauri/src/service/tools` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](specs/09-tools.md) |
-| `src-tauri/src/service/userdata` | 书签 / 片段 / 宏 / 草稿 / 最近 / 配置 / 备份 | [08](specs/08-user-data.md) |
-| `src-tauri/src/service/encoding` | 13 种编码的探测 / 解码 / 编码 / BOM | [05](specs/05-file-domain.md) |
-| `src-tauri/src/service/batch` | 目录级查找替换 / 批量重命名（两段式） | [13](specs/13-batch-operations.md) |
+| `src-tauri/src/service/file.rs` | 读 / 写 / 目录树 / 编码探测 / 原子写 / 监控 | [05](specs/05-file-domain.md) |
+| `src-tauri/src/service/editor.rs` | 语言清单、注释切换、行编辑、行列换算 | [06](specs/06-editor-domain.md) |
+| `src-tauri/src/service/tools.rs` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](specs/09-tools.md) |
+| `src-tauri/src/service/userdata.rs` | 书签 / 片段 / 宏 / 草稿 / 最近 / 配置 / 备份 | [08](specs/08-user-data.md) |
+| `src-tauri/src/service/encoding.rs` | 13 种编码的探测 / 解码 / 编码 / BOM | [05](specs/05-file-domain.md) |
+| `src-tauri/src/service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](specs/13-batch-operations.md) |
 | `frontend/src/components/editor` | CodeMirror 容器 + compartments | [06](specs/06-editor-domain.md) |
 | `frontend/src/composables` | 命令表 / 主题 / 语言 / 宏 / 列编辑 / 退出守卫 | [07](specs/07-frontend-state.md) |
 

@@ -1,10 +1,7 @@
 // 与后端 `domain/*` 的 json tag 一一对应。
 //
-// 铁律（AGENTS.md §2.5）：所有跨边界字段一律 snake_case。改字段必须同步
-// `src-tauri/src/domain/` 与 `CONTRACT_VERSION`，否则编译不报错、运行时全 undefined。
-//
-// 时间戳一律 `number` 毫秒整数：RFC3339 字符串要前端再解一次，
-// 而 Date.parse 对不带时区的串会按本地时间猜。
+// 铁律：跨边界字段一律 snake_case。改字段必须同步 `src-tauri/src/domain/` 与
+// `CONTRACT_VERSION`，否则编译不报错、运行时全 undefined。
 
 /** 契约版本：后端改字段时 +1，前端 `api/index.ts` 在启动时校验。 */
 export const CONTRACT_VERSION = 1

@@ -2,7 +2,7 @@
 //
 // 归属（AGENTS.md §2.10）：配置的唯一真相源是后端 SQLite `settings` 表，
 // 这里只是它的镜像 + 派生量（resolvedTheme、缩放变量）。任何改动都
-// 整块回写，不做增量 diff——配置总量几十项，整块 JSON 只有几 KB。
+
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { api, normalizeError } from '@/api'
@@ -151,7 +151,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // ---- 主题 / 缩放落地 ----
 
   function applyTheme() {
-    document.documentElement.setAttribute('data-theme', resolvedTheme.value)
+    // 切换主题时给一次短过渡：只加在 <html> 上，避免每个元素各自跑动画。
+    // 一次性：过渡结束后立即摘掉，否则窗口缩放、面板拖拽都会被它拖慢。
+    const root = document.documentElement
+    root.classList.add('nt-theme-switching')
+    root.setAttribute('data-theme', resolvedTheme.value)
+    window.setTimeout(() => root.classList.remove('nt-theme-switching'), 220)
   }
 
   function applyZoom() {

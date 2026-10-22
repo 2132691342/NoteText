@@ -2,7 +2,7 @@
 //
 // 为什么用 store 而不是各处 ref：工具栏、菜单、快捷键、右键菜单都要能开浮窗，
 // 而浮窗本体挂在 EditorView 的最外层。中间隔了编辑器滚动容器，
-// 只能靠共享状态。
+
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -22,6 +22,7 @@ export type DialogKind =
   | 'hex'
   | 'batchFindReplace'
   | 'batchRename'
+  | 'recentFiles'
 
 export const useDialogStore = defineStore('dialogs', () => {
   const active = ref<DialogKind | null>(null)

@@ -21,7 +21,7 @@
         <ElRadioGroup v-model="newLineEnding" size="small">
           <ElRadioButton value="crlf">CRLF（Windows）</ElRadioButton>
           <ElRadioButton value="lf">LF</ElRadioButton>
-          <ElRadioButton value="system">跟随系统</ElRadioButton>
+          <ElRadioButton value="system">{{ t('menu.themeSystem') }}</ElRadioButton>
         </ElRadioGroup>
       </div>
 
@@ -170,12 +170,22 @@ function removePattern(i: number) {
 }
 
 .nt-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--nt-ink-muted);
-  font-size: 14px;
-  line-height: 1;
+  border-radius: var(--nt-radius-xs);
+  transition:
+    color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-chip-x:hover {
   color: var(--nt-danger);
+  transform: scale(1.06);
+}
+
+.nt-chip-x:active {
+  transform: scale(0.92);
 }
 </style>

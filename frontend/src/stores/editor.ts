@@ -1,12 +1,8 @@
 // 编辑器 store：标签页生命周期、活跃标签、脏标记、光标位置。
 //
-// 归属（AGENTS.md §2.3.3）：**正文内容归编辑器实例（CodeMirror）**，
-// 这里只存「标签的元数据 + 一个内容快照引用」。理由：每次按键都过 IPC
-// 会把主线程与 WebView 之间的通道占满，而保存 / 恢复只需要路径与光标。
-//
-// 因此每个 tab 持有一个 `docRef`（CodeMirror 的 EditorState 引用由
-// 组件层管理），store 不复制正文。需要正文的地方（保存、统计）由组件层
-// 调 `getText(tabId)`，见 composables/useEditorRegistry.ts。
+// **正文内容归编辑器实例（CodeMirror）**，这里只存标签元数据：每次按键都过 IPC
+// 会占满主线程与 WebView 之间的通道，而保存 / 恢复只需要路径与光标。
+
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, normalizeError } from '@/api'
@@ -33,6 +29,18 @@ export interface Tab {
   position: EditorPosition
   scroll_ratio: number
   view_type: ViewType
+  /**
+   * 预览开关：与 view_type 正交。
+   *
+   * 为什么不给 ViewType 加一档 `preview`：view_type 是**后端持久化的契约**
+   * （`domain::editor::ViewType`，按扩展名推断、写进会话表）。预览只是
+   * 「同一个文件换个看法」，不改变它的类型，也不必存进会话。
+   */
+  showing_preview: boolean
+  /** 内容被截断（大文件只读了前段）：此时只读，禁止保存。 */
+  truncated: boolean
+  /** 截断时实际读入的字节数：状态栏据此提示「已读前 X MB」。 */
+  truncated_bytes: number
   /** 分屏时次视图是否打开。 */
   split: boolean
   /** 载入时的探测结果：low_confidence 时状态栏要提示「不确定」。 */
@@ -40,6 +48,13 @@ export interface Tab {
 }
 
 let nextId = 1
+
+/**
+ * 全量读入的大小上限，与后端 `service::file::MAX_FULL_READ` 对齐（32MB）。
+ * 超过它改读前段并只读——把几百 MB 的日志整篇塞进 CodeMirror 会直接卡死界面。
+ * 两边必须同值：只改一边会出现「前端以为能全读、后端拒绕」。
+ */
+const FULL_READ_LIMIT = 32 * 1024 * 1024
 
 export const useEditorStore = defineStore('editor', () => {
   const tabs = ref<Tab[]>([])
@@ -65,6 +80,9 @@ export const useEditorStore = defineStore('editor', () => {
       position: { line: 1, col: 1, selection_len: 0 },
       scroll_ratio: 0,
       view_type: 'code',
+      showing_preview: false,
+      truncated: false,
+      truncated_bytes: 0,
       split: false,
       encoding_uncertain: false,
     }
@@ -128,6 +146,9 @@ export const useEditorStore = defineStore('editor', () => {
    *
    * 已打开则聚焦；否则读文件 → 建标签。读失败只报错不建标签——
    * 建一个空标签会让用户以为「打开了但内容是空的」。
+   *
+   * 大文件自动降级：先 stat 拿大小，超过后端全量读上限就改读前段，
+   * 并标记只读。之前没有任何调用方传 mode，超 32MB 的文件直接报错打不开。
    */
   async function openPath(path: string, mode?: ReadMode): Promise<Tab | null> {
     const existing = findByPath(path)
@@ -138,9 +159,28 @@ export const useEditorStore = defineStore('editor', () => {
       return existing
     }
     try {
-      const content = await api.readFile(path, mode)
+      let effective = mode
+      let truncatedBySize = false
+      if (!effective) {
+        try {
+          const meta = await api.statFile(path)
+          if (meta.size > FULL_READ_LIMIT) {
+            effective = { mode: 'head' }
+            truncatedBySize = true
+          }
+        } catch {
+          /* stat 失败就按全量读试一次，真正的错误由 readFile 报 */
+        }
+      }
+      const content = await api.readFile(path, effective)
       const tab = newTab()
       applyContent(tab, content)
+      // 截断的标签一律只读：保存会把截断后的内容写回磁盘，那是数据丢失。
+      if (content.truncated) {
+        tab.read_only = true
+        tab.truncated = true
+        if (truncatedBySize) tab.truncated_bytes = content.read_bytes
+      }
       return tab
     } catch (e) {
       const err = normalizeError(e)
@@ -216,6 +256,9 @@ export const useEditorStore = defineStore('editor', () => {
         },
         scroll_ratio: d.scroll_ratio,
         view_type: (d.view_type as ViewType) ?? 'code',
+        showing_preview: false,
+        truncated: false,
+        truncated_bytes: 0,
         split: d.split,
         encoding_uncertain: false,
       }

@@ -127,6 +127,15 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** 读剪贴板。读权限比写权限严，失败返回空串由调用方提示。 */
+export async function readClipboard(): Promise<string> {
+  try {
+    return await navigator.clipboard.readText()
+  } catch {
+    return ''
+  }
+}
+
 /** 按字节偏移算行列（1 基）。与后端 `pkg::text::line_col_at` 同构。 */
 export function lineColAt(text: string, byteOffset: number): [number, number] {
   let line = 1

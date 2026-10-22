@@ -10,6 +10,13 @@
 *.json text eol=lf
 *.md text eol=lf
 
+# 脚本统一 LF：check.ps1 由 CI 的 pwsh 执行，
+# 而 .mjs 由 node 执行，两者都不依赖 CRLF。
+# 不钉住时 Windows 检出会把它们写成 CRLF，下次提交又翻回 LF——
+# 于是这两个文件永远显示 modified。
+*.ps1 text eol=lf
+*.mjs text eol=lf
+
 # 二进制资源不参与行尾转换
 *.png binary
 *.ico binary

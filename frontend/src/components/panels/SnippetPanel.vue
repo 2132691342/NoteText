@@ -6,7 +6,7 @@
     <div class="nt-panel-head">
       <span>{{ t('sidebar.snippets') }}</span>
       <button class="nt-icon-btn" :title="t('common.search')" @click="showFilter = !showFilter">
-        <NtIcon name="search" />
+        <NtIcon name="search" size="sm" />
       </button>
     </div>
 

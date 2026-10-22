@@ -8,7 +8,7 @@
       <div
         ref="box"
         class="nt-modal"
-        :style="{ width: typeof width === 'number' ? `${width}px` : width }"
+        :style="{ width: boxWidth }"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
@@ -30,13 +30,26 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import NtIcon from '@/components/common/NtIcon.vue'
 
-defineProps<{ title: string; width?: number | string }>()
+const props = defineProps<{ title: string; width?: number | string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const box = ref<HTMLElement | null>(null)
+
+/**
+ * 宽度归一成带单位的 CSS 值。
+ *
+ * 模板里一律写 `width="640"`（字符串），直接丢给 style 就是无单位的
+ * `640`——CSS 不认，浮窗会退化成内容宽。数字与纯数字字符串都要补 px。
+ */
+const boxWidth = computed(() => {
+  const w = props.width
+  if (w == null || w === '') return undefined
+  if (typeof w === 'number') return `${w}px`
+  return /^\d+(\.\d+)?$/.test(w.trim()) ? `${w.trim()}px` : w
+})
 
 /** 焦点圈：Tab 在浮窗内循环，不逃到编辑器。 */
 function trapFocus(e: KeyboardEvent) {
@@ -81,6 +94,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: var(--nt-sp-6);
   background: var(--el-overlay-color-lighter, rgba(15, 23, 42, 0.28));
+  /* 进：遮罩淡入；出由 useQuitGuard 不负责，浮窗是整块替换，无退场动画 */
+  animation: nt-mask-in var(--nt-dur) var(--nt-ease);
 }
 
 .nt-modal {
@@ -93,6 +108,21 @@ onBeforeUnmount(() => {
   border-radius: var(--nt-radius-xl);
   box-shadow: var(--nt-card-shadow);
   outline: none;
+  /* 从 96% 缩到 100%：轻微的「弹出来」而不是硬切 */
+  animation: nt-modal-in var(--nt-dur-slow) var(--nt-ease);
+}
+
+@keyframes nt-mask-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes nt-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.965) translateY(-6px);
+  }
 }
 
 .nt-modal-head {

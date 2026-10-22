@@ -2,7 +2,7 @@
 //
 // 铁律：模板里禁止硬编码用户可见字符串，一律走 t()。
 // 文案里的裸 `@` 必须写成 {'@'}——裸 @ 会被 intlify 解析成 linked 消息语法，
-// 渲染时抛「Invalid linked format」，整块内容消失。
+
 export default {
   app: {
     name: 'NoteText',
@@ -29,6 +29,7 @@ export default {
     closeAll: '关闭全部标签',
     recentFiles: '最近文件',
     clearRecent: '清空最近文件',
+    pinRecent: '固定 / 取消固定',
     exit: '退出',
     undo: '撤销',
     redo: '重做',
@@ -36,6 +37,9 @@ export default {
     copy: '复制',
     paste: '粘贴',
     selectAll: '全选',
+    moveLineUp: '上移一行',
+    moveLineDown: '下移一行',
+    bookmarkNext: '下一个书签',
     find: '查找…',
     replace: '替换…',
     findInFiles: '在文件中查找…',
@@ -64,6 +68,8 @@ export default {
     about: '关于',
     shortcuts: '快捷键',
     userManual: '用户手册',
+    fullscreen: '全屏',
+    print: '打印…',
   },
   toolbar: {
     new: '新建',
@@ -77,6 +83,14 @@ export default {
     wordWrap: '自动换行',
     zoom: '缩放',
     more: '更多',
+  },
+  welcome: {
+    hint: '打开一个文件，或新建一个开始编辑',
+    newFile: '新建',
+    openFile: '打开…',
+    openFolder: '打开文件夹…',
+    recent: '最近打开',
+    noRecent: '还没有打开过文件',
   },
   status: {
     modified: '已修改',
@@ -95,6 +109,8 @@ export default {
     words: '词数',
     nonBlank: '非空行',
     readOnly: '只读',
+    partial: '已截断',
+    partialHint: '大文件：只读入了前 {size}，不完整的内容不会写回磁盘',
     items: '显示项',
   },
   tab: {
@@ -119,6 +135,9 @@ export default {
     emptyFolder: '空文件夹',
     openFolderHint: '打开一个文件夹开始浏览',
     noBookmarks: '还没有书签',
+    noBookmarksInFile: '这个文件里没有书签',
+    fileMissing: '文件已不存在：{name}',
+    recentCleared: '已清空 {n} 条最近文件',
     bookmarkHint: '在编辑器里按 F2 给当前行加书签',
     noSnippets: '还没有代码片段',
     snippetHint: '在设置里添加常用片段',
@@ -151,6 +170,8 @@ export default {
     search: '搜索',
     results: '个结果',
     stop: '停止',
+    searchHint: '输入关键字后点「搜索」',
+    onlyFirst: '仅前 {n} 条',
   },
   tool: {
     json: 'JSON 工具',
@@ -217,6 +238,9 @@ export default {
     previewTooLarge: '文件太大，预览会卡住界面',
     previewTooLargeHint: '请用外部程序打开',
     openExternal: '用外部程序打开',
+    backToEdit: '返回编辑',
+    encodingConvertHint: '转换会立即写回当前文件。行尾与编码按上面的选择落盘，编辑器里的文本不变。',
+    encodingLowConfidence: '当前编码是探测出来的、置信度不高——先确认上面「源编码」选对了再转。',
     batchFindReplace: '批量查找替换',
     batchRename: '批量重命名',
     batchDir: '目录',
@@ -301,6 +325,14 @@ export default {
     exportDone: '备份已导出',
     importDone: '已导入 {count} 项',
     importFailed: '导入失败：{reason}',
+    backupScope: '备份包含书签、代码片段、宏、草稿与最近文件；界面偏好按本机保存，不随备份走。',
+    seconds: '秒',
+  },
+  about: {
+    tagline: '轻量级 Windows 桌面文本编辑器。Tauri 2 + Rust + Vue 3。',
+  },
+  drop: {
+    hint: '松手即用 NoteText 打开',
   },
   help: {
     title: '帮助',
@@ -311,6 +343,8 @@ export default {
   },
   toast: {
     saved: '已保存 {name}',
+    saveBlockedTruncated: '这是大文件的截断副本，已阻止写回；请用外部程序编辑',
+    saveOnExitFailed: '「{name}」保存失败，已放弃修改',
     saveFailed: '保存失败：{reason}',
     opened: '已打开 {name}',
     openFailed: '打开失败：{reason}',
@@ -358,6 +392,7 @@ export default {
     untitled: '未命名',
     browse: '浏览…',
     apply: '应用',
+    removeFromList: '从列表移除',
   },
   error: {
     pathEmpty: '路径不能为空',
