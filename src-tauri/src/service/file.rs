@@ -1,13 +1,6 @@
 //! 文件服务：读取 / 写入 / 目录树 / 元信息 / 编码探测。
 //!
-//! 关键决策：
-//! - **编码探测用 BOM 优先 + 启发式兜底**：UTF-8 无 BOM 是主流，但 GBK 文件
-//!   按 UTF-8 解会出乱码；探测不到就给 utf-8 并置 `low_confidence`，
-//!   前端提示用户手动选，不假装确定。
-//! - **保存按「读时的编码 + 行尾 + BOM」写回**：用户没主动改编码时，
-//!   一次保存不该把整个文件从 GBK 转成 UTF-8。
-//! - **大文件分模式读**：超阈值时不静默全量读入（会把 WebView 卡死），
-//!   由前端让用户选「只读前 N MB」或「强制全量」。
+//! 三条决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；大文件分模式读。
 
 use std::fs;
 use std::path::Path;
@@ -32,13 +25,8 @@ pub struct FileService {
     db: Arc<Db>,
     /// 目录监控器：建一次复用，`watch` 只加路径。
     watcher: std::sync::Mutex<Option<RecommendedWatcher>>,
-    /// 自己刚写过的路径（路径 → 时刻）：用来吞掉自己触发的 fs 事件。
-    ///
-    /// 不做这一步的后果：每次 Ctrl+S 都会收到「文件已在外部修改」，
-    /// 用户要么被提示淹没，要么学会无条件忽略它——后者等于把真正的
-    /// 外部变更提示也废掉了。
-    ///
-    /// 用 `Arc` 是因为监控回调是 `move` 闭包，必须与这里共享同一张表。
+    /// 预览二进制读取上限 20MB：再大的文件交给系统默认程序更快，
+    /// 也不会把 IPC 通道占满。
     self_writes: SelfWrites,
 }
 
@@ -55,10 +43,7 @@ fn is_recent(writes: &SelfWrites, path: &str, now: std::time::Instant) -> bool {
         .is_some_and(|t| now.duration_since(*t) < SELF_WRITE_GRACE)
 }
 
-/// 自己写入后忽略外部变更事件的时长。
-///
-/// 覆盖「原子写先写临时文件再 rename」后文件系统投递事件的延迟；
-/// 不设过长：用户在自己保存后立刻用别的程序改这个文件，应该收到提示。
+/// 自己写入后忽略外部变更事件的时长。覆盖「原子写先写临时文件再 rename」后文件系统投递事件的延迟； 不设过长：用户在自己保存后立刻用别的程序改这个文件，应该收到提示。
 const SELF_WRITE_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
 
 impl FileService {
@@ -82,9 +67,6 @@ impl FileService {
     }
 
     /// 读目录（一层，不递归）。排序：目录在前、名称不区分大小写。
-    ///
-    /// 忽略规则来自 `FileConfig.ignore_patterns`：不递归算总量，
-    /// 用户展开 `.git` 才知道代价就晚了。
     pub fn read_dir(&self, dir: &str, ignore: &[String]) -> AppResult<Vec<DirEntry>> {
         let path = Path::new(dir);
         if !path.is_dir() {
@@ -157,11 +139,7 @@ impl FileService {
         })
     }
 
-    /// 读原始字节：Hex 视图与图片 / PDF 预览用。
-    ///
-    /// 直接从 Rust 读而不是放给 WebView 的 fs 插件：这些文件动辄几十 MB，
-    /// 走插件等于把整个磁盘读权限交给渲染层。这里只允许读「存在且不超过
-    /// `limit`」的文件，越界就返回错误让调用方提示改用什么打开。
+    /// 读原始字节：Hex 视图与图片 / PDF 预览用。直接从 Rust 读而不是放给 WebView 的 fs 插件：这些文件动辄几十 MB， 走插件等于把整个磁盘读权限交给渲染层。
     pub fn read_bytes(&self, path: &str, limit: u64) -> AppResult<Vec<u8>> {
         let p = Path::new(path);
         let meta = fs::metadata(p).map_err(|e| {
@@ -187,10 +165,7 @@ impl FileService {
         fs::read(p).map_err(|e| AppError::wrap("1002", "读不了：文件被占用", e))
     }
 
-    /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。
-    ///
-    /// 只用 NUL 判据：UTF-16 文本也含 NUL，但编辑器用 UTF-16 打开的场景
-    /// 远少于真二进制文件，误判的代价（用户手动切编码）可接受。
+    /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。只用 NUL 判据：UTF-16 文本也含 NUL，但编辑器用 UTF-16 打开的场景 远少于真二进制文件，误判的代价（用户手动切编码）可接受。
     fn sniff_binary(&self, path: &Path) -> bool {
         let Ok(meta) = fs::metadata(path) else {
             return false;
@@ -297,9 +272,6 @@ impl FileService {
     }
 
     /// 写文件。`encoding` / `line_ending` / `bom` 缺省时按读时的值写回。
-    ///
-    /// 原子写（临时文件 + rename）：保存中途断电不会留下半个文件。
-    /// 直接 `fs::write` 截断原文件再写，崩在中间就是数据丢失。
     pub fn write(
         &self,
         path: &str,
@@ -373,10 +345,7 @@ impl FileService {
         }
     }
 
-    /// 监听目录：文件树的外部变更通知。
-    ///
-    /// 复用同一个 watcher：每次 `watch` 都新建一个会让 inotify/FSEvents
-    /// 句柄随目录切换无限增长。
+    /// 监听目录：文件树的外部变更通知。复用同一个 watcher：每次 `watch` 都新建一个会让 inotify/FSEvents 句柄随目录切换无限增长。
     pub fn watch_dir(&self, dir: &str, app: tauri::AppHandle) -> AppResult<()> {
         let mut guard = self
             .watcher
@@ -440,9 +409,7 @@ impl FileService {
     }
 }
 
-/// 原子写：同目录临时文件 + rename。
-///
-/// 必须同目录：跨卷（C: → D:）的 rename 会退化成复制，原子性就没了。
+/// 原子写：同目录临时文件 + rename。必须同目录：跨卷（C: → D:）的 rename 会退化成复制，原子性就没了。
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let tmp = dir.join(format!(

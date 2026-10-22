@@ -1,10 +1,6 @@
-//! AppHandle 的进程内存取。
+//! AppHandle 的全局存取。
 //!
-//! 为什么需要：`tauri::command` 默认不注入 AppHandle，而对话框 / 托盘 /
-//! 事件广播都要它。逐个参数传会把签名弄得很长，所以在装配期存一份。
-//!
-//! `OnceLock` 而不是 `lazy_static` 句柄：AppHandle 在 `run()` 里才存在，
-//! 存进去之后整个进程只读。
+//! command 默认不注入 AppHandle，装配时装一份供各处按需取用。
 
 use std::sync::OnceLock;
 

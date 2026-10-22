@@ -1,10 +1,6 @@
-//! 数据库：打开连接 + 迁移 + WAL 配置。
+//! 数据库：打开 + 迁移 + WAL 设置。
 //!
-//! fail-fast 原则（AGENTS.md §2.10）：`bootstrap::build` 里 DB 打不开直接启动失败。
-//! 书签 / 片段 / 宏 / 会话恢复都依赖它，半残启动会让用户在第一次打开面板时才报错。
-//!
-//! rusqlite 用 `bundled` feature：SQLite C 源码随 crate 一起编，
-//! 用户机器不需要单独装 SQLite，也没有 CGO 依赖链。
+//! fail-fast：DB 打不开直接启动失败，不做半残启动。
 
 use std::path::Path;
 
@@ -12,10 +8,7 @@ use rusqlite::Connection;
 
 use crate::pkg::error::{codes, AppError, AppResult};
 
-/// 打开的数据库连接。
-///
-/// `Mutex` 而不是 `RwLock`：SQLite 写要独占，读多写少的优化在这里没有意义
-/// （编辑器场景写操作都是毫秒级小事务）。
+/// 打开或创建数据库。
 pub struct Db {
     conn: std::sync::Mutex<Connection>,
 }
@@ -61,9 +54,6 @@ impl Db {
     }
 
     /// 在连接上执行一段操作。闭包返回 `AppResult`，错误原样上传。
-    ///
-    /// 不在这一层做重试：并发冲突由 busy_timeout 兜，重试会把
-    /// 「SQL 写错」也重试三遍才报，排障更难。
     pub fn with<T>(&self, f: impl FnOnce(&Connection) -> AppResult<T>) -> AppResult<T> {
         let conn = self
             .conn
@@ -73,9 +63,6 @@ impl Db {
     }
 
     /// 跑迁移。幂等：已存在的表跳过。
-    ///
-    /// 约定（AGENTS.md §2.11）：新增字段只增不删、零值兜底；
-    /// 废弃字段留在表里（改语义靠代码兼容），不主动 DROP。
     fn migrate(&self) -> AppResult<()> {
         self.with(|conn| {
             conn.execute_batch(SCHEMA)
@@ -95,9 +82,7 @@ impl Db {
     }
 }
 
-/// 基础 schema：`CREATE TABLE IF NOT EXISTS`，与迁移脚本共用一份。
-///
-/// 字段命名 snake_case；时间一律毫秒整数（`i64`）。
+/// 基础 schema：`CREATE TABLE IF NOT EXISTS`，与迁移脚本共用一份。字段命名 snake_case；时间一律毫秒整数（`i64`）。
 const SCHEMA: &str = r#"
 -- 会话与标签：会话恢复的事实源（正文在前端，这里只存布局与元数据）
 CREATE TABLE IF NOT EXISTS sessions (
@@ -188,8 +173,5 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 "#;
 
-/// V1 迁移：初始版本只有 schema，留作后续加字段的锚点。
-///
-/// 下一个迁移写成 `MIGRATION_V2` 并在 `migrate()` 里加一段 `if v < 2`：
-/// 顺序执行，跳版本（v0 → v2）时两段都会跑。
+/// V1 迁移：初始版本只有 schema，留作后续加字段的锚点。下一个迁移写成 `MIGRATION_V2` 并在 `migrate()` 里加一段 `if v < 2`： 建表 + 索引。
 const MIGRATION_V1: &str = "";

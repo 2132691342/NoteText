@@ -1,8 +1,6 @@
-//! 装配：把各层接起来的唯一入口（组合根）。
+//! 装配：把各组成部分连成唯一入口。
 //!
-//! 顺序固定：路径 → 目录 → 数据库 → 配置 → 服务容器。
-//! 每步失败都带一句人话 message（见 `pkg::error`），因为启动失败只有一次
-//! 被用户看见的机会。
+//! 顺序固定：路径、目录、数据库、repo、service；每步失败给一句人话。
 
 use crate::app::paths as app_paths;
 use crate::db::Db;
@@ -19,9 +17,7 @@ use crate::service::Services;
 use std::sync::Arc;
 
 /// 应用状态：`tauri::State<AppState>` 的全部内容。
-///
-/// `Arc` 而不是直接持有：command handler 与托盘回调都要拿它，
-/// 而 Tauri 的 State 是借来的，不能Clone。
+/// 用 Arc 是为了让托盘回调也能持有同一份。
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Db>,
@@ -61,10 +57,7 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// 导出备份：把用户数据表整块 dump 成 JSON。
-///
-/// 不含 `settings`（那是本机偏好，换机器不一定要带）；
-/// 含书签 / 片段 / 宏 / 草稿 / 最近文件——这些是用户自己攒的资产。
+/// 导出备份：把用户数据表整块 dump 成 JSON。导出备份：把用户数据表整块导出成 JSON。
 pub fn export_backup(db: &Db) -> AppResult<serde_json::Value> {
     db.with(|conn| {
         let mut out = serde_json::Map::new();

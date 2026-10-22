@@ -1,7 +1,6 @@
 //! 路径解析：数据目录的唯一来源。
 //!
-//! 生产在 `%APPDATA%\NoteText\`；`NOTETEXT_HOME` 可覆盖整个根目录，
-//! 供测试与开发隔离，不碰用户真实数据。
+//! 默认落在 %APPDATA% 下的 NoteText 目录，NOTETEXT_HOME 可覆写。
 
 use std::path::{Path, PathBuf};
 
@@ -23,10 +22,7 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    /// 从环境解析路径。`NOTETEXT_HOME` 优先，否则走 `%APPDATA%`。
-    ///
-    /// 失败只可能是 `%APPDATA%` 都取不到（极少见）：此时没有可写位置，
-    /// 继续跑只会在用户第一次保存时炸，所以启动期就报。
+    /// 路径错误的包装。
     pub fn resolve() -> AppResult<Self> {
         let root = if let Ok(override_home) = std::env::var("NOTETEXT_HOME") {
             PathBuf::from(override_home)
@@ -60,11 +56,8 @@ impl AppPaths {
     }
 }
 
-/// 路径是否落在 `root` 之内：防穿越的判据。
-///
-/// 比较前先 `canonicalize`：Windows 上同一路径的短名（`RUNNER~1`）与长名、
-/// 符号链接形式字面不等，直接 `starts_with` 会误判越界（或漏判）。
-/// 文件不存在时 canonicalize 失败——那说明它还没被创建，按字面判。
+/// 数据目录下的固定文件名。集中在这里是为了让 NOTETEXT_HOME
+/// 覆写后所有路径跟着走，不会漏掉某一个还写死在 %APPDATA%。
 pub fn is_within(root: &Path, candidate: &Path) -> bool {
     let root_real = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let cand_real = candidate

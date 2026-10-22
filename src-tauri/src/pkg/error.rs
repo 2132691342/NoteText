@@ -1,15 +1,11 @@
-//! 统一错误类型：所有跨 invoke 边界返回的错误都走它。
+//! 统一错误类型：所有跨 invoke 边界的错误都由它承载。
 //!
-//! 码值是**数字字符串**而不是 int：前端按 code 分流，而 int 会被误读成状态码。
-//! 段位与处置动作见 docs/ERROR-CODES.md。
+//! 码值是数字字符串而非 int；段位见 docs/ERROR-CODES.md。
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// 应用错误：带业务码 + 人话信息 + 底层原因。
-///
-/// `#[serde(transparent)]` 让 invoke 的错误序列化成 `{ code, message, details }`，
-/// 前端 `types/api.ts` 的 `AppError` 与它一一对应。
+/// 错误码常量集中在这里。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppError {
     /// 业务码（数字字符串）。前端按它分流到具体提示与动作。
@@ -30,9 +26,7 @@ impl AppError {
         }
     }
 
-    /// 包住底层错误：保留 `source` 链的同时给出人话 message。
-    ///
-    /// `Display` 只输出 message（弹窗用）；完整链走 `log_fields()`。
+    /// 包住底层错误：保留 `source` 链的同时给出人话 message。`Display` 只输出 message（弹窗用）；完整链走 `log_fields()`。
     pub fn wrap(code: &str, message: impl Into<String>, cause: impl fmt::Display) -> Self {
         Self {
             code: code.to_string(),
@@ -71,9 +65,8 @@ impl fmt::Display for AppError {
 
 impl std::error::Error for AppError {}
 
-// 常见底层错误的一次性转换：调用点不必每个都 wrap 一遍。
-// 转换时补一句人话 message，避免 std::io::Error 的 "The system cannot find the
-// path specified. (os error 3)" 直接弹给用户。
+/// 底层错误的一次性转换：调用点不必每个都 wrap 一遍。
+/// 转换时补一句人话 message，避免底层的原始英文串直接给用户看。
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         Self::wrap("1001", "文件读写失败", e)

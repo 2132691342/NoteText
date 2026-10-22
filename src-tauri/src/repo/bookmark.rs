@@ -1,7 +1,6 @@
-//! 书签持久化：按文件与行号定位，支持置顶外的按创建时间排序。
+//! 书签持久化：按「文件某一行」定位。
 //!
-//! 唯一索引 `(path, line)`：同一行重复加书签时报「已存在」而不是插两行，
-//! 否则面板里会出现两条长得一样的条目，用户分不清删哪条。
+//! 唯一键是 path + line：同一行重复加视为已存在。
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -100,9 +99,7 @@ impl BookmarkRepo {
         Ok(n)
     }
 
-    /// 切换书签：有则删、无则加（F2 的行为）。
-    ///
-    /// 返回 `Some(id)` = 加上的书签；`None` = 已删掉。
+    /// 切换书签：有则删、无则加（F2 的行为）。返回 `Some(id)` = 加上的书签；`None` = 已删掉。
     pub fn toggle(
         conn: &Connection,
         req: &BookmarkAddReq,

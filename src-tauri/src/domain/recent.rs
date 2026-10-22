@@ -1,7 +1,6 @@
-//! 最近文件域模型：打开 / 保存记账，面板支持置顶与清理。
+//! 最近文件域模型：记录与固定。
 //!
-//! 数据来自 SQLite `recent_files` 表；`exists` 由后端在返回前探测，
-//! 前端不自己 stat（那要在 WebView 里再走一次 IPC）。
+//! exists 由后端打开前探测，省掉前端每个文件一次 IPC。
 
 use serde::{Deserialize, Serialize};
 

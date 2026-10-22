@@ -1,8 +1,6 @@
-//! 业务编排层：命令的唯一落点。
+//! 业务编排层：事务边界所在。
 //!
-//! 铁律（AGENTS.md §2.2）：service 不 import `commands` / `tauri`，
-//! 只依赖 repo / domain / pkg / app。它也不知道窗口与托盘的存在——
-//! 那些是壳层的事。
+//! service 不 import commands 与 tauri，也不知道窗口与托盘的存在。
 
 pub mod batch;
 pub mod editor;
@@ -23,10 +21,7 @@ use crate::service::session::SessionService;
 use crate::service::tools::ToolsService;
 use crate::service::userdata::UserDataService;
 
-/// 服务容器：`AppState` 持有，command handler 只跟它打交道。
-///
-/// 每个 service 拿 `Arc<Db>`：它们不互相引用（能力域之间不互引，AGENTS.md §2.2），
-/// 需要合作时由 command 层串起来。
+/// 服务容器：`AppState` 持有，command handler 只跟它打交道。每个 service 拿 `Arc<Db>`：它们不互相引用（能力域之间不互引，AGENTS.md §2.2）， 需要合作时由 command 层串起来。
 #[derive(Clone)]
 pub struct Services {
     pub file: Arc<FileService>,

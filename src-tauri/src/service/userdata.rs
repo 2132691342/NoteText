@@ -1,7 +1,6 @@
-//! 用户数据服务：书签 / 片段 / 宏 / 草稿 / 最近文件 / 备份导入导出。
+//! 用户数据服务：书签 / 片段 / 宏 / 草稿 / 最近文件 / 备份。
 //!
-//! 五个数据源共用「列表 + 增删 + 备份」的形态，所以放一个 service 而不是五个：
-//! 它们只是「某张表」的编排，不值得各自开目录（AGENTS.md §2.1 的开包门槛）。
+//! 形态都是「列表 + 增删 + 备份」，合在一个 service 里避免过度碎片化。
 
 use std::sync::Arc;
 
@@ -242,9 +241,7 @@ impl UserDataService {
         crate::app::bootstrap::export_backup(&self.db)
     }
 
-    /// 导入备份：只覆盖「备份里有的表」，其余不动。
-    ///
-    /// 不整库替换：用户在本机新加的书签不该被一份旧备份抹掉。
+    /// 导入备份：只覆盖「备份里有的表」，其余不动。不整库替换：用户在本机新加的书签不该被一份旧备份抹掉。
     pub fn import_backup(&self, json: &serde_json::Value) -> AppResult<usize> {
         let mut n = 0usize;
         if let Some(arr) = json.get("snippets").and_then(|v| v.as_array()) {

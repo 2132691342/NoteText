@@ -1,6 +1,6 @@
-//! 编码域模型：检测结果与转换请求。
+//! 编码域模型：转换请求与编码清单项。
 //!
-//! 后端内置 12 种编码：UTF 家族 + GB18030 / Big5 / Shift_JIS / EUC-JP / EUC-KR / KOI8-R + Windows-1252 / ISO-8859-1。
+//! 支持 12 种：UTF 系列、GB18030、Big5、Shift_JIS、EUC-JP、EUC-KR、KOI8-R、西欧两种。
 
 use serde::{Deserialize, Serialize};
 

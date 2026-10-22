@@ -1,7 +1,6 @@
-//! 工具箱服务：JSON / Diff / 哈希 / 正则 / 行编辑 / 编码转换。
+//! 工具箱服务：JSON / Diff / 哈希 / 正则 / 格式转换。
 //!
-//! 全是纯计算，不落库、不碰窗口。前端每个工具箱是一个浮窗，
-//! 调这里拿到结果后渲染。
+//! 全是无副作用的纯计算，前端每个工具窗单独 invoke 一次。
 
 use std::sync::Arc;
 
@@ -355,14 +354,8 @@ impl ToolsService {
         }
     }
 
-    /// 逐行判定「这一行有没有命中模式」。
-    ///
-    /// 给批量查找用：那里要扫成千上万行，而 `regex_test` 每次调用都重新编译
-    /// 模式并拼一个结果列表——逐行走一遍等于编译上万次。这里只编译一次，
-    /// 然后复用编译产物对每行匹配。
-    ///
-    /// `Re` 是本模块的私有类型，所以编译与匹配都留在内部，
-    /// 对外只给一个 bool 数组，不把内部表示泄漏出去。
+    /// 编码转码：先解成 UTF-8 文本，再按目标编码写出。
+    /// 同编码直返原文——UTF-8 到 UTF-8 再走一遍往返没有意义。
     pub fn regex_lines_match(&self, pattern: &str, lines: &[&str]) -> Result<Vec<bool>, String> {
         let req = RegexTestReq {
             pattern: pattern.to_string(),
@@ -983,10 +976,8 @@ fn py_type(v: &serde_json::Value, key: &str) -> String {
     }
 }
 
-// ---- 迷你正则引擎 ----
-//
-// 支持字面量 / `.` / 量词 / `[...]` / `\d \w \s` / 锚点 / `(...)` 捕获组（非嵌套）/ `|` 交替。
-// 不支持反向引用、命名组、lookaround、`{n,m}`。要支持这些时换 regex crate（二进制 +1MB）。
+/// ---- 迷你正则引擎 ----
+/// 支持字面量、`.`、量词、`[...]`、`\d \w \s`、锚点、`(...)` 捕获组（非嵌套）与 `|` 交替。
 
 #[derive(Debug, Clone)]
 enum Re {
@@ -1251,9 +1242,8 @@ fn parse_group(
 fn regex_exec(prog: &[Re], text: &str, start: usize, group_count: usize) -> Option<RegexMatchVO> {
     let chars: Vec<char> = text.chars().collect();
     for from in start..=chars.len() {
-        // groups[0] 闲置，groups[1..=group_count] 按编译期的组号存放。
-        // 未参与匹配的组留空串（与主流正则引擎一致），不返回 None——
-        // 前端按固定列表渲染组号，缺一项就对不上行。
+        // groups[0] 闲置，groups[1..=group_count] 按编译期的组号存放；未参与匹配的组留空串，
+        // 这样前端可以按固定列表渲染组号。
         let mut groups: Vec<Vec<String>> = vec![Vec::new(); group_count + 1];
         if let Some(end) = match_here(prog, 0, &chars, from, &mut groups, true) {
             let whole: String = chars[from..end].iter().collect();
@@ -1278,10 +1268,7 @@ fn regex_exec(prog: &[Re], text: &str, start: usize, group_count: usize) -> Opti
     None
 }
 
-/// 从 `pi` 位置匹配 `prog[pi..]`，返回匹配结束位置（`chars` 下标）。
-///
-/// 贪心 + 回溯：`*` / `+` 先吃最长，失败再吐。深度由输入长度封顶，
-/// 不会栈溢出（最长输入受 32MB 读取上限约束）。
+/// 从 `pi` 位置匹配 `prog[pi..]`，返回匹配结束位置（`chars` 下标）。贪心 + 回溯：`*` / `+` 先吃最长，失败再吐。
 #[allow(clippy::too_many_arguments)]
 fn match_here(
     prog: &[Re],
@@ -1340,9 +1327,8 @@ fn match_here(
         }
         Re::Group { idx, alt } => {
             if *idx > 0 {
-                // 捕获组：按分支顺序试，把整组文本记进 groups[idx]。
-                // 组内可能还有嵌套组（本引擎不支持嵌套捕获，分支里再出现
-                // 捕获组会被当成量词组），所以这里只记最外层的区间。
+                // 按分支顺序试，把整组文本记进 groups[idx]；本引擎不支持嵌套捕获，
+                // 所以只记最外层的区间。
                 let slot = (*idx).min(groups.len() - 1);
                 for branch in alt {
                     let saved = groups[slot].clone();

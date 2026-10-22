@@ -1,10 +1,6 @@
-//! 日志：tracing + 双文件落盘（全量 / 告警）。
+//! 日志：tracing + 双文件落盘（全量 + 告警）。
 //!
-//! 约定（AGENTS.md §2.10）：
-//! - 只 info / warn / error 三档，不进日志的（debug / trace）不该存在
-//! - `app.log` 全量，`warn.log` 只要 warn 与 error：排障先看后者
-//! - 启动横幅同时打印数据目录与版本号——「排障第一步」靠它确认读写位置
-//! - 非阻塞：日志写盘失败绝不影响编辑器可用
+//! 只记 info / warn / error 三档；写日志失败不能影响编辑可用性。
 
 use std::fs::{File, OpenOptions};
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
@@ -52,9 +48,7 @@ pub fn init(paths: &AppPaths) {
         .try_init();
 }
 
-/// 简易滚动 appender：超限时改名 `.1`/`.2`/`.3`。
-///
-/// 不引 rolling-file 依赖：编辑器只需要「不会无限长」，三份轮换足够。
+/// 简易滚动 appender：超限时改名 `.1`/`.2`/`.3`。不引 rolling-file 依赖：编辑器只需要「不会无限长」，三份轮换足够。
 fn rolling_appender(path: &std::path::Path) -> BoxMakeWriter {
     let path = path.to_path_buf();
     BoxMakeWriter::new(move || -> Box<dyn std::io::Write + Send> {

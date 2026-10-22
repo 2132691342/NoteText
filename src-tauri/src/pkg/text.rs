@@ -1,19 +1,11 @@
-//! 纯文本工具：与 IO 无关的字符串算法，全部可单测。
+//! 纯文本工具：与 IO 无关的字符串算法。
 //!
-//! 放这里的判据（AGENTS.md §2.2）：不依赖 domain / repo / service，
-//! 输入输出都是基础类型。工具箱服务（service/tools）编排它们。
-
-/// 行尾归一化：把 CRLF / CR 统一成 LF，便于编辑器内部计算行列。
-///
-/// 状态栏的「Ln 12, Col 8」按 LF 计算：混用行尾时列号会随行尾漂移，
-/// 用户报「光标位置不对」实际是行尾没归一。
+//! 依赖方向要求：不引入 domain / repo / service。
 pub fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 /// 按字节偏移算行列（1 基）。用于查找结果定位与书签跳转。
-///
-/// 偏移必须落在字符边界上，否则按字节扫会把多字节字符算成多列。
 pub fn line_col_at(text: &str, byte_offset: usize) -> (usize, usize) {
     let mut line = 1usize;
     let mut col = 1usize;
@@ -56,9 +48,7 @@ pub fn offset_at_line_col(text: &str, line: usize, col: usize) -> Option<usize> 
     None
 }
 
-/// 按字节数切分前缀，不切断多字节字符。
-///
-/// 大文件分块读取 / 预览截断都用它：按 `&s[..n]` 直接切会在中文上 panic。
+/// 按字节数切分前缀，不切断多字节字符。大文件分块读取 / 预览截断都用它：按 `&s[..n]` 直接切会在中文上 panic。
 pub fn prefix_by_bytes(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;
@@ -70,9 +60,7 @@ pub fn prefix_by_bytes(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
-/// 移除空行（行编辑功能之一）。
-///
-/// 只移「完全空白」的行；保留缩进可见性由上层决定，这里不猜。
+/// 移除空行（行编辑功能之一）。只移「完全空白」的行；保留缩进可见性由上层决定，这里不猜。
 pub fn remove_blank_lines(text: &str) -> String {
     let mut out: Vec<&str> = Vec::with_capacity(text.lines().count());
     for line in text.lines() {

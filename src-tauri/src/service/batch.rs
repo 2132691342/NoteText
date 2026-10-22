@@ -1,12 +1,6 @@
-//! 批量操作服务：目录级查找替换 + 批量重命名。
+//! 批量服务：目录级查找替换与批量重命名。
 //!
-//! 两段式是硬约束（见 domain::batch 的文件头）：scan 出预览，
-//! apply 才落盘。任何「扫到就改」的写法都违背这里的设计——批量改磁盘
-//! 没有撤销键，用户必须在写之前看见自己要改什么。
-//!
-//! 复用文件域的两个护栏：
-//! - `MAX_FULL_READ` 之上的文件跳过（不静默读进内存）；
-//! - 含 NUL 的疑似二进制文件跳过（替换会破坏结构）。
+//! 两段式：scan 阶段绝不改盘，apply 才落盘；跳过超大文件与含 NUL 字节的文件。
 
 use std::fs;
 use std::path::Path;
@@ -26,10 +20,7 @@ const MAX_HITS: usize = 5000;
 /// 单个文件最多记录多少行号。
 const MAX_LINES_PER_FILE: usize = 50;
 
-/// 工具箱服务实例：正则引擎要用它。
-///
-/// 只建一次：`ToolsService::new()` 会开一个内存数据库，
-/// 逐行 new 一个等于逐行建库。正则引擎本身无状态，共享是安全的。
+/// 扫描目录下匹配的文件。
 static TOOLS: std::sync::OnceLock<crate::service::tools::ToolsService> = std::sync::OnceLock::new();
 
 fn tools() -> &'static crate::service::tools::ToolsService {
@@ -141,10 +132,7 @@ impl BatchService {
         }))
     }
 
-    /// 应用替换：只改 `files` 里勾选的文件（空 = 全部命中文件）。
-    ///
-    /// 失败不整体回滚：每个文件的失败单独记账返回。批量操作里
-    /// 「部分成功」比「全失败」有用得多，但失败必须报出来。
+    /// 应用替换：只改 `files` 里勾选的文件（空 = 全部命中文件）。失败不整体回滚：每个文件的失败单独记账返回。
     pub fn apply_replace(&self, req: &BatchReplaceReq) -> AppResult<BatchReplaceVO> {
         if req.find.is_empty() {
             return Err(AppError::new(codes::PATH_EMPTY, "查找内容不能为空"));
@@ -251,10 +239,7 @@ impl BatchService {
         Ok(BatchRenameVO { items, applicable })
     }
 
-    /// 应用重命名：按预览时生成的映射落地，不重算。
-    ///
-    /// 先全量校验再执行：中途遇到冲突会导致「改了一半」，
-    /// 那种半截状态比整体失败难恢复得多。
+    /// 应用重命名：按预览时生成的映射落地，不重算。先全量校验再执行：中途遇到冲突会导致「改了一半」， 预览重名。
     pub fn apply_rename(&self, req: &RenameApplyReq) -> AppResult<BatchReplaceVO> {
         // 预检：任一目标已存在就整体拒绝。
         for it in &req.items {
@@ -279,10 +264,7 @@ impl BatchService {
     }
 }
 
-/// 收集待处理文件：按 glob 过滤文件名，跳过目录。
-///
-/// glob 只支持 `*xxx` / `xxx*` / `*xxx*` 三种形状：目录级查找里
-/// 用户真正会写的就这几种，上完整 glob 库不值当。
+/// 收集待处理文件：按 glob 过滤文件名，跳过目录。glob 只支持 `*xxx` / `xxx*` / `*xxx*` 三种形状：目录级查找里 应用重名。
 fn collect_files(dir: &Path, glob: &str, recursive: bool) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -336,10 +318,7 @@ fn contains(line: &str, find: &str, case_sensitive: bool) -> bool {
     }
 }
 
-/// 正则模式的行匹配：复用工具箱那套迷你引擎。
-///
-/// 整份文本一次性交给引擎，而不是逐行走 `regex_test`——
-/// 后者每次都会重新编译模式，对一万行的文件就是编译一万次。
+/// 正则模式的行匹配：复用工具箱那套迷你引擎。整份文本一次性交给引擎，而不是逐行走 `regex_test`—— 计算序号名。
 fn regex_lines(text: &str, pattern: &str) -> Vec<bool> {
     let lines: Vec<&str> = text.lines().collect();
     match tools().regex_lines_match(pattern, &lines) {
@@ -432,10 +411,7 @@ fn replace_plain(text: &str, find: &str, replace: &str, case_sensitive: bool) ->
     out
 }
 
-///
-/// 迷你引擎只回答「是否命中」与捕获组，不支持按匹配段替换，
-/// 所以正则模式退化为「命中的整行替换」。这是已知限制，
-/// 前端在正则模式下会提示用户；要完整语义需换 regex crate（AGENTS §1.1）。
+/// 迷你引擎只回答「是否命中」与捕获组，不支持按匹配段替换， 所以正则模式退化为「命中的整行替换」。这是已知限制， 检查文件是否可处理。
 fn replace_regex(text: &str, pattern: &str, replace: &str) -> String {
     let all: Vec<&str> = text.lines().collect();
     let flags = regex_lines(text, pattern);

@@ -1,7 +1,6 @@
 //! 代码片段持久化。
 //!
-//! 片段正文可能很大（几十 KB 的模板），列表查询不带 `content`，
-//! 只在 `get` 时取全文——面板滚动时不至于把几十条正文全拉进内存再过 IPC。
+//! 列表查询不取 content，避免把几十个模板全文拉过 IPC。
 
 use rusqlite::{params, Connection, OptionalExtension};
 

@@ -1,8 +1,6 @@
-//! 哈希域模型：文件或文本的摘要。
+//! 哈希域模型：文件 / 文本的摘要。
 //!
-//! 选 MD5 / SHA-1 / SHA-256 三种的理由：命令行工具（certutil / Get-FileHash）
-//! 默认就出它们，用户要对照校验时不用先猜算法。三种算法都在 `service/tools.rs`
-//! 里手写实现（标准库只有 SHA-2 家族的一部分，且不暴露原始接口）。
+//! 算法清单与 Windows 自带工具一致，便于用户交叉校验。
 
 use serde::{Deserialize, Serialize};
 

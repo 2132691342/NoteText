@@ -1,7 +1,6 @@
-//! 文本 Diff 域模型：LCS 行级对齐 + 行内字符级高亮。
+//! 文本 Diff 域模型：行级 LCS 对齐 + 行内字符串级差异。
 //!
-//! 独立于 `json.rs` 的 JSON 结构化对比：文本 diff 面向任意文件，
-//! JSON diff 面向配置项级别的语义对比，两者输出形态不同。
+//! 与 json.rs 的分工：这里面向普通文本行，那边面向 JSON 结构树。
 
 use serde::{Deserialize, Serialize};
 

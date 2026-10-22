@@ -1,14 +1,6 @@
-//! 关闭策略：关窗时是退出还是收进托盘。
+//! 关闭策略：关窗时是退出还是收进托盘（见 specs/04）。
 //!
-//! 关键约束（specs/04）：**Wails/Tauri 的 `close()` 会先触发 CloseRequested**，
-//! 在那里返回 prevent 就等于「永远退不掉」——窗口没了、托盘没了，进程还占着 exe。
-//! 因此这里必须区分三个来源：
-//!
-//! | 来源 | 行为 |
-//! |---|---|
-//! | 用户点 X / Alt+F4 | 托盘驻留开 → 收托盘；关 → 发 `app:before-close` 让前端裁决 |
-//! | 前端确认可退出 | 直接退出（不再问） |
-//! | 托盘「退出」 | 直接退出（用户明确指令） |
+//! 三种来源分开处理：点 X / 前端确认退出 / 托盘点退出。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -71,9 +63,7 @@ pub fn sync_from_config(app: &AppHandle) {
     set_close_to_tray(enabled);
 }
 
-/// 强制退出：托盘菜单「退出」用。
-///
-/// 先置确认位再 quit：否则 `Quit` 内部触发 CloseRequested 又会被拦一次。
+/// 强制退出：托盘菜单「退出」用。先置确认位再 quit：否则 `Quit` 内部触发 CloseRequested 又会被拦一次。
 pub fn force_quit(app: &AppHandle) {
     QUIT_CONFIRMED.store(true, Ordering::SeqCst);
     app.exit(0);

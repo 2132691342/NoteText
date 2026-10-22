@@ -428,43 +428,37 @@ mod dialog_stub;
 | 命令 | 跑什么 | 什么时候用 |
 |---|---|---|
 | `pwsh scripts/check.ps1` | rustfmt → cargo check → 全量测试 | 日常快门 |
-| `pwsh scripts/check.ps1 -Chain <关键字>` | 只跑名字命中的那条链 | 改了某个域的行为 |
-| `pwsh scripts/check.ps1 -List` | 列出全部测试链 | 不知道入口叫什么时 |
 | `pwsh scripts/check.ps1 -Full` | + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
+| `pwsh scripts/check.ps1 -List` | 列出全部测试链 | 不知道入口叫什么时 |
+| `pwsh scripts/check.ps1 -Detail` | 打印每条链的名字与结果 | 想看断言清单时 |
 
-- **默认安静**：不带 `-Detail` 就不加 `-v`。失败时脚本自己从日志里摘出摘要
-  （测试名 + `.rs:行号`）
-- **`-Chain` 与 `-Full` 互斥**（同时传直接报错，不会默默降档）
-- 耗时大头是编译与链接测试二进制，断言本体多在亚秒级——
-  所以「只跑一条链」省的是执行
+- **默认安静**：失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
+- 只有 4 条链且全量 < 1 秒，**不设「只跑一条链」的开关**——
+  加了省不了多少时间，却要多记一个参数
 
 实测耗时（本机）：快门约 15s、`-Full` 约 60s。
 
 ### 3.4 测试索引
 
-8 条链，分 4 个文件（`src-tauri/tests/`），一个域一个文件。每条链都是跨模块的复杂长链路，
-优先守护「用户文件没了 / 界面崩白屏」级别的事故，简单纯函数断言不入链。
+4 条长链路，分 4 个文件（`src-tauri/tests/`），一个域一个文件，入口一律叫
+`test_<domain>_chain`。每条链都跨多个模块，优先守护「用户文件没了 / 界面崩白屏」
+级别的事故，简单纯函数断言不入链。
 
 | 文件 | 链 | 覆盖的链路 |
 |---|---|---|
-| `session_chain.rs` | `test_bootstrap_chain` | **装配与往返**：首次启动写默认配置、空库恢复给空标签、会话顺序与窗口尺寸往返、书签增查删与幂等、空列表序列化契约（空数组必须 `[]` 而非 `null`） |
-| `file_chain.rs` | `test_file_roundtrip_chain` | **文件往返 + 编码**：CRLF 读出归一成 LF、不指定行尾按原样写回、显式切换才改、原子写不留临时文件、目标目录不存在不静默创建、编码探测与 BOM 剥离补回 |
-| | `test_file_ops_chain` | **文件操作护栏**：目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账、新建文件已存在即拒 |
-| `tools_chain.rs` | `test_json_and_diff_chain` | **JSON 与 Diff**：坏 JSON 给行列号、行级 diff 对齐与增删计数 |
-| | `test_regex_and_hash_chain` | **正则与哈希**：捕获组编号、空匹配推进、三种哈希对已知向量 |
-| | `test_comment_toggle_chain` | **注释切换**：加去往返、半注释块补齐、不支持行注释报错 |
-| `batch_chain.rs` | `test_batch_find_replace_chain` | **批量查找替换护栏**：扫描阶段不改文件、应用只改勾选的 |
-| | `test_batch_rename_chain` | **批量重命名护栏**：冲突整体拒绝不覆盖、无冲突真的落地 |
+| `session_chain.rs` | `test_bootstrap_chain` | **装配与持久化**：首次启动写默认配置 → 空库恢复给空标签 → 会话顺序、活跃索引、窗口尺寸往返 → 标签全关时会话行仍保留 → 书签去重与切换删除 → 空列表序列化契约（必须 `[]` 而非 `null`） |
+| `file_chain.rs` | `test_file_domain_chain` | **文件域**：CRLF 读出归一成 LF → 不指定行尾按原样写回、显式切换才改 → 原子写不留临时文件、目标目录不存在不静默创建 → 编码探测与 BOM 剥离补回 → 文件操作护栏（目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账、新建已存在即拒） |
+| `tools_chain.rs` | `test_tools_contract_chain` | **工具箱与文本变换**：坏 JSON 给行列号 → diff 行级对齐与增删计数 → 正则捕获组 → 三种哈希对已知向量 → 注释切换加去往返、半注释块补齐、不支持行注释报错 |
+| `batch_chain.rs` | `test_batch_safety_chain` | **批量操作**：扫描阶段不改文件 → 应用只改勾选的 → 重命名冲突标冲突且不可应用 → 强行应用整体拒绝不覆盖 → 无冲突真的落地 |
 
-**改这里 → 只跑这条**：
+**改这里 → 这样验**：
 
 | 改动位置 | 命令 |
 |---|---|
-| 某个域的行为 | `pwsh scripts/check.ps1 -Chain bootstrap` |
-| 某一条断言 | `pwsh scripts/check.ps1 -Chain 行尾` |
+| 某个域的行为 | `pwsh scripts/check.ps1` |
 | 不知道入口叫什么 | `pwsh scripts/check.ps1 -List` |
 | 拿不准 | `pwsh scripts/check.ps1` |
-| 改了前端 | `cd frontend && npm run build`（或直接跑 `-Full`） |
+| 改了前端 | `pwsh scripts/check.ps1 -Full` |
 
 
 ---

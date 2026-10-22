@@ -1,11 +1,6 @@
-//! 系统托盘：常驻 + 唤起 + 退出。
+//! 系统托盘：驻留 + 菜单 + 退出（见 specs/04）。
 //!
-//! 约束（specs/04）：
-//! - 托盘图标用 `tauri.conf.json` 的 `trayIcon`，菜单在代码里建
-//! - 「打开窗口」与「退出」都必须 `WindowShow + WindowUnminimise`：
-//!   隐藏与最小化是两种状态，只做一半唤不回
-//! - 菜单回调里必须兜 panic：托盘是进程级组件，回调里炸一个会把编辑器一起带走
-//! - 「退出」先置确认位（close_policy::force_quit），否则被 CloseRequested 拦回去
+//! 菜单回调必须包住 panic：托盘回调里炸会把整个进程带下去。
 
 use tauri::{
     menu::{Menu, MenuEvent, MenuItem},

@@ -1,7 +1,6 @@
-//! 最近文件持久化：打开 / 保存记账，支持置顶与上限淘汰。
+//! 最近文件持久化：记录 / 固定 / 淘汰。
 //!
-//! 淘汰规则：按 `opened_at` 淘汰最旧的**非置顶**项，
-//! 置顶项永不淘汰。置顶是用户明确说「这个我常用」，不该被自动清理挤掉。
+//! 淘汰按 opened_at 淘汰最旧的非固定项。
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -11,9 +10,7 @@ use crate::pkg::error::{AppError, AppResult};
 pub struct RecentRepo;
 
 impl RecentRepo {
-    /// 记账：置顶已存在的项，不存在则插入；同时把 `opened_at` 推到当前。
-    ///
-    /// 返回时已按「置顶优先、再按时间」排序，前端直接渲染。
+    /// 记账：置顶已存在的项，不存在则插入；同时把 `opened_at` 推到当前。返回时已按「置顶优先、再按时间」排序，前端直接渲染。
     pub fn touch(conn: &Connection, path: &str, now: i64, limit: u32) -> AppResult<()> {
         conn.execute(
             "INSERT INTO recent_files (path, pinned, opened_at) VALUES (?1, 0, ?2)

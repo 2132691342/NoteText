@@ -1,7 +1,6 @@
 //! NoteText 库目标：装配入口与全部模块。
 //!
-//! 拆成 lib 与 bin 两个目标，是为了让集成测试链接同一份装配而不必拉起 WebView。
-//! 分层与依赖方向见 docs/ARCHITECTURE.md。
+//! 拆 lib 与 bin 两个目标，让集成测试链接同一份装配而不必拉起 WebView。
 
 pub mod app;
 pub mod commands;
@@ -21,12 +20,8 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use tauri::Manager;
 
-/// 唯一装配入口：路径 → 日志 → 数据库 → 服务容器 → command 注册 → run。
-///
-/// 失败模式（见 specs/04）：
-/// - 数据库打不开：fail-fast。书签 / 片段 / 宏 / 会话恢复都依赖它，
-///   半残启动会让用户在第一次打开面板时才看到报错，反而误导。
-/// - 日志/配置目录不可用：记一条 warn 后继续，界面仍可用。
+/// 失败模式（见 specs/04）：数据与日志目录不可用时 fail-fast，
+/// 半残启动会让用户在第一次打开面板时才看到报错，反而误导。
 pub fn run() {
     let paths = match app::paths::resolve() {
         Ok(p) => p,
@@ -104,10 +99,7 @@ pub fn run() {
     });
 }
 
-/// 原生错误对话框：WebView 还没起来时唯一的用户可见出口。
-///
-/// 用 Tauri 的 dialog 插件不行——插件随 app 一起装，装不上时同样不可用，
-/// 所以这里直接走 Win32 MessageBoxW（platform 层按平台分文件实现）。
+/// 原生错误对话框：WebView 还没起来时唯一的用户可见出口。用 Tauri 的 dialog 插件不行——插件随 app 一起装，装不上时同样不可用， 所以这里直接走 Win32 MessageBoxW（platform 层按平台分文件实现）。
 fn native_error(title: &str, message: &str) {
     platform::message_box(title, message);
 }

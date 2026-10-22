@@ -1,13 +1,6 @@
-//! 配置域模型：`config.json` 的固定项 + 界面偏好。
+//! 配置域模型：界面偏好与启动期固定项。
 //!
-//! 分两个落点（AGENTS.md §3.4）：
-//! - **固定项**（窗口大小、语言、主题、字体、快捷键）→ SQLite `settings` KV 表，
-//!   前端每处改动都即时回写；
-//! - **启动期固定项**（是否开机自启、日志级别）→ `config.json`，
-//!   日志要在建库之前起来，所以它不能依赖 DB。
-//!
-//! 默认值集中在 `Default for AppConfig`：升级加字段时旧配置文件读出来
-//! 缺项自动补默认，不需要写迁移代码。
+//! 界面偏好落 settings 表，启动期固定项落 config.json；默认值集中在 Default。
 
 use serde::{Deserialize, Serialize};
 

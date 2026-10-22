@@ -1,13 +1,6 @@
-//! 单实例：二次启动把文件路径转交给已有实例。
+//! 单实例：把二次启动携带的文件路径转交给已有实例。
 //!
-//! 走 `tauri-plugin-single-instance`：它内部用本地 socket + 互斥体，
-//! 比自己写命名管道可靠。这里只负责「收到 argv 后干什么」。
-//!
-//! 转交规则：
-//! - 带文件路径 → 唤起窗口 + 发 `app:open-file`
-//! - 不带（只想再开一个窗口）→ 只唤起窗口
-//! - 转交到达时窗口可能还没装配完：等 `app:ready` 再由前端消费
-//!   （前端用 `shellIntent` 存意图，见 frontend/src/composables/shellIntent.ts）
+//! 目标实例还没装配完时排队，等 app:ready 之后再投递。
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -34,10 +27,7 @@ pub fn forward(app: &AppHandle, argv: Vec<String>) {
     }
 }
 
-/// 首次启动时命令行里的文件路径：等前端就绪后发。
-///
-/// 立即发会丢——Vue 还没挂载，事件没人听。延迟到 ready 之后，
-/// 由前端 `shellIntent` 兜底（ready 之前到的意图也存得下）。
+/// 首次启动时命令行里的文件路径：等前端就绪后发。立即发会丢——Vue 还没挂载，事件没人听。
 pub fn handle_launch_args(app: &AppHandle) {
     let args: Vec<String> = std::env::args().collect();
     let file = args

@@ -1,11 +1,6 @@
-//! 域模型：一个聚合根一个文件，DO / DTO / REQ / VO / RESP 同居一处。
+//! 域模型：一个聚合根一个文件，DO / REQ / VO 同居一处。
 //!
-//! 铁律（AGENTS.md §2.3.1）：`commands / service / repo` 四层禁止就地声明
-//! 出入参结构体，一律引用本包的类型。内联结构体是契约漂移的起点——
-//! 后端改了字段名，编译不报错，前端拿到 undefined。
-//!
-//! 时间戳一律 `i64` 毫秒（AGENTS.md §2.8）：RFC3339 字符串要前端再解一次，
-//! 而 `Date.parse` 对不带时区的串会按本地时间猜。
+//! 跨边界的时间一律 i64 毫秒（见 AGENTS.md 2.8）。
 
 pub mod batch;
 pub mod bookmark;

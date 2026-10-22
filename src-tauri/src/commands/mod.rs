@@ -1,11 +1,6 @@
 //! command 层：Tauri 的 invoke 入口。
 //!
-//! 铁律（AGENTS.md §2.1）：handler 薄——解析参数 → 调 service → 返回。
-//! 唯一允许的例外是「查询型系统能力」（窗口控制、对话框），
-//! 它们与业务编排无关，属于系统能力绑定。
-//!
-//! 命名：`invoke('read_file', {...})` 与这里的函数名一一对应，
-//! snake_case（Rust 惯例 + 前端 invoke 字符串）。
+//! handler 薄：解析参数、调 service、返回；函数名与前端 invoke 字符串一一对应。
 
 pub mod batch;
 pub mod dialog;
@@ -18,15 +13,8 @@ pub mod tools;
 pub mod userdata;
 pub mod window;
 
-/// 全部 command 的清单，供 `lib.rs` 的 `invoke_handler` 用。
-///
-/// 为什么是宏而不是函数：`tauri::generate_handler!` 展开出来的类型没有名字，
-/// 写不成返回类型。包成 `macro_rules!` 之后调用点仍然是「一个清单」，
-/// 不会散到多个文件里。
-///
-/// 漏注册一个的后果是前端 invoke 报 `command not found`，编译期发现不了——
-/// 后端清单与前端 `src/api/index.ts` 的调用表必须一一对应，
-/// 由 `tests/session_chain.rs` 的装配链覆盖。
+/// 全部 command 的清单。用宏是因为 generate_handler! 展开出的类型没有名字，
+/// 写不成函数返回类型。漏注册 = 前端 command not found，编译期发现不了。
 macro_rules! command_handlers {
     () => {
         tauri::generate_handler![

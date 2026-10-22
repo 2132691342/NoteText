@@ -138,7 +138,7 @@ NoteText/
 
 ## 测试
 
-8 条链，分 4 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
+4 条长链路，分 4 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -147,11 +147,11 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 文件 | 覆盖 |
 |---|---|
 | `session_chain.rs` | 装配 → 建表 → 默认配置 / 会话顺序与窗口尺寸往返 / 书签增查删与幂等 / 空数组序列化契约（合并为一条长链路） |
-| `file_chain.rs` | 行尾按原样写回、CRLF 归一成 LF、BOM 剥离补回、原子写不留痕、编码探测、文件操作护栏（不覆盖/不成环/拒绝 `..`） |
-| `tools_chain.rs` | JSON 坏输入给行列号、diff 增删计数、正则捕获组与空匹配、三种哈希已知向量、注释切换往返 |
-| `batch_chain.rs` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
+| `file_chain.rs` | 行尾按原样写回、CRLF 归一成 LF、BOM 剥离补回、原子写不留痕、编码探测、文件操作护栏（不覆盖 / 不成环 / 拒绝 `..`） |
+| `tools_chain.rs` | JSON 坏输入给行列号、diff 增删计数、正则捕获组、三种哈希已知向量、注释切换往返与半注释补齐 |
+| `batch_chain.rs` | 扫描不改盘、应用只改勾选的、重命名遇冲突整体拒绝不覆盖 |
 
-只看某一个域：`pwsh scripts/check.ps1 -Chain file`。
+不知道入口叫什么：`pwsh scripts/check.ps1 -List`。
 
 ## 许可证
 

@@ -1,19 +1,12 @@
-//! 编辑器服务：语言识别、行注释、行编辑操作、转到行、书签定位。
+//! 编辑器服务：语言识别、行注释、大小写转换、转到行。
 //!
-//! 这些是「改文本」的纯逻辑，与 IO 无关——真正的编辑器实例在前端
-//! （CodeMirror），这里只提供「按语言给出行注释符」与「批处理一段文本」。
-//! 分层的理由：同样的行编辑逻辑要同时服务编辑器内操作与「批量处理文件」，
-//! 放后端一份，两边共用。
+//! 形态是「给一段文本、还一段文本」的纯变换，不涉及 IO。
 
 use crate::domain::snippet::LanguageInfo;
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::pkg::text;
 
-/// 支持的语言清单：决定高亮、注释符、默认扩展名。
-///
-/// 与前端 `utils/languages.ts` 同构——后端按扩展名判语言用于
-/// 会话恢复时记 `language` 字段，前端按同一张表选 CodeMirror 高亮。
-/// 两边不一致的后果：恢复出来的标签用了错误的高亮。
+/// 创建目录：存在则返回 Ok，其他错误原样返回。
 pub fn languages() -> Vec<LanguageInfo> {
     vec![
         lang("text", "纯文本", &["txt"], "", ["", ""]),
@@ -108,10 +101,7 @@ pub fn language_info(id: &str) -> Option<LanguageInfo> {
     languages().into_iter().find(|l| l.id == id)
 }
 
-/// 切换行注释：选中的行有注释则去、无则加（Ctrl+/ 的行为）。
-///
-/// 按「整块是否已全部注释」决定方向：全注释了就去，否则加。
-/// 逐行判断会让「注释掉半个块」变成逐行翻转，用户得不到预期的结果。
+/// 切换行注释：选中的行有注释则去、无则加（Ctrl+/ 的行为）。按「整块是否已全部注释」决定方向：全注释了就去，否则加。
 pub fn toggle_line_comment(lang: &str, text: &str) -> AppResult<String> {
     let info =
         language_info(lang).ok_or_else(|| AppError::new(codes::ENCODE_FAILED, "未知语言"))?;

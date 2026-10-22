@@ -1,11 +1,6 @@
 //! 文件操作服务：重命名 / 移动 / 复制 / 删除 / 新建目录。
 //!
-//! 供给文件树右键菜单与树内拖拽。与批量重命名（`batch` 域）的分工：
-//! 那边是「扫一批按规则改名」，这边是「用户对一个节点下了一个明确指令」。
-//!
-//! 三条前置校验在所有写操作前统一执行（`validate_target`）：
-//! 目标已存在即拒、目录不能进自己的子目录、路径必须绝对且无 `..`。
-//! 逐条各写一遍的后果是三种操作有三种拒绝标准，用户记不住。
+//! 写操作前统一走 validate_target，四类违规一次拒掉而不是分散判断。
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -50,11 +45,8 @@ impl FileOpsService {
         self.transfer(req, true)
     }
 
-    /// 删除一组节点：目录递归删。
-    ///
-    /// 逐个记账不整体中止：用户勾了 10 个文件，其中 3 个被别的程序占用，
-    /// 该删的 7 个要删掉，占用的 3 个报出来。整体回滚会让一次误选
-    /// 把「已经删掉 7 个」变成「一个都没删」，用户以为没删就又点一次。
+    /// 校验目标路径：相对路径与目标已存在都在这里拒绝。
+    /// 提前到这一步是为了让「能不能落」在任何写操作之前就有确定答案。
     pub fn remove(&self, req: &DeleteReq) -> AppResult<FileOpVO> {
         let mut out = FileOpVO::default();
         for p in &req.paths {
@@ -250,20 +242,14 @@ fn same_path(a: &Path, b: &Path) -> bool {
         .eq_ignore_ascii_case(&real_path(b).to_string_lossy())
 }
 
-/// `dst` 是否落在 `root` 之内（含 root 自身）。
-///
-/// 目标常常还不存在（要新建），所以逐级往上找最近的已存在祖先再
-/// canonicalize，把不存在的尾巴接回去——直接拿字面路径比会让
-/// Windows 上 `\\?\C:\...` 与 `C:\...` 前缀不等，判成越界。
+/// `dst` 是否落在 `root` 之内（含 root 自身）。目标常常还不存在（要新建），所以逐级往上找最近的已存在祖先再 目录递归复制。
 fn is_within(root: &Path, dst: &Path) -> bool {
     let r = real_path(root);
     let d = real_path(dst);
     d.starts_with(&r)
 }
 
-/// 取一个可比较的真实路径：能 canonicalize 就 canonicalize，
-/// 否则对最近的已存在祖先 canonicalize 后接回剩余部分。
-/// 统一去掉 `\\?\` 前缀，否则长短名形式字面不等。
+/// 取一个可比较的真实路径：能 canonicalize 就 canonicalize， 否则对最近的已存在祖先 canonicalize 后接回剩余部分。
 fn real_path(p: &Path) -> PathBuf {
     if let Ok(c) = p.canonicalize() {
         return strip_verbatim(c);

@@ -1,8 +1,6 @@
-//! 界面偏好 KV：`settings` 表的读写。
+//! 配置偏好 KV：settings 表的读写。
 //!
-//! 存什么：`AppConfig` 整块序列化成 JSON 存一个 `app_config` 键。
-//! 为什么不拆成每项一行：前端每次改动都整块回写，拆行后要算差集，
-//! 而配置总量几十项，整块 JSON 只有几 KB。
+//! 整份 AppConfig 序列化成一行 JSON，避免按项建列。
 
 use rusqlite::{params, Connection, OptionalExtension};
 

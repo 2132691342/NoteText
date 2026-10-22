@@ -1,8 +1,6 @@
 //! 会话与标签持久化。
 //!
-//! 写策略（specs/06）：**整块替换**而不是增量 diff。
-//! 标签数量在个位数到几十之间，一次 `DELETE` + 批量 `INSERT` 比算差集简单，
-//! 且不会有「删了一半崩溃」的中间态（整段在一个事务里）。
+//! 写入用全量替换而非 diff：标签总数只在个位数到十位数之间。
 
 use rusqlite::{params, Connection};
 
@@ -72,10 +70,7 @@ impl SessionRepo {
         })
     }
 
-    /// 整块保存会话：一个事务里换掉 sessions 与 tabs。
-    ///
-    /// `tabs` 为空表示「全部关完」：此时也要写一条 sessions（记住窗口大小），
-    /// 但 tabs 表清空——下次启动是干净的欢迎页。
+    /// 保存最近会话。
     pub fn save(conn: &Connection, session: &SessionDO, tabs: &[TabDO]) -> AppResult<()> {
         let tx = conn
             .unchecked_transaction()
@@ -147,9 +142,6 @@ impl SessionRepo {
 }
 
 /// rusqlite 的 `optional()`：把 `QueryReturnedNoRows` 折成 `Ok(None)`。
-///
-/// rusqlite 0.32 起 `optional` 在 `Result<Option<T>>` 上可用，但为了不依赖
-/// 具体小版本的方法名，这里显式写一层。
 trait OptionalExt<T> {
     fn optional(self) -> AppResult<Option<T>>;
 }

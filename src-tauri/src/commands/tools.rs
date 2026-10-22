@@ -1,7 +1,6 @@
-//! 工具命令：JSON / Diff / 哈希 / 正则 / 编码清单。
+//! 工具箱命令：JSON / Diff / 哈希 / 正则 / 编码清单。
 //!
-//! 每个对应一个浮窗。入参出参全在 `domain/json.rs`、`domain/diff.rs`、
-//! `domain/regex.rs` 里定义，命令层不内联结构体（AGENTS.md §2.3.1）。
+//! 出入参结构体一律引用 domain 定义，不在 handler 里内联。
 
 use tauri::State;
 

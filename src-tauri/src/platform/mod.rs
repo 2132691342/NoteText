@@ -1,8 +1,6 @@
-//! 平台相关：原生消息框、AppHandle 存取。
+//! 平台相关：原生消息框与 AppHandle 存取。
 //!
-//! 按平台分文件（AGENTS.md §2.9）：Windows 实现走 Win32 MessageBoxW，
-//! 其他平台退化成 stderr。**不在一个文件里写 `runtime.GOOS` 大分支**——
-//! 那会让「哪套代码在哪个平台跑」读不出来。
+//! 按平台分文件实现，不在一个文件里写 cfg 大分支。
 
 mod app_handle;
 

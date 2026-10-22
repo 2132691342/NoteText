@@ -1,8 +1,6 @@
-//! 对话框命令：系统原生打开 / 保存对话框、用默认程序打开路径。
+//! 对话框命令：系统原生打开 / 保存对话框。
 //!
-//! 走 `tauri-plugin-dialog`：原生对话框在 WebView 外，不受前端 CSP 与
-//! 模态层影响，也不会被浮窗遮住。二进制文件（图片 / PDF）的读在
-//! `commands::file::read_binary`，这里只负责拿到路径。
+//! 走 dialog 插件：原生对话框在 WebView 之外，不受 CSP 与模态层影响。
 
 use crate::pkg::error::{AppError, AppResult};
 

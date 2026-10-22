@@ -1,9 +1,6 @@
-//! 窗口命令：无边框窗口的窗控。
+//! 窗口命令：无边框窗体的托管。
 //!
-//! 自绘标题栏（specs/04）后，最小化 / 最大化 / 关闭都不再是系统装饰，
-//! 全走这里。`window` 参数由 Tauri 自动注入当前窗口。
-
-/// 最小化。
+//! 最小化 / 最大化 / 关闭属于系统能力，不经 service。
 #[tauri::command]
 pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
@@ -26,9 +23,7 @@ pub fn window_is_maximized(window: tauri::Window) -> bool {
 }
 
 /// 关闭窗口。
-///
-/// 不直接 `close()`：那会绕过「关闭到托盘」与「未保存检查」。
-/// 先广播 `app:before-close`，由前端完成检查后调 `confirm_quit` + `exit`。
+/// 关窗前广播 before-close，由前端确认后决定是否退出。
 #[tauri::command]
 pub fn window_close(app: tauri::AppHandle) {
     let _ = tauri::Emitter::emit(&app, "app:before-close", ());

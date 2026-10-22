@@ -1,18 +1,13 @@
-//! 编码服务：探测 / 解码 / 编码 / BOM 处理 / 编码清单。
+//! 编码：探测 / 解码 / 编码 / BOM 处理 / 清单。
 //!
-//! 不引统计探测库：常见中文编码用「高位字节序列合法性」判定已够用且可解释，
-//! 短文本上统计库反而误判率高。代价是部分冷门编码判不出，
-//! 那种情况置 `low_confidence` 让用户手选。
+//! 用字节合法性判断而不用字符统计库；没把握时置 low_confidence。
 
 use std::collections::BTreeMap;
 
 use crate::domain::encoding::EncodingInfo;
 use crate::pkg::error::{codes, AppError, AppResult};
 
-/// 支持的编码清单：设置页下拉与状态栏的取值表。
-///
-/// 与前端 `utils/encoding.ts` 的 key 必须一致——不一致时状态栏显示的名字
-/// 与实际写盘用的编码会对不上。
+/// 支持的编码清单：设置页下拉与状态栏的取值表。与前端 `utils/encoding.ts` 的 key 必须一致——不一致时状态栏显示的名字 与实际写盘用的编码会对不上。
 pub fn supported() -> Vec<EncodingInfo> {
     let mut v = vec![
         EncodingInfo {
@@ -55,10 +50,7 @@ pub fn supported() -> Vec<EncodingInfo> {
     v
 }
 
-/// 探测编码：BOM 优先，然后启发式。
-///
-/// 返回 `(encoding_id, low_confidence)`。`low_confidence = true` 时
-/// 前端必须提示用户「不确定」，不能拿它当定论。
+/// 探测编码：BOM 优先，然后启发式。返回 `(encoding_id, low_confidence)`。
 pub fn detect(bytes: &[u8]) -> (String, bool) {
     // 1) BOM 是硬证据。
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -150,10 +142,7 @@ fn looks_like_sjis(bytes: &[u8]) -> bool {
     hits > 0 && hits * 4 > bytes.len()
 }
 
-/// 去掉 BOM，返回 `(has_bom, body)`。
-///
-/// 生命周期省略在这里不成立：返回值可能来自 `bytes` 也可能来自 `encoding`，
-/// 显式绑到 `bytes` 上，调用方一看就知道拿到的是原缓冲区的切片。
+/// 去掉 BOM，返回 `(has_bom, body)`。生命周期省略在这里不成立：返回值可能来自 `bytes` 也可能来自 `encoding`， 显式绑到 `bytes` 上，调用方一看就知道拿到的是原缓冲区的切片。
 pub fn strip_bom<'a>(bytes: &'a [u8], encoding: &str) -> (bool, &'a [u8]) {
     match encoding {
         "utf-8-bom" if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) => (true, &bytes[3..]),
@@ -173,13 +162,8 @@ pub fn bom_bytes(encoding: &str) -> &'static [u8] {
     }
 }
 
-/// 按编码把字节解成字符串。
-///
-/// 实现方式：手写一张小的单字节码表 + UTF-16 特判。
-/// 为什么不引 `encoding_rs`：它是正确的选择，但本项目只支持 12 种编码，
-/// 其中 2 种（Windows-1252 / ISO-8859-1）是手写单字节表，手写表总共几百行且可测；
-/// 引一个 200KB+ 的码表 crate 只为了「也许将来支持更多编码」不划算。
-/// **要扩展编码清单时优先换 encoding_rs**，别继续往表里加。
+/// 列出支持的编码。与前端 utils/encoding.ts 的 key 必须一致，
+/// 不一致时状态栏显示的名字会和实际写盘用的编码对不上。
 pub fn decode(bytes: &[u8], encoding: &str) -> AppResult<String> {
     match encoding {
         "utf-8" | "utf-8-bom" => String::from_utf8(bytes.to_vec())
@@ -329,9 +313,7 @@ fn encode_sjis(text: &str) -> Vec<u8> {
 }
 
 // ---- 码表 ----
-//
-// 表是「常用字符」子集，不是完整 Unicode 映射：覆盖中文常用 3000 字 + 标点 + 西欧重音。
-// 表里没有的字符解成 U+FFFD / 编成 `?`。完整映射请换 encoding_rs。
+// 表是常用字符子集而非完整 Unicode 映射：覆盖中文常用字、标点与西欧重音。
 
 fn table_1252() -> BTreeMap<u16, char> {
     let mut m = BTreeMap::new();

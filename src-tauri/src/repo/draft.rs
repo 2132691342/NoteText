@@ -1,8 +1,6 @@
-//! 草稿持久化：新建未保存标签的正文快照。
+//! 草稿持久化：新建未保存标签的正文暂存。
 //!
-//! 只存「关闭时的快照」：正文实时权威在前端编辑器。
-//! 上限 2MB（`MAX_DRAFT_BYTES`）：超限不存——大草稿本就不该开在新建标签里，
-//! 硬塞会把数据库撑大并拖慢会话恢复。
+//! 上限 2MB；超限不存也不能拖垮会话恢复。
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -62,9 +60,7 @@ impl DraftRepo {
         .map_err(|e| AppError::wrap(codes::DRAFT_FAILED, "读取草稿失败", e))
     }
 
-    /// 保存快照：id 由前端传（`draft:<uuid>` 去掉前缀），保证与标签一一对应。
-    ///
-    /// 超限时返回 `Ok(false)` 而不是错误：存不上备份不该阻断关闭流程。
+    /// 保存快照：id 由前端传（`draft:<uuid>` 去掉前缀），保证与标签一一对应。超限时返回 `Ok(false)` 而不是错误：存不上备份不该阻断关闭流程。
     pub fn save(conn: &Connection, req: &DraftSaveReq, now: i64) -> AppResult<bool> {
         if req.content.len() > MAX_DRAFT_BYTES {
             tracing::warn!(

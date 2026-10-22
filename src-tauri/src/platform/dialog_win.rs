@@ -1,10 +1,6 @@
-//! Windows 原生消息框：Win32 `MessageBoxW`。
+//! Windows 原生消息框：Win32 MessageBoxW。
 //!
-//! 用途：WebView2 初始化失败、数据目录解析失败这类「连界面都起不来」的场景。
-//! 那时 Tauri 的 dialog 插件还没装上，只剩这一条路能让用户看见原因。
-//!
-//! `unsafe` 的必要性：Win32 API 是 FFI。调用面只有一次，参数是
-//! 已转换好的 UTF-16 缓冲区，没有裸指针运算。
+//! 用途：WebView2 还没起来时的唯一用户可见出口。
 
 use std::ffi::OsStr;
 use std::iter;

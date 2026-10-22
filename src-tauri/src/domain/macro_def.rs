@@ -1,7 +1,6 @@
-//! 宏域模型：可命名保存并回放的按键序列。
+//! 宏域模型：录制下来的按键序列与回放。
 //!
-//! 权威源在前端（编辑器实例持有，回放要走命令表），所以这里只做薄持久层：
-//! 导入导出、手动保存的宏。前端启动不依赖它。
+//! 权威数据源在前端编辑器实例；这里只负责导出导入时的持久化。
 
 use serde::{Deserialize, Serialize};
 
@@ -19,10 +18,7 @@ pub enum MacroStep {
     Pause,
 }
 
-/// 宏定义：名字 + 步骤序列。
-///
-/// `id` 是 UUID 字符串而不是自增整数：宏要被导入导出，
-/// 整数 id 在导入时会与本地已存在的撞车。
+/// 宏：录制下来的按键序列。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MacroDO {
     pub id: String,
