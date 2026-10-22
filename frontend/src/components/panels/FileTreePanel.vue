@@ -21,6 +21,7 @@
         :key="e.path"
         :entry="e"
         :depth="0"
+        @contextmenu="onNodeMenu"
       />
     </template>
   </div>
@@ -45,19 +46,19 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton } from 'element-plus'
-import { type Component } from 'vue'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useEditorStore } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
-import { copyText, dirName, joinPath } from '@/utils'
+import { copyText, dirName } from '@/utils'
 import ContextMenu from '@/components/common/ContextMenu.vue'
+import FileTreeNode from '@/components/panels/FileTreeNode.vue'
 import type { MenuItem } from '@/components/common/contextMenu'
-import type { DirEntry } from '@/types/api'
+import type { DirEntry, FileOpVO } from '@/types/api'
 
 const { t } = useI18n()
 const tree = useFileTreeStore()
@@ -68,231 +69,14 @@ const toast = useToastStore()
 const menu = ref<{ x: number; y: number } | null>(null)
 const menuEntry = ref<DirEntry | null>(null)
 
-/**
- * 树节点组件：递归渲染。
- *
- * 用 defineAsyncComponent 自引用会形成循环依赖，所以这里用一个工厂函数
- * 在 setup 里造一个本地组件——Vue 的 SFC 递归可以直接 <FileTreeNode>，
- * 但为了把「懒加载子目录」的逻辑收在一起，还是显式造一个。
- */
-const FileTreeNode: Component = {
-  name: 'FileTreeNode',
-  props: { entry: { type: Object as () => DirEntry, required: true }, depth: { type: Number, default: 0 } },
-  setup(props) {
-    const expanded = ref(false)
-    const loading = ref(false)
-    /** 行内新建 / 重命名的输入框状态。 */
-    const editing = ref<null | { mode: 'rename' | 'new-file' | 'new-dir'; draft: string }>(null)
-
-    onMounted(() => window.addEventListener('nt-tree-edit', onTreeEdit))
-    onBeforeUnmount(() => window.removeEventListener('nt-tree-edit', onTreeEdit))
-
-    async function toggle() {
-      if (!props.entry.is_dir) {
-        await editor.openPath(props.entry.path)
-        return
-      }
-      if (expanded.value) {
-        expanded.value = false
-        return
-      }
-      loading.value = true
-      try {
-        await tree.toggle(props.entry.path)
-        expanded.value = true
-      } finally {
-        loading.value = false
-      }
-    }
-
-    /** 右键：记住被点的节点，菜单项按它算。 */
-    function onContextMenu(e: MouseEvent) {
-      e.preventDefault()
-      e.stopPropagation()
-      menuEntry.value = props.entry
-      menu.value = { x: e.clientX, y: e.clientY }
-    }
-
-    // ---- 菜单项触发的行内编辑 ----
-    // 菜单是全局浮层，拿不到本节点的 setup 作用域，所以用事件把意图传下来。
-    function onTreeEdit(e: Event) {
-      const d = (e as CustomEvent).detail as { path: string; mode: 'rename' | 'new-file' | 'new-dir' }
-      if (d.path !== props.entry.path) return
-      startEdit(d.mode)
-    }
-
-    // ---- 行内编辑：新建 / 重命名 ----
-    function startEdit(mode: 'rename' | 'new-file' | 'new-dir') {
-      menu.value = null
-      editing.value = { mode, draft: mode === 'rename' ? props.entry.name : '' }
-      if (mode !== 'rename' && props.entry.is_dir && !expanded.value) void toggle()
-    }
-
-    function cancelEdit() {
-      editing.value = null
-    }
-
-    async function commitEdit() {
-      const ed = editing.value
-      if (!ed) return
-      const name = ed.draft.trim()
-      editing.value = null
-      if (!name) return
-      if (/[\\/:*?"<>|]/.test(name)) {
-        toast.bad(t('toast.badFileName'))
-        return
-      }
-      try {
-        if (ed.mode === 'rename') {
-          await renameTo(name)
-        } else {
-          const parent = props.entry.is_dir ? props.entry.path : dirName(props.entry.path)
-          const target = joinPath(parent, name)
-          if (ed.mode === 'new-dir') await api.fileOps.createDir(target)
-          else await api.fileOps.createFile(target)
-          await tree.refresh(tree.root)
-          if (ed.mode === 'new-file') await editor.openPath(target)
-        }
-      } catch (e) {
-        toast.bad(normalizeError(e).message)
-      }
-      if (tree.root) await tree.refresh(tree.root)
-    }
-
-    /** 重命名：同目录下落新名字，同步已打开标签的路径。 */
-    async function renameTo(name: string) {
-      const target = joinPath(dirName(props.entry.path), name)
-      if (target === props.entry.path) return
-      const res = await api.fileOps.rename(props.entry.path, target)
-      report(res, () => {
-        editor.renamePath(props.entry.path, target)
-        tree.markDirty(props.entry.path, false)
-      })
-    }
-
-    // ---- 拖拽移动：源是本节点，目标是目录 ----
-    function onDragStart(e: DragEvent) {
-      tree.setDragPath(props.entry.path)
-      e.dataTransfer?.setData('text/plain', props.entry.path)
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-    }
-    function onDragEnd() {
-      tree.setDragPath(null)
-      tree.setDropTarget(null)
-    }
-    function canDropOn(): boolean {
-      const src = tree.dragPath
-      if (!src || !props.entry.is_dir) return false
-      if (src === props.entry.path) return false
-      // 不能拖进自己的子目录：目录树会成环，文件树读到尽头。
-      const sep = props.entry.path.includes('\\') ? '\\' : '/'
-      return !props.entry.path.startsWith(src + sep)
-    }
-    function onDragOver(e: DragEvent) {
-      if (!canDropOn()) return
-      e.preventDefault()
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-      tree.setDropTarget(props.entry.path)
-    }
-    function onDragLeave() {
-      if (tree.dropTarget === props.entry.path) tree.setDropTarget(null)
-    }
-    async function onDrop(e: DragEvent) {
-      if (!canDropOn()) return
-      e.preventDefault()
-      e.stopPropagation()
-      const src = tree.dragPath
-      tree.setDragPath(null)
-      tree.setDropTarget(null)
-      if (!src) return
-      try {
-        const res = await api.fileOps.move([src], props.entry.path)
-        report(res, () => {
-          editor.renamePath(src, joinPath(props.entry.path, src.split(/[\\/]/).pop() ?? ''))
-        })
-      } catch (err) {
-        toast.bad(normalizeError(err).message)
-      }
-      if (tree.root) await tree.refresh(tree.root)
-    }
-
-    return {
-      expanded,
-      loading,
-      toggle,
-      editing,
-      startEdit,
-      cancelEdit,
-      commitEdit,
-      onContextMenu,
-      onTreeEdit,
-      onDragStart,
-      onDragEnd,
-      onDragOver,
-      onDragLeave,
-      onDrop,
-      render: () =>
-        h(
-          'div',
-          {
-            class: [
-              'nt-tree-row',
-              {
-                'is-on': editor.active?.path === props.entry.path,
-                'is-cut': tree.clipboard?.cut && tree.clipboard.paths.includes(props.entry.path),
-                'is-drop': tree.dropTarget === props.entry.path,
-              },
-            ],
-            'data-path': props.entry.path,
-            style: { paddingLeft: `calc(var(--nt-sp-2) + ${props.depth * 12}px)` },
-            draggable: 'true',
-            onClick: toggle,
-            onContextmenu: onContextMenu,
-            onDragstart: onDragStart,
-            onDragend: onDragEnd,
-            onDragover: onDragOver,
-            onDragleave: onDragLeave,
-            onDrop: onDrop,
-          },
-          [
-            editing.value
-              ? h('input', {
-                  class: 'nt-tree-input',
-                  value: editing.value.draft,
-                  autofocus: true,
-                  onClick: (ev: Event) => ev.stopPropagation(),
-                  onKeydown: (ev: KeyboardEvent) => {
-                    ev.stopPropagation()
-                    if (ev.key === 'Enter') void commitEdit()
-                    if (ev.key === 'Escape') cancelEdit()
-                  },
-                  onBlur: () => void commitEdit(),
-                  onInput: (ev: Event) => {
-                    if (editing.value) editing.value.draft = (ev.target as HTMLInputElement).value
-                  },
-                })
-              : [
-                  props.entry.is_dir
-                    ? h('span', { class: ['nt-tree-twisty', { 'is-open': expanded.value }] }, '▸')
-                    : h('span', { class: 'nt-tree-twisty' }),
-                  h('span', { class: 'nt-tree-label' }, props.entry.name),
-                  tree.dirtyPaths.has(props.entry.path)
-                    ? h('span', { class: 'nt-tree-dirty' }, '●')
-                    : null,
-                ],
-            expanded.value && props.entry.is_dir
-              ? (tree.children.get(props.entry.path) ?? []).map((child) =>
-                  h(FileTreeNode, { key: child.path, entry: child, depth: props.depth + 1 }),
-                )
-              : null,
-          ],
-        ),
-    }
-  },
+/** 节点右键冒泡上来的意图：统一在这里开菜单。 */
+function onNodeMenu(payload: { x: number; y: number; entry: DirEntry }) {
+  menuEntry.value = payload.entry
+  menu.value = { x: payload.x, y: payload.y }
 }
 
 /** 一组文件操作的结果统一报一次：失败项逐条说，成功项只说条数。 */
-function report(res: { succeeded: number; failed: number; results: { ok: boolean; message: string }[] }, onOk?: () => void) {
+function report(res: FileOpVO, onOk?: () => void) {
   const bad = res.results.filter((r) => !r.ok)
   if (res.succeeded > 0) {
     toast.ok(t('toast.opDone', { n: res.succeeded }))
