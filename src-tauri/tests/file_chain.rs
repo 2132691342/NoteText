@@ -23,19 +23,47 @@ fn test_file_roundtrip_chain() {
     let p = file.to_string_lossy().to_string();
 
     // 读：CRLF 归一成 LF 供编辑器算行列，但记下原样式。
-    let read = state.services.file.read(&p, ReadMode::Full).expect("读失败");
+    let read = state
+        .services
+        .file
+        .read(&p, ReadMode::Full)
+        .expect("读失败");
     assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
     assert_eq!(read.text, "a\nb\n", "读出来应归一成 LF");
 
     // 写：不指定行尾时按读到的 CRLF 原样写回；显式切换才改。
-    state.services.file.write(&p, "a\nb\n", None, None, None).expect("写失败");
-    assert_eq!(fs::read(&file).expect("回读失败"), b"a\r\nb\r\n", "不指定行尾应原样写回 CRLF");
-    state.services.file.write(&p, "a\nb\n", None, Some("lf"), None).expect("写失败");
-    assert_eq!(fs::read(&file).expect("回读失败"), b"a\nb\n", "显式 lf 应写成 LF");
+    state
+        .services
+        .file
+        .write(&p, "a\nb\n", None, None, None)
+        .expect("写失败");
+    assert_eq!(
+        fs::read(&file).expect("回读失败"),
+        b"a\r\nb\r\n",
+        "不指定行尾应原样写回 CRLF"
+    );
+    state
+        .services
+        .file
+        .write(&p, "a\nb\n", None, Some("lf"), None)
+        .expect("写失败");
+    assert_eq!(
+        fs::read(&file).expect("回读失败"),
+        b"a\nb\n",
+        "显式 lf 应写成 LF"
+    );
 
     // 原子写：内容更新后不留临时文件；写到不存在的目录报错且不顺带造目录。
-    state.services.file.write(&p, "new content", None, None, None).expect("写失败");
-    assert_eq!(fs::read_to_string(&file).expect("回读失败"), "new content", "内容应更新");
+    state
+        .services
+        .file
+        .write(&p, "new content", None, None, None)
+        .expect("写失败");
+    assert_eq!(
+        fs::read_to_string(&file).expect("回读失败"),
+        "new content",
+        "内容应更新"
+    );
     let leftovers: Vec<String> = fs::read_dir(&paths.data_dir)
         .expect("列目录失败")
         .flatten()
@@ -49,7 +77,10 @@ fn test_file_roundtrip_chain() {
         .file
         .write(&missing.to_string_lossy(), "x", None, None, None);
     assert!(err.is_err(), "目标目录不存在应报错");
-    assert!(!missing.parent().expect("有父目录").exists(), "不应顺带创建目录");
+    assert!(
+        !missing.parent().expect("有父目录").exists(),
+        "不应顺带创建目录"
+    );
 
     // 编码探测：BOM 是硬证据，合法 UTF-8 判 UTF-8，GBK 字节判 gb18030，空文件按 UTF-8。
     assert_eq!(
@@ -74,7 +105,11 @@ fn test_file_roundtrip_chain() {
     let (has, body) = encoding::strip_bom(&[0xEF, 0xBB, 0xBF, 0x61, 0x62], "utf-8-bom");
     assert!(has, "应检出 BOM");
     assert_eq!(body, b"ab", "剥掉 BOM 后只剩正文");
-    assert_eq!(encoding::bom_bytes("utf-8-bom"), &[0xEF, 0xBB, 0xBF], "BOM 字节要能补回");
+    assert_eq!(
+        encoding::bom_bytes("utf-8-bom"),
+        &[0xEF, 0xBB, 0xBF],
+        "BOM 字节要能补回"
+    );
 }
 
 #[test]
@@ -111,7 +146,11 @@ fn test_file_ops_chain() {
         })
         .expect_err("目标已存在必须拒绝");
     assert_eq!(err.code, "1003", "拒绝码该是路径越界档");
-    assert_eq!(fs::read_to_string(&c).expect("读回 c").trim(), "keep me", "拒绝后已有文件不能被覆盖");
+    assert_eq!(
+        fs::read_to_string(&c).expect("读回 c").trim(),
+        "keep me",
+        "拒绝后已有文件不能被覆盖"
+    );
 
     // 移进自己的子目录：拒绝（树会成环）。
     let err = svc
@@ -152,11 +191,23 @@ fn test_file_ops_chain() {
     );
 
     // 相对路径与 `..`：依赖隐式工作目录 / 会逃出操作范围，必须拒。
-    assert!(svc.rename(&RenameReq { from: "a.txt".into(), to: "b.txt".into() }).is_err(), "相对路径必须拒绝");
+    assert!(
+        svc.rename(&RenameReq {
+            from: "a.txt".into(),
+            to: "b.txt".into()
+        })
+        .is_err(),
+        "相对路径必须拒绝"
+    );
     assert!(
         svc.rename(&RenameReq {
             from: dir.path().join("x").to_string_lossy().to_string(),
-            to: dir.path().join("..").join("y").to_string_lossy().to_string(),
+            to: dir
+                .path()
+                .join("..")
+                .join("y")
+                .to_string_lossy()
+                .to_string(),
         })
         .is_err(),
         "含 .. 的路径必须拒绝"

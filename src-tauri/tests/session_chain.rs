@@ -121,8 +121,14 @@ fn test_bootstrap_chain() {
     for (name, json) in [
         (
             "书签",
-            serde_json::to_string(&state.services.userdata.list_bookmarks().expect("列书签失败"))
-                .expect("序列化失败"),
+            serde_json::to_string(
+                &state
+                    .services
+                    .userdata
+                    .list_bookmarks()
+                    .expect("列书签失败"),
+            )
+            .expect("序列化失败"),
         ),
         (
             "片段",
