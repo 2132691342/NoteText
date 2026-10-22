@@ -3,15 +3,15 @@
 ## 产物
 
 ```
-src-tauri/target/release/
+target/release/                        # workspace 根的 target/（根 Cargo.toml 是 workspace root）
 ├── NoteText.exe                    # 主程序（前端资源已 embed，单文件可跑）
 └── bundle/
     └── nsis/
         └── NoteText_0.1.0_x64-setup.exe   # NSIS 安装包
 ```
 
-产物**不入库**（`.gitignore` 排除 `src-tauri/target/`）：
-本地构建一次就产生几百 MB，入库只会让 clone 变慢。
+产物**不入库**（`.gitignore` 排除 `/target/`）：本地构建一次就产生几百 MB，
+入库只会让 clone 变慢。
 
 ## 流水线
 
@@ -20,7 +20,7 @@ src-tauri/target/release/
 | 工作流 | 触发 | 做什么 |
 |---|---|---|
 | `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 跑 `pwsh scripts/check.ps1 -Full`；失败时脚本把「哪条链坏了、错在哪一行」写进 job summary |
-| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 静态门禁（rustfmt / check / clippy）+ `cargo tauri build --bundler nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
+| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 静态门禁（rustfmt / check / clippy）+ `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
 
 **「推 main 不发版、只有推 tag 才发版」是靠两个工作流各自的触发条件锁死的**：
 
@@ -35,19 +35,29 @@ src-tauri/target/release/
 其余约定，改动流水线前要知道：
 
 - **门禁与出包分层**：日常质量门禁集中在 `ci.yml`；`release.yml` 只做静态编译门禁，
-  不重跑已由 main 门过的测试与独立前端构建（`cargo tauri build` 自己会跑前端）
+  不重跑已由 main 门过的测试（`tauri build` 自己会跑前端构建）
 - **两个 job 都跑 `windows-latest`**：目标平台只有 Windows amd64，
   门禁与出包必须在同一套系统调用上验
-- **`cargo tauri build` 会自己跑前端构建**：`beforeBuildCommand` 是 `npm run build`，
-  所以 CI 的 Rust job 不必先单独构建前端
+- **tauri-cli 用 npm 版**：`frontend/package.json` 的 devDependencies 已锁
+  `@tauri-apps/cli@^2.12.4`，与 tauri crate 同一条发布线。不装 `cargo-tauri`：
+  多一份全局工具链，版本还可能与 crate 对不上
+- **必须从仓库根跑 CLI**：CLI 要向上找到 `src-tauri/tauri.conf.json`，
+  从 `frontend/` 里跑会报「Couldn't recognize the current folder as a Tauri project」
+- **参数是 `--bundles`（复数）**：`--bundler` 是 1.x 的写法，2.x 已移除
+- **NSIS 工具链要缓存**：Tauri CLI 首次打包会从 GitHub 下载 NSIS（~10MB），
+  不缓存则每次发版都要重下，网络抖动就会让发版失败
 
 ## 构建
 
 ```powershell
-cargo tauri build                      # 产物 + bundle（按 tauri.conf.json 的 targets）
-cargo tauri build --bundler nsis       # 只出安装包
-cargo tauri build --debug              # 调试构建（快，但体积大）
+# 从仓库根执行：CLI 要向上找到 src-tauri/tauri.conf.json
+./frontend/node_modules/.bin/tauri build              # 产物 + bundle（按 tauri.conf.json 的 targets）
+./frontend/node_modules/.bin/tauri build --bundles nsis  # 只出安装包
+./frontend/node_modules/.bin/tauri build --debug        # 调试构建（快，但体积大）
 ```
+
+**首次打包要联网**：Tauri CLI 会下载 NSIS 工具链到 `~/AppData/Local/tauri`，
+之后离线可用。
 
 产物只有一个 exe：前端资源由 `tauri.conf.json` 的 `frontendDist` 指向
 `frontend/dist`，由 `tauri-build` 在编译期嵌进二进制。

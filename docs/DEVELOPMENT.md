@@ -21,8 +21,8 @@ pwsh scripts/check.ps1 -Full        # + clippy -D warnings + 前端构建
 
 npm --prefix frontend install       # 首次
 npm --prefix frontend run dev       # 浏览器预览（无后端，空态）
-cargo tauri dev                     # 完整开发（HMR + Rust 后端）
-cargo tauri build                   # 产物 NoteText.exe
+./frontend/node_modules/.bin/tauri dev     # 完整开发（HMR + Rust 后端）
+./frontend/node_modules/.bin/tauri build   # 产物 target/release/NoteText.exe
 ```
 
 定位测试的标准动作：先 `-List` 拿索引，再 `-Chain <关键字>` 落到一条链，
@@ -41,7 +41,7 @@ cd frontend; npx vue-tsc -b; npx vite build
 
 ```powershell
 $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
-cargo tauri dev
+./frontend/node_modules/.bin/tauri dev
 ```
 
 **调试时一定要设**：不设会读写你真实的 `%APPDATA%\NoteText`，
@@ -97,7 +97,7 @@ cargo tauri dev
 | `uno.config.ts` | 原子类刻度已接到 `--nt-*`：`gap-4` = `var(--nt-sp-4)`，禁止写裸像素 |
 
 浏览器里看界面：`npm run dev` 会因为没有后端而显示空态——
-要连真后端请用 `cargo tauri dev`。
+要连真后端请用 `./frontend/node_modules/.bin/tauri dev`。
 
 ## 常见问题
 

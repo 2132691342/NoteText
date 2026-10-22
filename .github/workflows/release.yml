@@ -27,33 +27,58 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # tauri-cli 走 npm 版（frontend/package.json 的 devDependencies 已锁 ^2.12.4），
+      # 与 tauri crate 2.x 同一条发布线。不装 cargo-tauri：多一份全局工具链，
+      # 版本还可能与 crate 对不上。
+      - name: 装前端依赖（含 tauri-cli）
+        run: npm --prefix frontend ci
+
+      # 缓存 cargo 产物：release 走的是 release profile，与 CI 的 debug 产物不通用。
       - name: 缓存 cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
+          key: release
+
+      # NSIS 工具链下载一次就好：Tauri CLI 会把它解压到用户目录。
+      # 不缓存则每次发版都要重新下 ~10MB，网络抖动就会让发版失败。
+      - name: 缓存 NSIS 工具链
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/tauri
+            ~/AppData/Local/tauri/NSIS
+          key: nsis-3.13
 
       # 出包前先过静态门禁：clippy 与前端类型检查编译期发现不了。
       - name: 静态门禁
         run: pwsh scripts/check.ps1 -Full
 
+      # 必须从仓库根跑：CLI 要向上找到 src-tauri/tauri.conf.json。
+      # 注意是 --bundles（复数）：--bundler 是 1.x 的写法，2.x 已移除。
       - name: 构建 NSIS 安装器
-        run: cargo tauri build --bundler nsis
+        run: ./frontend/node_modules/.bin/tauri build --bundles nsis
 
-      # 体积是回归信号：前端误引一个大包会让安装包翻倍，而本地不易察觉。
+      # 产物在 workspace 根的 target/ 下（根 Cargo.toml 是 workspace root），
+      # 不是 src-tauri/target/。
       - name: 校验产物
         shell: pwsh
         run: |
-          $exe = 'src-tauri/target/release/NoteText.exe'
+          $exe = 'target/release/NoteText.exe'
           if (-not (Test-Path $exe)) { throw "主程序不存在：$exe" }
           $mb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
           Write-Host "NoteText.exe = $mb MB"
           if ($mb -gt 20) { throw "主程序异常偏大（$mb MB），检查是否误打包了资源" }
+
+          $setup = Get-ChildItem 'target/release/bundle/nsis' -Filter '*.exe' -ErrorAction SilentlyContinue
+          if (-not $setup) { throw '没有找到 NSIS 安装包' }
+          $setup | ForEach-Object { Write-Host "安装包：$($_.Name) ($([math]::Round($_.Length / 1MB, 1)) MB)" }
 
       - name: 建 Release 并上传
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            src-tauri/target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

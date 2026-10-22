@@ -33,11 +33,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # Tauri 的 Rust 侧要 MSVC 链接器，系统盘已带；这里只缓存 cargo 产物。
+      # 缓存 cargo 产物：编译是 CI 里最慢的一段。
       - name: 缓存 cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
+
+      # 显式装依赖（走 setup-node 的 npm cache）。
+      # check.ps1 见到 node_modules 已存在就不会再跑 npm ci。
+      - name: 装前端依赖
+        run: npm --prefix frontend ci
 
       # 单一验证入口：与本地 `pwsh scripts/check.ps1 -Full` 完全一致。
       # 失败时脚本自己把「哪条链坏了、错在哪一行」写进 job summary。

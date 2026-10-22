@@ -463,7 +463,7 @@ mod dialog_stub;
 
 ```bash
 pwsh scripts/check.ps1 -Full         # rustfmt + 前端构建 + cargo check + clippy + 全量测试
-cargo tauri build                    # 产物 src-tauri/target/release/NoteText.exe
+./frontend/node_modules/.bin/tauri build   # 产物 target/release/NoteText.exe
 ```
 
 脚本逐步展开就是下面这些命令；单独跑某一步时才手敲：

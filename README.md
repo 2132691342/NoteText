@@ -37,14 +37,14 @@
 ```bash
 npm --prefix frontend install          # 首次
 npm --prefix frontend run dev          # 浏览器预览（无后端，显示空态）
-cargo tauri dev                        # 完整开发（Vite HMR + Rust 后端）
+./frontend/node_modules/.bin/tauri dev   # 完整开发（Vite HMR + Rust 后端）
 ```
 
 ### 构建
 
 ```bash
-cargo tauri build                      # 产物 src-tauri/target/release/NoteText.exe
-cargo tauri build --bundler nsis       # NSIS 安装包
+./frontend/node_modules/.bin/tauri build            # 产物 target/release/NoteText.exe
+./frontend/node_modules/.bin/tauri build --bundles nsis  # NSIS 安装包
 ```
 
 ### 本地验证
