@@ -155,3 +155,13 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 不是每个域都用得上全部 helper。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。
+
+## 取舍
+
+| 选择 | 优势 | 代价 |
+|---|---|---|
+| 拆 lib + bin 两个目标 | 集成测试链接同一份装配，不必拉起 WebView | `Cargo.toml` 要显式声明 `[lib] path` |
+| `commands / service / repo / domain` 四层严格单向依赖 | 每层能独立测试；改动不跨层扩散 | 一个字段从数据库到界面要过四层类型，改字段必须同步四处 |
+| `app / shell / platform` 三个能力域互不引用 | 独立测试与独立演进 | 它们要合作只能在 `commands` 里编排，能力域自己拿不到对方 |
+| 叶子包 `pkg` 不依赖任何业务包 | 工具函数不会被业务逻辑反向污染 | 出现业务词汇就意味着要往上挪一层 |
+| 前后端纯 invoke，无 HTTP 服务 | 没有端口、没有跨域、不需要 HTTP 客户端 | 不能用一个命令同时被浏览器与桌面复用 |

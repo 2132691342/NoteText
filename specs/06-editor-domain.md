@@ -28,7 +28,7 @@
 
 **为什么两边各一份**：后端按扩展名判语言用于会话恢复时记 `language` 字段，
 前端按同一张表选 CodeMirror 高亮。合成一份要引入共享模块，
-而两边的表示形式不同（Rust struct vs TS record），合成反而更难同步。
+而两边的表示形式不同（Rust 结构体 vs TS 记录），合成反而更难同步。
 
 ### 注释切换
 
@@ -41,7 +41,7 @@ toggle_line_comment(language, text)
   └─ 空行不动（注释空行只会让 diff 多噪音）
 ```
 
-三个边界都有测试守护（`test_text_pipeline_chain`）：
+三个边界都有测试守护（`tools_chain::test_tools_contract_chain`）：
 全注释块去掉、半注释块补齐、空行不动。
 **「未注释」的判定只看非空行**：空行没有注释可言，
 把它算进分母会让「注释掉一大半 + 夹一个空行」的块被判成已全注释，

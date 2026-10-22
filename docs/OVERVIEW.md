@@ -75,17 +75,17 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 
 | 模块 | 负责什么 | 规格 |
 |---|---|---|
-| `src-tauri/src/app` | 路径解析、装配（组合根）、生命周期 | [04](specs/04-desktop-shell.md) |
-| `src-tauri/src/shell` | 单实例、托盘、关闭策略 | [04](specs/04-desktop-shell.md) |
-| `src-tauri/src/service/file.rs` | 读 / 写 / 目录树 / 编码探测 / 原子写 / 监控 | [05](specs/05-file-domain.md) |
-| `src-tauri/src/service/file_ops.rs` | 文件树操作：新建 / 重命名 / 移动 / 复制 / 删除（护栏统一在 validate_target） | [05](specs/05-file-domain.md) |
-| `src-tauri/src/service/editor.rs` | 语言清单、注释切换、行编辑、行列换算 | [06](specs/06-editor-domain.md) |
-| `src-tauri/src/service/tools.rs` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](specs/09-tools.md) |
-| `src-tauri/src/service/userdata.rs` | 书签 / 片段 / 宏 / 草稿 / 最近 / 配置 / 备份 | [08](specs/08-user-data.md) |
-| `src-tauri/src/service/encoding.rs` | 12 种编码的探测 / 解码 / 编码 / BOM | [05](specs/05-file-domain.md) |
-| `src-tauri/src/service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](specs/13-batch-operations.md) |
-| `frontend/src/components/editor` | CodeMirror 容器 + compartments | [06](specs/06-editor-domain.md) |
-| `frontend/src/composables` | 命令表 / 主题 / 语言 / 宏 / 列编辑 / 退出守卫 | [07](specs/07-frontend-state.md) |
+| `src-tauri/src/app` | 路径解析、装配（组合根）、生命周期 | [04](../specs/04-desktop-shell.md) |
+| `src-tauri/src/shell` | 单实例、托盘、关闭策略 | [04](../specs/04-desktop-shell.md) |
+| `src-tauri/src/service/file.rs` | 读 / 写 / 目录树 / 编码探测 / 原子写 / 监控 | [05](../specs/05-file-domain.md) |
+| `src-tauri/src/service/file_ops.rs` | 文件树操作：新建 / 重命名 / 移动 / 复制 / 删除（护栏统一在 validate_target） | [05](../specs/05-file-domain.md) |
+| `src-tauri/src/service/editor.rs` | 语言清单、注释切换、行编辑、行列换算 | [06](../specs/06-editor-domain.md) |
+| `src-tauri/src/service/tools.rs` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](../specs/09-tools.md) |
+| `src-tauri/src/service/userdata.rs` | 书签 / 片段 / 宏 / 草稿 / 最近 / 配置 / 备份 | [08](../specs/08-user-data.md) |
+| `src-tauri/src/service/encoding.rs` | 12 种编码的探测 / 解码 / 编码 / BOM | [05](../specs/05-file-domain.md) |
+| `src-tauri/src/service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](../specs/13-batch-operations.md) |
+| `frontend/src/components/editor` | CodeMirror 容器 + compartments | [06](../specs/06-editor-domain.md) |
+| `frontend/src/composables` | 命令表 / 主题 / 语言 / 宏 / 列编辑 / 退出守卫 | [07](../specs/07-frontend-state.md) |
 
 依赖方向是单向的：`commands → service → repo → domain → pkg`，
 由 `cargo clippy` 与人工对表把关。**能力域之间不互引**，
@@ -127,7 +127,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 
 | 决定 | 换来了什么 | 代价 |
 |---|---|---|
-| Tauri 而不是 Wails / Electron | 前端是熟悉的 Vue 生态；包体 ~5MB | 要学 Tauri 的权限模型（capabilities） |
+| Tauri 2 做桌面壳 | 前端直接用熟悉的 Vue 生态；包体约 5MB | 要理解 Tauri 的权限清单（capabilities）才能加新系统能力 |
 | 无边框 + 自绘标题栏 | 视觉统一、可放「当前文件名」在标题栏 | 要处理拖拽区、最大化态、双击标题栏 |
 | 纯 invoke，不内嵌 HTTP 服务 | 无端口、无常驻服务、无 CSP 麻烦 | 浏览器里 `npm run dev` 只能看空态 |
 | 正文归编辑器，元数据归后端 | 大文件不卡；保存 / 恢复只需元数据 | 需要 `useEditorRegistry` 这层间接 |

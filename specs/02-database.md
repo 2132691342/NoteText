@@ -64,9 +64,9 @@ if v < 1 { conn.execute_batch(MIGRATION_V1)?; conn.execute_batch("PRAGMA user_ve
 ## 取舍
 
 **rusqlite bundled 而不是系统 SQLite**：用户机器不需要单独装 SQLite，
-也没有 CGO 依赖链（Wails/Go 那套要装 gcc 的麻烦不存在）。
-代价是二进制 +1.5MB——对 5MB 的包来说是显著的，但换来的零依赖值得。
+也没有 C 工具链依赖。代价是二进制约多 1.5MB——对 5MB 的包来说是显著的，
+但换来的零外部依赖值得。
 
-**不引 ORM**：GORM / diesel 那层抽象在这个规模下是净负担——
+**不引 ORM**：对象关系映射那层抽象在这个规模下是净负担——
 7 张表、几十个字段，手写 SQL 更短也更快。要引 ORM 的门槛是
 「跨库可移植」，而 NoteText 只跑 SQLite。

@@ -74,7 +74,7 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 | `src-tauri/src/service/tools.rs` | 哈希与迷你正则引擎都是手写实现，改前先看测试向量 |
 | `src-tauri/src/commands` | 薄 handler；新增命令必须同时进 `command_handlers!` 清单与前端 `api/index.ts` |
 | `src-tauri/src/app` | 组合根在这里；失败模式见 [ARCHITECTURE](ARCHITECTURE.md) 的启动时序 |
-| `src-tauri/src/shell` | 关闭策略的不变量见 [specs/04](specs/04-desktop-shell.md)，改前先读 |
+| `src-tauri/src/shell` | 关闭策略的不变量见 [specs/04](../specs/04-desktop-shell.md)，改前先读 |
 | `src-tauri/src/main.rs` | **不要写 `mod lib;`**（见 [ARCHITECTURE](ARCHITECTURE.md) 末尾） |
 
 新增一个能力时的顺序：
@@ -108,7 +108,7 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 | 前端 invoke 报 `command not found` | 命令没进 `command_handlers!` 清单，或名字不一致 |
 | 前端类型全变 `undefined` | 后端字段名与 `types/api.ts` 不一致；查 json tag |
 | 保存后整个文件行尾变了 | `write_file` 没传 `line_ending`，或前端传了 `null` |
-| 大文件打开卡死 | 不会自动降级：超过 32MB 应只读前段并标「已截断」，见 [specs/05](specs/05-file-domain.md) |
+| 大文件打开卡死 | 不会自动降级：超过 32MB 应只读前段并标「已截断」，见 [specs/05](../specs/05-file-domain.md) |
 | 界面样式全丢 | 引用了不存在的 CSS 变量——那会静默失效，最危险 |
 | 深色下浮层与内容糊在一起 | `ep-theme.css` 的 `--el-overlay-color-lighter` 没按主题分开 |
 | EP 按钮显示成裸文字（无底无框） | 缺 `unplugin-element-plus`：`ElementPlusResolver` 只管模板里的标签，脚本里 `import { ElButton }` 的组件样式要它补。见 `vite.config.ts` |
@@ -125,5 +125,14 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 pwsh scripts/check.ps1 -Full
 ```
 
-它跑：rustfmt → 前端构建 → `cargo check --all-targets` → `clippy -D warnings` → 全量测试。
+它跑：前端构建 → rustfmt → `cargo check --all-targets` → `clippy -D warnings` → 全量测试。
 任一步失败都会打印失败摘要（测试名 + `.rs:行号`），不用下载 artifact。
+
+## 取舍
+
+| 选择 | 优势 | 代价 |
+|---|---|---|
+| 一个脚本收口全部验证动作 | 不在文档 / CI / 本地各写一套命令，不会悄悄降档 | 换参数前要先读一眼脚本参数表 |
+| 默认档只跑 Rust，前端构建放 `-Full` | 日常改后端不用等十几秒的前端构建 | 改了前端忘加 `-Full` 要到 CI 才发现类型错 |
+| `NOTETEXT_HOME` 指向源码树做隔离 | 调试时不碰用户真实数据 | 忘了设就真写 `%APPDATA%`，所以要写进这篇文档 |
+| 测试用 `from_root(tempdir)` 而非 `resolve()` | 与生产同一份装配链路，不存在「测试替身」 | 每条链要真建一次库（亚秒级） |
