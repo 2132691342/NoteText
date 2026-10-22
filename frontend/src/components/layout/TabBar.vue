@@ -24,33 +24,18 @@
     </button>
   </div>
 
-  <!-- 标签右键菜单 -->
-  <Teleport to="body">
-    <div
-      v-if="menu"
-      class="nt-ctx-menu"
-      :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
-      @click="menu = null"
-    >
-      <button class="nt-ctx-item" @click="commands.run('file.closeTab')">{{ t('tab.close') }}</button>
-      <button class="nt-ctx-item" @click="onCloseOthers">{{ t('tab.closeOthers') }}</button>
-      <button class="nt-ctx-item" @click="onCloseSaved">{{ t('tab.closeSaved') }}</button>
-      <button class="nt-ctx-item" @click="commands.run('file.closeAll')">{{ t('tab.closeAll') }}</button>
-      <div class="nt-menu-sep" />
-      <button class="nt-ctx-item" @click="onCopyPath">{{ t('tab.copyPath') }}</button>
-      <button
-        v-if="menuTab?.path"
-        class="nt-ctx-item"
-        @click="api.openPath(dirOf(menuTab.path))"
-      >
-        {{ t('tab.revealInExplorer') }}
-      </button>
-    </div>
-  </Teleport>
+  <!-- 标签右键菜单：与编辑器 / 文件树共用 ContextMenu -->
+  <ContextMenu
+    v-if="menu"
+    :x="menu.x"
+    :y="menu.y"
+    :items="tabMenuItems"
+    @close="menu = null"
+  />
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api'
 import { copyText, dirName } from '@/utils'
@@ -58,6 +43,9 @@ import NtIcon from '@/components/common/NtIcon.vue'
 import { useEditorStore, type Tab } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
 import { useToastStore } from '@/stores/toast'
+import { closeTabById } from '@/composables/useCloseTab'
+import ContextMenu from '@/components/common/ContextMenu.vue'
+import type { MenuItem } from '@/components/common/contextMenu'
 
 const { t } = useI18n()
 const editor = useEditorStore()
@@ -83,31 +71,51 @@ function onWheel(e: WheelEvent) {
   e.preventDefault()
 }
 
+/** 关闭一个标签：干净的直接关，脏的走三选一确认。 */
 function onClose(tab: Tab) {
-  if (!editor.close(tab.id)) {
-    // 脏标签：交给命令层弹确认（那里统一处理「保存 / 不保存 / 取消」）。
-    commands.run('file.closeTab')
-  }
+  if (!editor.close(tab.id)) void closeTabById(tab.id)
 }
 
-function onCloseOthers() {
-  if (menuTab.value) editor.closeOthers(menuTab.value.id)
-  menu.value = null
-}
-
-function onCloseSaved() {
-  editor.closeSaved()
-  menu.value = null
-}
-
-async function onCopyPath() {
-  if (!menuTab.value?.path) return
-  await copyText(menuTab.value.path)
-  toast.ok(t('common.copied'))
-  menu.value = null
-}
+/** 右键菜单条目：每次打开按被点中的标签算，不依赖「当前活跃」。 */
+const tabMenuItems = computed<MenuItem[]>(() => {
+  const tab = menuTab.value
+  const path = tab?.path ?? ''
+  return [
+    { label: t('tab.close'), hint: 'Ctrl+W', run: () => tab && onClose(tab) },
+    { label: t('tab.closeOthers'), run: () => tab && editor.closeOthers(tab.id) },
+    { label: t('tab.closeSaved'), run: () => editor.closeSaved() },
+    { label: t('tab.closeAll'), run: () => commands.run('file.closeAll') },
+    { sep: true },
+    {
+      label: t('tab.copyPath'),
+      disabled: !path,
+      run: async () => {
+        if (!path) return
+        await copyText(path)
+        toast.ok(t('common.copied'))
+      },
+    },
+    {
+      label: t('tab.revealInExplorer'),
+      disabled: !path,
+      run: () => {
+        if (path) void api.openPath(dirOf(path))
+      },
+    },
+    { sep: true },
+    {
+      label: t('tab.copyName'),
+      run: async () => {
+        if (!tab) return
+        await copyText(displayName(tab))
+        toast.ok(t('common.copied'))
+      },
+    },
+  ]
+})
 
 function onMenu(e: MouseEvent, tab: Tab) {
+  e.preventDefault()
   menuTab.value = tab
   menu.value = { x: e.clientX, y: e.clientY }
 }

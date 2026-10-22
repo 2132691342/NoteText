@@ -48,8 +48,14 @@ export const useCommandStore = defineStore('commands', () => {
   return { registry, register, get, run, byGroup }
 })
 
-/** 默认键位表：与两个参考项目的高频操作对齐。
- *  覆盖写在设置里（config.keybindings），这里只是默认值。 */
+/**
+ * 默认键位表：命令表里声明的 `key` 的副本，供「设置 → 快捷键」展示与冲突检测。
+ *
+ * **真相源是命令自己声明的 `key`**（useCommands 注册时写的那一份）。
+ * 这里保留一份是为了：① 设置页列出全部默认键位；② 用户改键后仍能显示
+ * 「默认是什么」。两者必须一致——分发优先看命令的 key，所以这张表落后
+ * 只会让设置页显示旧的默认值，不会让按键失灵。
+ */
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'file.new': 'Control+N',
   'file.open': 'Control+O',
@@ -67,36 +73,40 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'edit.selectAll': 'Control+A',
   'edit.moveLineUp': 'Alt+Up',
   'edit.moveLineDown': 'Alt+Down',
+  'edit.indent': 'Control+]',
+  'edit.outdent': 'Control+[',
   'edit.find': 'Control+F',
   'edit.replace': 'Control+H',
   'edit.findInFiles': 'Control+Shift+F',
   'edit.gotoLine': 'Control+G',
   'edit.toggleComment': 'Control+/',
   'edit.duplicateLine': 'Control+D',
-  'edit.deleteLine': 'Control+L',
+  'edit.deleteLine': 'Control+Shift+K',
+  'edit.columnMode': 'Alt+C',
   'view.zoomIn': 'Control+=',
   'view.zoomOut': 'Control+-',
-  'view.fullscreen': 'F11',
-  'file.print': 'Control+P',
   'view.resetZoom': 'Control+0',
+  'view.fullscreen': 'F11',
   'view.toggleSidebar': 'Control+B',
   'view.toggleStatusbar': 'Control+Alt+B',
+  'view.toggleWordWrap': 'Alt+Z',
   'view.splitView': 'Control+\\',
+  'view.settings': 'Control+,',
+  'file.print': 'Control+P',
   'tools.json': 'Control+Shift+J',
   'tools.diff': 'Control+Shift+D',
   'tools.hash': 'Control+Shift+H',
   'tools.regex': 'Control+Shift+R',
   'tools.encoding': 'Control+Shift+E',
   'tools.lineOp': 'Control+Shift+L',
-  'bookmark.toggle': 'F2',
-  'bookmark.next': 'Shift+F2',
-  'macro.record': 'Control+Shift+M',
-  'macro.play': 'Control+Shift+P',
-  'edit.columnMode': 'Alt+C',
   'tools.clipboard': 'Control+Shift+V',
   'tools.hex': 'Control+Alt+H',
   'tools.batchFindReplace': 'Control+Shift+B',
   'tools.batchRename': 'Control+Alt+R',
+  'bookmark.toggle': 'F2',
+  'bookmark.next': 'Shift+F2',
+  'macro.record': 'Control+Shift+M',
+  'macro.play': 'Control+Shift+P',
   'help.manual': 'F1',
 }
 

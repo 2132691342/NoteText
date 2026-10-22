@@ -47,6 +47,13 @@ textarea,
   cursor: auto;
 }
 
+/*
+  按钮重置：抹掉浏览器给 <button> 的默认底、框、内距。
+  **必须写成裸元素选择器**（优先级 0,0,1）：任何组件类（`.el-button`、
+  `.nt-icon-btn`、`.nt-menu-item`……）都要能盖过它。
+  加 `:not([class*='el-'])` 之类会把优先级抬到 0,1,1，反而压掉自定义按钮的
+  padding 与字号——按钮会挤成一坨。
+*/
 button {
   font-family: inherit;
   font-size: inherit;
@@ -208,21 +215,55 @@ ol {
   color: var(--nt-primary);
 }
 
-/* 加载态：图标换成旋转环，尺寸与图标位一致，不推动布局 */
+/* 加载态：图标淡出、换成旋转环，尺寸与图标位一致，不推动布局。
+   只转图标不够——用户分不清「在转」和「图标本身长这样」，
+   所以同时压暗并去掉悬停反馈，明确的「现在不能点」。 */
 .nt-icon-btn.is-loading {
   pointer-events: none;
   transform: none;
   color: var(--nt-ink-muted);
+  position: relative;
 }
 
 .nt-icon-btn.is-loading .nt-icon {
-  animation: nt-spin 720ms linear infinite;
+  opacity: 0.25;
+}
+
+/* 旋转环画在图标位上（16px 圆圈），而不是转图标本身 */
+.nt-icon-btn.is-loading::after {
+  content: '';
+  position: absolute;
+  width: calc(var(--nt-icon-md) - 2px);
+  height: calc(var(--nt-icon-md) - 2px);
+  border: 2px solid var(--nt-border-strong);
+  border-top-color: var(--nt-primary);
+  border-radius: 50%;
+  animation: nt-spin 620ms linear infinite;
 }
 
 @keyframes nt-spin {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 文字按钮的加载态：环在文字前面，不挤动文字 */
+.nt-text-btn.is-loading {
+  pointer-events: none;
+  color: var(--nt-ink-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nt-sp-1);
+}
+
+.nt-text-btn.is-loading::before {
+  content: '';
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--nt-border-strong);
+  border-top-color: var(--nt-primary);
+  border-radius: 50%;
+  animation: nt-spin 620ms linear infinite;
 }
 
 /* ---------- 五态：每个可点元素必须给全五个状态 ----------

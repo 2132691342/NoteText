@@ -363,8 +363,9 @@ mod dialog_stub;
 | 删除语义 | `remove_xxx(id)` |
 | 查询型系统能力 | 窗口控制 / 对话框 / 应用信息可以直接碰 Tauri 运行时（不经 service） |
 | 错误 | 返回 `AppResult<T>`，由 `api/index.ts` 归一成 `{ code, message, details }` |
-| 二进制 | 不经 invoke（`Vec<u8>` 会序列化成 `number[]`，几 MB 就把通道堵死）；
-  走 `@tauri-apps/plugin-fs` 前端直读 |
+| 二进制 | 走 `read_binary`，出参 base64（`Vec<u8>` 会序列化成 `number[]`，
+  几 MB 就把通道堵死）；读取带 20MB 上限，超限让人话提示。
+  不给渲染层挂 `plugin-fs`——那等于把整块磁盘权限交出去 |
 
 前端 API 层收敛在 `frontend/src/api/index.ts`，命令名与 `commands/mod.rs`
 的 `command_handlers!` 清单一一对应。漏注册一个的后果是前端 invoke 报

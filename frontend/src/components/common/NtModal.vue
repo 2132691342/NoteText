@@ -13,7 +13,6 @@
         aria-modal="true"
         :aria-label="title"
         tabindex="-1"
-        @keydown.esc.prevent="emit('close')"
       >
         <header class="nt-modal-head">
           <span class="nt-modal-title">{{ title }}</span>
@@ -69,6 +68,20 @@ function trapFocus(e: KeyboardEvent) {
   }
 }
 
+/**
+ * Esc 关闭：监听在 document 上而不是弹窗元素上。
+ *
+ * 挂在元素上的 @keydown.esc 只在焦点还在弹窗内时有效；焦点一旦跑进
+ * 内部的 ElInput（它的 input 是独立元素）或者用户点了别处，Esc 就失灵。
+ * 浮窗是全屏模态，Esc 必须永远有效。
+ */
+function onEsc(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  e.preventDefault()
+  e.stopPropagation()
+  emit('close')
+}
+
 /** 滚动锁：浮窗打开时背后不滚动，否则滚轮会穿透到编辑器。 */
 let prevOverflow = ''
 onMounted(() => {
@@ -76,11 +89,14 @@ onMounted(() => {
   document.body.style.overflow = 'hidden'
   box.value?.focus()
   document.addEventListener('keydown', trapFocus, true)
+  // capture 阶段：先于编辑器与全局快捷键拿到 Esc。
+  document.addEventListener('keydown', onEsc, true)
 })
 
 onBeforeUnmount(() => {
   document.body.style.overflow = prevOverflow
   document.removeEventListener('keydown', trapFocus, true)
+  document.removeEventListener('keydown', onEsc, true)
 })
 </script>
 

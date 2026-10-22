@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import ElementPlus from 'unplugin-element-plus/vite'
 
 /**
  * Vite 配置：Tauri 2 嵌入式前端。
@@ -18,7 +19,13 @@ export default defineConfig({
     vue(),
     UnoCSS(),
     // EP 按需引入：全量注册会把用不到的组件连同样式打进首屏。
-    // 解析器按模板里真实出现的标签按需注册。
+    //
+    // **两个插件缺一不可**：Components 负责把 `<ElButton>` 解析成组件并把
+    // 组件样式引进来；unplugin-element-plus 负责改写源码里 `import { ElButton }`
+    // 这类显式导入，给它补上样式副作用导入。
+    // 少了后者，凡是「脚本里显式 import 再在模板用」的组件都只有 DOM 没有样式
+    // ——按钮会渲染成裸文字，浮窗里最明显。
+    ElementPlus({ useSource: false }),
     Components({
       dts: 'src/components.d.ts',
       resolvers: [ElementPlusResolver()],

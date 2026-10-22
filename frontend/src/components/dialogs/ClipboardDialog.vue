@@ -40,6 +40,7 @@ import NtModal from '@/components/common/NtModal.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
 import { useClipboardHistory, clearClip } from '@/composables/useClipboardHistory'
+import { doInsert } from '@/composables/useEditorActions'
 
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
@@ -61,9 +62,7 @@ function onInsert(text: string) {
     toast.bad(t('tool.clipNoEditor'))
     return
   }
-  document.dispatchEvent(
-    new CustomEvent('editor-cmd', { detail: { cmd: 'insert', payload: text } }),
-  )
+  doInsert(editor.activeId, text)
   emit('close')
 }
 

@@ -35,6 +35,7 @@ import { ElButton, ElInput } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import { useEditorStore } from '@/stores/editor'
 import { getText } from '@/composables/useEditorRegistry'
+import { doGotoLine } from '@/composables/useEditorActions'
 
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
@@ -62,11 +63,7 @@ onMounted(async () => {
 
 function go() {
   if (!valid.value) return
-  document.dispatchEvent(
-    new CustomEvent('editor-goto-line', {
-      detail: { tabId: editor.activeId, line: line.value },
-    }),
-  )
+  doGotoLine(editor.activeId, line.value)
   emit('close')
 }
 </script>

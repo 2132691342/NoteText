@@ -3,6 +3,9 @@
 NoteText 是单窗口应用，只有一个常驻视图（编辑器）+ 两个路由视图（设置 / 帮助）。
 所有工具箱都是挂在最外层的浮窗，不是路由。
 
+**标题栏挂在 `App.vue` 而不是编辑器页**：设置页与帮助页也要能最小化 / 关闭，
+否则用户进了设置就没有鼠标出口（无边框窗口没有系统窗控）。
+
 ## 路由
 
 | 路径 | 视图 | 说明 |
@@ -17,8 +20,9 @@ NoteText 是单窗口应用，只有一个常驻视图（编辑器）+ 两个路
 ## 编辑器页（EditorView）
 
 ```
-EditorView.vue
-├── TitleBar.vue          标题栏 32px：品牌 + 当前文件名 + 窗控
+App.vue
+└── TitleBar.vue          标题栏 32px：品牌 + 当前标题 + 窗控（全路由共用）
+    └── EditorView.vue
 ├── MenuBar.vue           菜单栏 32px：五个一级菜单（数据来自命令表）
 ├── ToolBar.vue           工具栏 34px：高频图标钮 + 「更多」下拉
 ├── SideBar.vue           侧栏：五个面板的容器，宽度可拖
@@ -37,7 +41,8 @@ EditorView.vue
 | ToolBar | `editor`（撤销可用性、脏标记）、`settings` | 「更多」下拉开工具箱浮窗 |
 | SideBar | `settings`（宽度 / 页签）、`fileTree` | 页签切换只改 `ui.sidebar_tab`；宽度拖拽 180–480 |
 | TabBar | `editor` | 中键关闭；右键菜单（关闭其他 / 已保存 / 复制路径） |
-| EditorArea | `editor` | `Ctrl+\` 分屏；拖放打开走 `useFileDrop` |
+| EditorArea | `editor` | `Ctrl+\` 分屏；拖放打开走 `useFileDrop`；
+  每个标签一个常驻 CodeMirror 实例，只在首次激活时挂载 |
 | StatusBar | `editor`、`settings` | 光标 / 统计由编辑器组件发自定义事件推 |
 
 ### 为什么布局五层不合并
@@ -71,7 +76,7 @@ EditorView.vue
 | 正则 | `dialogs/RegexToolDialog.vue` | 输入防抖 150ms 实时重算；捕获组表格 |
 | 编码 | `dialogs/EncodingToolDialog.vue` | 编码 + 行尾一起转；置信度低时警告 |
 | 行编辑 | `dialogs/LineOpToolDialog.vue` | 11 种操作可预览后应用 |
-| 查找 / 替换 | `dialogs/FindDialog.vue`（ReplaceDialog 是薄包装） | 本文件查找 + 结果列表 |
+| 查找 / 替换 | `dialogs/FindDialog.vue`（ReplaceDialog 是薄包装） | 本文件查找 + 命中计数 + 结果列表（带行号）；替换全部一次事务提交 |
 | 文件夹查找 | `dialogs/FindInFilesDialog.vue` | 并发上限 4；每 200 个文件让出一帧更新进度 |
 | 转到行 | `dialogs/GotoLineDialog.vue` | 上限取当前行数，超范围按钮置灰 |
 | 剪贴板历史 | `dialogs/ClipboardDialog.vue` | 编辑器内的复制 / 剪切攒 50 条，点击回插 |
@@ -91,9 +96,11 @@ EditorView.vue
 
 | 组件 | 用途 |
 |---|---|
-| `common/NtIcon.vue` | 24 网格内联 SVG 图标表（40+ 个 path） |
-| `common/NtModal.vue` | 浮窗统一容器 |
+| `common/NtIcon.vue` | 24 网格内联 SVG 图标表（50+ 个 path） |
+| `common/NtModal.vue` | 浮窗统一容器（Esc 监听在 document 上，焦点跑到内部输入框也有效） |
+| `common/ContextMenu.vue` | 右键菜单：编辑器 / 标签栏 / 文件树共用同一套条目与退场行为 |
 | `common/ToastHost.vue` | 右下角轻提示（可选中复制、悬停不计时） |
+| `dialogs/UnsavedDialog.vue` | 未保存确认：保存 / 不保存 / 取消 三选一，标签关闭与退出共用 |
 
 ## 设置页
 
@@ -137,3 +144,24 @@ CodeEditor.vue
 
 **恢复光标与滚动**：挂载后按 `tab.position` 选中、按 `scroll_ratio` 滚动，
 下一帧再执行（等 DOM 布局完成）。
+
+## 前端组合式函数
+
+| 文件 | 职责 |
+|---|---|
+| `composables/useCommands.ts` | 命令表（菜单 / 工具栏 / 快捷键 / 右键菜单的唯一来源） |
+| `composables/useGlobalKeys.ts` | 组合键 → 命令 id。**编辑器内也生效**：只把 CodeMirror 真绑过的组合让给它 |
+| `composables/useEditorActions.ts` | 对正文的原子动作（撤销 / 行操作 / 插入 / 替换 / 跳转），按 tabId 定位视图 |
+| `composables/useEditorRegistry.ts` | tabId → EditorView + 保存基线；脏标记按「与基线是否相同」判 |
+| `composables/useCloseTab.ts` | 关闭标签的唯一入口：保存 / 另存为 / 未保存确认 |
+| `composables/useAutoSave.ts` | 按配置间隔自动保存「已命名的脏标签」（未命名的不弹另存为） |
+| `composables/useExternalChange.ts` | 外部变更：干净标签重载正文，脏标签只提示（每路径 600ms 去抖） |
+| `composables/useFileDrop.ts` | 拖入文件开标签、拖入目录设为工作区（走 Tauri `onDragDropEvent`） |
+| `composables/useQuitGuard.ts` | 退出前存会话 + 草稿，逐个处理未保存标签 |
+| `composables/useEditorTheme.ts` | CodeMirror 主题与语法高亮（色值一律引用 `--nt-*`） |
+| `composables/useEditorLanguage.ts` | 语言包：静态 + 动态按需加载 |
+| `composables/useEditorMacro.ts` | 宏录制与回放 |
+| `composables/useEditorColumnMode.ts` | 列块编辑 |
+| `composables/useViewportScale.ts` | 按窗口宽写 `--nt-vw-scale` |
+| `composables/useShellIntent.ts` | 托盘 / 二次启动的文件打开意图 |
+| `composables/useClipboardHistory.ts` | 编辑器内复制文本的本地历史 |

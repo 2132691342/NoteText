@@ -135,12 +135,15 @@ EP 按钮和自绘图标钮并排时，点击手感必须一致；加载与禁�
 | 悬停 | 放大 + 变色 | `:hover:not(:disabled):not(.is-loading)` |
 | 按下 | 缩小 + 变色，松手弹回 | `:active:not(:disabled):not(.is-loading)` |
 | 禁用 | 变淡 0.5 + not-allowed，不放大不缩小 | `:disabled` / `.is-disabled` |
-| 加载 | 转圈 + 文字保留 + 0.85 亮度，尺寸锁定 | EP 的 `loading` prop；`.is-loading` 禁 transform |
+| 加载 | 图标淡到 0.25，同位置套一个 2px 旋转环；文字按钮的环在文字前。尺寸锁定 | EP 的 `loading` prop；自绘按钮加 `.is-loading`（`::after` 画环，禁 transform） |
 
 - **整行为什么不悬停放大**：宽度 100% 的行放大 1% 就是左右各溢出，
   在 `overflow: hidden` 的侧栏里会被裁掉边缘，一屏几十行跟着晃。缩小的点击感保留
 - 危险按钮 = **中性描边 + 危险色文字**：彩色描边违反分层纪律，语义交给文字与底色
-- 异步动作必须接 `loading`（组件在 await 前挂上、`finally` 摘），只换文案不转圈不算数
+- 异步动作必须接 `loading`（组件在 await 前挂上、`finally` 摘），只换文案不转圈不算数；
+  加载态同时禁用 `pointer-events`，否则连点会发出多个请求
+- **加载环不能靠「转图标本身」表示**：用户分不清「在转」和「图标长这样」，
+  必须是「图标压暗 + 独立的环」两层信号
 
 ## 编辑器的视觉语言
 

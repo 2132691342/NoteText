@@ -4,7 +4,6 @@
 // → 会话恢复 → 首个标签。
 <template>
   <div class="nt-root">
-    <TitleBar />
     <MenuBar v-if="ui.show_menu_bar" />
     <ToolBar v-if="ui.show_toolbar" />
     <div class="nt-body">
@@ -22,7 +21,6 @@
 
 <script lang="ts" setup>
 import { computed, onMounted } from 'vue'
-import TitleBar from '@/components/layout/TitleBar.vue'
 import MenuBar from '@/components/layout/MenuBar.vue'
 import ToolBar from '@/components/layout/ToolBar.vue'
 import SideBar from '@/components/layout/SideBar.vue'
@@ -39,6 +37,8 @@ import { useGlobalKeys } from '@/composables/useGlobalKeys'
 import { useExternalChange } from '@/composables/useExternalChange'
 import { useShellIntent } from '@/composables/useShellIntent'
 import { useQuitGuard } from '@/composables/useQuitGuard'
+import { useFileDrop } from '@/composables/useFileDrop'
+import { useAutoSave } from '@/composables/useAutoSave'
 
 const settings = useSettingsStore()
 const editor = useEditorStore()
@@ -52,6 +52,8 @@ registerCommands()
 useExternalChange()
 useShellIntent()
 useQuitGuard()
+useFileDrop()
+useAutoSave()
 
 onMounted(async () => {
   // 会话恢复：失败不阻塞启动（用户看到的是欢迎页）。
@@ -62,7 +64,7 @@ onMounted(async () => {
       if (restored.session) {
         editor.splitRatio = restored.session.split_ratio
       }
-      editor.restore(restored.tabs)
+      editor.restore(restored.tabs, restored.session?.active_index ?? 0)
       if (restored.missing.length > 0) {
         const { useToastStore } = await import('@/stores/toast')
         useToastStore().warn(

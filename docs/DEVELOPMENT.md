@@ -122,6 +122,12 @@ node scripts/shot.mjs 9225 .check/shot.png
 | 大文件打开卡死 | 不会自动降级：超过 32MB 应只读前段并标「已截断」，见 [specs/05](specs/05-file-domain.md) |
 | 界面样式全丢 | 引用了不存在的 CSS 变量——那会静默失效，最危险 |
 | 深色下浮层与内容糊在一起 | `ep-theme.css` 的 `--el-overlay-color-lighter` 没按主题分开 |
+| EP 按钮显示成裸文字（无底无框） | 缺 `unplugin-element-plus`：`ElementPlusResolver` 只管模板里的标签，脚本里 `import { ElButton }` 的组件样式要它补。见 `vite.config.ts` |
+| 自绘按钮的 padding/字号被吃掉 | `base.css` 里的 `button` 重置被写成了带 `:not()` 的高优先级选择器，压过了组件类。按钮重置必须是裸元素选择器 |
+| 编辑器里 Ctrl+S / Ctrl+F 没反应 | `useGlobalKeys` 的 `isTyping` 把整个 `.cm-editor` 排除了。判据应是「这条组合有没有命令认领」 |
+| 切标签后内容/撤销历史丢了 | `EditorArea` 用了 `v-if` 或只渲染 active 标签，实例被销毁。必须 `v-show` + 每个标签一个实例 |
+| 保存成功但标签还是脏的 | 没调 `commitBaseline(tabId)`，脏标记的基线还停在载入时 |
+| 每次保存都提示「已在外部修改」 | 后端没记自写路径。见 `FileService::note_self_write` |
 | 测试改了用户真实数据 | 用了 `AppPaths::resolve()` 而不是 `from_root(tempdir)` |
 
 ## 提交前

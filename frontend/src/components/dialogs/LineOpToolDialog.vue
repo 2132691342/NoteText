@@ -44,7 +44,8 @@ import NtModal from '@/components/common/NtModal.vue'
 import { api, normalizeError } from '@/api'
 import { LINE_OPS } from '@/stores/commands'
 import { useEditorStore } from '@/stores/editor'
-import { getText, getSelection } from '@/composables/useEditorRegistry'
+import { getText, getSelection, get } from '@/composables/useEditorRegistry'
+import { doReplaceDoc, doReplaceRange } from '@/composables/useEditorActions'
 import { useToastStore } from '@/stores/toast'
 import type { LineOp } from '@/types/api'
 
@@ -87,11 +88,19 @@ function select(next: LineOp) {
 function apply() {
   const tab = editor.active
   if (!tab) return
-  document.dispatchEvent(
-    new CustomEvent('editor-replace-doc', {
-      detail: { tabId: tab.id, text: output.value, selectionOnly: selectionOnly.value },
-    }),
-  )
+  const v = get(tab.id)
+  if (!v) return
+  if (selectionOnly.value) {
+    // 只换选区：用户勾了「仅选区」就该只动这一块。
+    const { from, to } = v.state.selection.main
+    if (from === to) {
+      toast.warn(t('toast.columnNoSelection'))
+      return
+    }
+    doReplaceRange(tab.id, from, to, output.value)
+  } else {
+    doReplaceDoc(tab.id, output.value)
+  }
   emit('close')
 }
 </script>

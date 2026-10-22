@@ -96,8 +96,9 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 - 出入参一律 `domain` 的类型，字段名 snake_case，`types/api.ts` 与 Rust 的
   json tag 一一对应；
 - 错误由 `api/index.ts` 的 `normalizeError` 归一成 `{ code, message, details }`；
-- **二进制不经 invoke**：`Vec<u8>` 会序列化成 `number[]`，几 MB 就把通道堵死。
-  图片 / PDF / docx 走 `@tauri-apps/plugin-fs` 前端直读。
+- **二进制不经 `Vec<u8>`**：它会序列化成 `number[]`，几 MB 就把通道堵死。
+  图片 / PDF / docx / Hex 走 `read_binary`，出参是 base64（体积 +33% 而不是 +300%），
+  且读取带 20MB 上限——超限给出「请用系统程序打开」这类可读提示。
 
 ### emit（后端 → 前端）
 
@@ -136,9 +137,10 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 `src-tauri/capabilities/default.json` 是前端唯一被允许调用的能力面：
 `core:default` + 一组窗口控制 + `dialog` + `opener` + `event` + `tray`。
 
-**文件读写全部走后端 command，不给前端 `fs` 权限**：这样路径校验、
-大小上限、原子写都在一个地方把关。前端只通过 `plugin-fs` 读二进制
-（图片 / PDF 预览），且不给写权限。
+**文件读写全部走后端 command，前端没有 `fs` 权限**：路径校验、大小上限、
+原子写都在一个地方把关。二进制（图片 / PDF / Hex）也走 command
+（`read_binary` → base64）：给渲染层挂 fs 插件等于把整块磁盘的读权限交出去，
+而这里只需要「读这一个文件」。
 
 ## 二进制为什么是 lib + bin 两个目标
 

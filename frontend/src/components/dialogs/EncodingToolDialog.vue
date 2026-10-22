@@ -51,7 +51,8 @@ import { useI18n } from 'vue-i18n'
 import { ElButton, ElCheckbox, ElOption, ElRadioButton, ElRadioGroup, ElSelect } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import { api, normalizeError } from '@/api'
-import { getText } from '@/composables/useEditorRegistry'
+import { getText, commitBaseline } from '@/composables/useEditorRegistry'
+import { doReplaceDoc } from '@/composables/useEditorActions'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
 import type { EncodingInfo } from '@/types/api'
@@ -82,26 +83,29 @@ onMounted(async () => {
 
 async function apply() {
   const tab = editor.active
-  if (!tab?.path) {
-    toast.warn('新建标签还没有路径，请先另存为')
+  if (!tab?.path || tab.path.startsWith('draft:')) {
+    toast.warn(t('toast.saveFirstForEncoding'))
     return
   }
   running.value = true
   try {
-    // 行尾转换在编辑器侧做（纯文本操作），编码在写盘时做。
+    // 行尾转换是文本层的事：先换编辑器里的文本（可撤销），再按新行尾写盘。
     if (ending.value !== tab.line_ending) {
-      document.dispatchEvent(
-        new CustomEvent('editor-replace-doc', {
-          detail: { tabId: tab.id, text: convertEnding(getText(tab.id), ending.value) },
-        }),
-      )
+      doReplaceDoc(tab.id, convertEnding(getText(tab.id), ending.value))
+      tab.line_ending = ending.value
     }
-    // 写盘时带上目标编码：后端 service::file::write 按它编码。
-    document.dispatchEvent(
-      new CustomEvent('editor-save-as', {
-        detail: { tabId: tab.id, encoding: to.value, bom: writeBom.value, line_ending: ending.value },
-      }),
+    // 编码与 BOM 只在写盘时生效：用户看到的一直是解码后的 Unicode。
+    tab.encoding = to.value
+    tab.has_bom = writeBom.value
+    await api.writeFile(
+      tab.path,
+      getText(tab.id),
+      tab.encoding,
+      tab.line_ending,
+      tab.has_bom,
     )
+    commitBaseline(tab.id)
+    editor.markDirty(tab.id, false)
     toast.ok(t('toast.encodingChanged', { encoding: to.value }))
     emit('close')
   } catch (e) {

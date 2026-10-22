@@ -1,7 +1,7 @@
 // Hex 视图主体：按 16 字节一行显示偏移 / 十六进制 / ASCII 三列。
 //
 // 二进制不走 invoke（字节数组会序列化成数字数组，几 MB 就堵死通道），
-// 走 plugin-fs 前端直读。只渲染可视区：100MB 的文件全量建 DOM 会卡死界面。
+// 走后端 read_binary（带上限）。只渲染可视区：全量建 DOM 会卡死界面。
 <template>
   <div class="nt-hex">
     <div class="nt-hex-head">
@@ -41,8 +41,16 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { readFile } from '@tauri-apps/plugin-fs'
 import { baseName } from '@/utils'
+import { api, normalizeError } from '@/api'
+
+/** base64 → 字节。atob 只处理 Latin-1，逐字节取 charCode 才不会破坏高位。 */
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i)
+  return out
+}
 
 const props = defineProps<{ path: string }>()
 
@@ -101,11 +109,14 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const data = await readFile(props.path)
+    // 走后端命令而不是 WebView 的 fs 插件：插件要看整块磁盘权限，
+    // 而后端能在超出预览上限时给出「请用系统程序打开」这类可读提示。
+    const b64 = await api.readBinary(props.path)
+    const data = base64ToBytes(b64)
     bytes.value = data
     total.value = data.length
   } catch (e) {
-    error.value = String(e)
+    error.value = normalizeError(e).message
   } finally {
     loading.value = false
   }

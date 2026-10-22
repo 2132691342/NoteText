@@ -15,6 +15,7 @@ declare module 'vue' {
     BookmarkPanel: typeof import('./components/panels/BookmarkPanel.vue')['default']
     ClipboardDialog: typeof import('./components/dialogs/ClipboardDialog.vue')['default']
     CodeEditor: typeof import('./components/editor/CodeEditor.vue')['default']
+    ContextMenu: typeof import('./components/common/ContextMenu.vue')['default']
     DialogHost: typeof import('./components/dialogs/DialogHost.vue')['default']
     DiffToolDialog: typeof import('./components/dialogs/DiffToolDialog.vue')['default']
     DocPreview: typeof import('./components/editor/DocPreview.vue')['default']
@@ -52,5 +53,6 @@ declare module 'vue' {
     TitleBar: typeof import('./components/layout/TitleBar.vue')['default']
     ToastHost: typeof import('./components/common/ToastHost.vue')['default']
     ToolBar: typeof import('./components/layout/ToolBar.vue')['default']
+    UnsavedDialog: typeof import('./components/dialogs/UnsavedDialog.vue')['default']
   }
 }

@@ -795,3 +795,86 @@
   color: var(--nt-primary);
   pointer-events: none;
 }
+
+/* ---------- 下拉菜单 / 右键菜单：共用一套条目样式 ----------
+   菜单出现过的三处（主菜单、标签右键、文件树右键）以前各写一套，
+   间距与悬停色都不一样。收敛到这里，只有「容器定位」由组件决定。 */
+.nt-menu-dropdown,
+.nt-menu {
+  position: fixed;
+  z-index: var(--nt-z-pop);
+  min-width: 220px;
+  padding: var(--nt-sp-1);
+  background: var(--nt-surface);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius);
+  box-shadow: var(--nt-card-shadow);
+  transform-origin: top left;
+  animation: nt-menu-in var(--nt-dur-fast) var(--nt-ease);
+}
+
+@keyframes nt-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.nt-menu-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nt-sp-6);
+  width: 100%;
+  height: calc(var(--nt-ctl-h) - 4px);
+  padding: 0 var(--nt-sp-2);
+  border-radius: var(--nt-radius-xs);
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink);
+  text-align: left;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-menu-entry:hover:not(:disabled) {
+  background: var(--nt-surface-selected);
+  color: var(--nt-primary);
+}
+
+/* 菜单项是整行文字：按下压深一档，不缩放（缩放会带动整行抖） */
+.nt-menu-entry:active:not(:disabled) {
+  background: var(--nt-primary-soft);
+  color: var(--nt-primary-strong);
+}
+
+.nt-menu-entry:disabled {
+  color: var(--nt-ink-muted);
+  cursor: default;
+}
+
+/* 危险项：中性底 + 危险色文字（彩色描边违反分层纪律） */
+.nt-menu-entry.is-danger:hover:not(:disabled) {
+  background: var(--nt-danger-bg);
+  color: var(--nt-danger);
+}
+
+.nt-menu-entry-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nt-menu-entry-key,
+.nt-menu-entry-hint {
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-muted);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.nt-menu-sep {
+  height: 1px;
+  margin: var(--nt-sp-1) var(--nt-sp-2);
+  background: var(--nt-border);
+}

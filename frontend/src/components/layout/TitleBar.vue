@@ -10,25 +10,40 @@
     </div>
     <div class="nt-titlebar-center" data-tauri-drag-region>
       {{ activeTitle }}
-      <span v-if="editor.active?.dirty" class="nt-titlebar-dirty">●</span>
+      <span v-if="onEditor && editor.active?.dirty" class="nt-titlebar-dirty">●</span>
     </div>
     <div class="nt-titlebar-controls">
-      <button class="nt-icon-btn" :title="t('toolbar.new')" @click="commands.run('file.new')">
-        <NtIcon name="plus" />
-      </button>
+      <!-- 编辑器专属动作：在设置 / 帮助页不显示（那里没有标签也没有侧栏） -->
+      <template v-if="onEditor">
+        <button class="nt-icon-btn" :title="t('toolbar.new')" @click="commands.run('file.new')">
+          <NtIcon name="plus" />
+        </button>
+        <button
+          class="nt-icon-btn"
+          :title="t('menu.toggleSidebar')"
+          :class="{ 'is-on': ui.show_sidebar }"
+          @click="toggleSidebar"
+        >
+          <NtIcon name="panel-left" />
+        </button>
+      </template>
       <button
-        class="nt-icon-btn"
-        :title="t('menu.toggleSidebar')"
-        :class="{ 'is-on': ui.show_sidebar }"
-        @click="toggleSidebar"
+        v-if="!onEditor"
+        class="nt-text-btn nt-titlebar-back"
+        @click="router.back()"
       >
-        <NtIcon name="panel-left" />
+        {{ t('common.back') }}
       </button>
       <span class="nt-titlebar-sep" />
-      <button class="nt-icon-btn" :title="t('menu.settings')" @click="router.push('/settings')">
+      <button
+        v-if="onEditor"
+        class="nt-icon-btn"
+        :title="t('menu.settings')"
+        @click="router.push('/settings')"
+      >
         <NtIcon name="settings" />
       </button>
-      <span class="nt-titlebar-sep" />
+      <span v-if="onEditor" class="nt-titlebar-sep" />
       <button class="nt-icon-btn" :title="t('common.minimize')" @click="api.windowMinimize()">
         <NtIcon name="minus" />
       </button>
@@ -44,7 +59,7 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api'
 import { useEditorStore } from '@/stores/editor'
@@ -54,14 +69,24 @@ import NtIcon from '@/components/common/NtIcon.vue'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const editor = useEditorStore()
 const settings = useSettingsStore()
 const commands = useCommandStore()
 
 const ui = computed(() => settings.config.ui)
 const maximized = ref(false)
+/** 是否在编辑器页：标题栏的编辑器专属按钮按它显示。 */
+const onEditor = computed(() => route.name === 'editor')
 
 const activeTitle = computed(() => {
+  // 非编辑器路由：标题用页面名，不然用户会以为自己在编辑器里。
+  if (!onEditor.value) {
+    const name = String(route.name ?? '')
+    if (name === 'settings') return t('settings.title')
+    if (name === 'help') return t('help.title')
+    return 'NoteText'
+  }
   const tab = editor.active
   if (!tab) return 'NoteText'
   const name = tab.title || t('tab.untitled')
@@ -91,6 +116,11 @@ onMounted(() => {
   border-bottom: 1px solid var(--nt-border);
   flex: none;
   user-select: none;
+}
+
+.nt-titlebar-back {
+  height: calc(var(--nt-h-menu) - 8px);
+  font-size: var(--nt-fs-sm);
 }
 
 .nt-titlebar-brand {

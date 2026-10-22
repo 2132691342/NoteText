@@ -4,12 +4,10 @@
 // 刷新与前进后退都能停在原处。
 <template>
   <div class="nt-settings">
+    <!-- 标题与窗控已在根标题栏：这里只放页面级动作，不再重复一遍标题 -->
     <header class="nt-settings-head">
-      <h1>{{ t('settings.title') }}</h1>
-      <div class="nt-settings-head-actions">
-        <ElButton size="small" @click="onReset">{{ t('settings.reset') }}</ElButton>
-        <ElButton size="small" :icon="Close" circle @click="router.back()" />
-      </div>
+      <span class="nt-settings-hint">{{ t('settings.resetHint') }}</span>
+      <ElButton size="small" @click="onReset">{{ t('settings.reset') }}</ElButton>
     </header>
     <div class="nt-settings-body">
       <nav class="nt-settings-nav">
@@ -39,7 +37,6 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Close } from '@element-plus/icons-vue'
 import { ElButton, ElMessage } from 'element-plus'
 import { useSettingsStore } from '@/stores/settings'
 import AppearancePanel from '@/components/settings/AppearancePanel.vue'
@@ -86,19 +83,22 @@ async function onReset() {
   height: var(--nt-h-menu);
   padding: 0 var(--nt-sp-3);
   border-bottom: 1px solid var(--nt-border);
-  -webkit-app-region: drag;
   flex: none;
 }
 
-.nt-settings-head h1 {
-  font-size: var(--nt-fs-md);
-  font-weight: 600;
+.nt-settings-hint {
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-muted);
 }
 
 .nt-settings-head-actions {
   display: flex;
   gap: var(--nt-sp-2);
-  -webkit-app-region: no-drag;
+}
+
+/* 返回按钮：右上角 X 是唯一的退出口，给它一个可读的悬停反馈 */
+.nt-settings-head-actions :deep(.el-button) {
+  color: var(--nt-ink-2);
 }
 
 .nt-settings-body {
@@ -120,6 +120,8 @@ async function onReset() {
 
 .nt-settings-nav-item {
   height: var(--nt-ctl-h);
+  padding: 0 var(--nt-sp-2);
+  border-radius: var(--nt-radius-sm);
   font-size: var(--nt-fs-sm);
   text-align: left;
   color: var(--nt-ink-2);

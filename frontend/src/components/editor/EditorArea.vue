@@ -1,89 +1,10 @@
-// 编辑区：按 view_type 分发到不同容器。
+// 编辑区：所有标签的编辑器实例常驻，只切换可见性。
 //
-// 一个标签一个编辑器实例（组件按 tab.id 缓存），切换标签不销毁——
-// 那样会丢撤销历史。分屏时同一标签渲染两个视图，第二个只读同步。
-<template>
-  <div class="nt-editor-area">
-    <div v-if="!editor.active" class="nt-welcome">
-      <div class="nt-welcome-logo">N</div>
-      <h2 class="nt-welcome-title">NoteText</h2>
-      <p class="nt-welcome-hint">{{ t('welcome.hint') }}</p>
-      <div class="nt-welcome-actions">
-        <ElButton type="primary" @click="commands.run('file.new')">
-          <NtIcon name="plus" size="sm" />
-          <span class="nt-btn-text">{{ t('welcome.newFile') }}</span>
-        </ElButton>
-        <ElButton @click="commands.run('file.open')">
-          <NtIcon name="folder-open" size="sm" />
-          <span class="nt-btn-text">{{ t('welcome.openFile') }}</span>
-        </ElButton>
-        <ElButton @click="commands.run('file.openFolder')">
-          <NtIcon name="folder" size="sm" />
-          <span class="nt-btn-text">{{ t('welcome.openFolder') }}</span>
-        </ElButton>
-      </div>
-
-      <!-- 最近文件：真实使用场景里「接着上次干」比「新建」更常见 -->
-      <div v-if="recent.length > 0" class="nt-welcome-recent">
-        <div class="nt-welcome-recent-head">
-          <span>{{ t('welcome.recent') }}</span>
-          <button class="nt-text-btn nt-recent-more" @click="commands.run('file.openRecent')">
-            {{ t('common.all') }}
-          </button>
-        </div>
-        <button
-          v-for="f in recent"
-          :key="f.path"
-          class="nt-row-item nt-welcome-recent-row"
-          :title="f.path"
-          @click="onOpenRecent(f.path)"
-        >
-          <NtIcon name="file" size="sm" class="nt-welcome-recent-icon" />
-          <span class="nt-welcome-recent-name">{{ f.file_name }}</span>
-          <span class="nt-welcome-recent-dir">{{ ellipsisMiddle(f.dir, 42) }}</span>
-        </button>
-      </div>
-    </div>
-
-    <template v-else>
-      <!-- 非代码视图：二进制走 Hex，文档走预览分流，都不进 CodeMirror -->
-      <div v-if="editor.active.view_type === 'hex'" class="nt-inline-view">
-        <HexView :path="editor.active.path" />
-      </div>
-      <DocPreview
-        v-else-if="isDoc"
-        :path="editor.active.path"
-        @toggle-edit="editor.active.showing_preview = false"
-      />
-      <div v-else class="nt-split" :style="splitStyle">
-        <CodeEditor :tab="editor.active" :view-id="'main'" />
-        <Minimap
-          v-if="settings.config.editor.minimap && mainView"
-          :view="mainView"
-          :line-count="lineCount"
-          :visible="true"
-        />
-        <div
-          v-if="editor.active.split"
-          class="nt-split-handle"
-          @mousedown="startSplitDrag"
-        />
-        <CodeEditor
-          v-if="editor.active.split"
-          :tab="editor.active"
-          :view-id="'second'"
-          :readonly="true"
-        />
-      </div>
-    </template>
-
-    <!-- 拖放打开的提示层 -->
-    <div v-if="dragging" class="nt-drop-target">{{ t('drop.hint') }}</div>
-  </div>
-</template>
-
+// 关键不变量：**一个标签一个 CodeMirror 实例，切标签不销毁**。
+// 销毁重建会同时丢掉三样东西：撤销历史、未保存的修改、滚动位置。
+// 所以这里 v-for 全量挂载（display 切换），而不是只渲染 active。
 <script lang="ts" setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton } from 'element-plus'
 import CodeEditor from '@/components/editor/CodeEditor.vue'
@@ -128,17 +49,58 @@ const DOC_EXTS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
 ])
 
-const isDoc = computed(() => {
-  const p = editor.active?.path
-  if (!p) return false
-  // 手动切到预览时一律走预览器（用户自己按的按钮）；
-  // 否则按扩展名判定，二进制文档不往 CodeMirror 里塞。
-  if (editor.active?.showing_preview) return true
-  const ext = p.split('.').pop()?.toLowerCase() ?? ''
-  return DOC_EXTS.has(ext)
-})
+function extOfPath(p: string): string {
+  return p.split('.').pop()?.toLowerCase() ?? ''
+}
 
-/** Minimap 要拿主视图的滚动与文档：注册表按 tabId 取。 */
+/** 该标签走文档预览器而不是代码编辑器。 */
+function isDocTab(path: string, forcePreview: boolean): boolean {
+  if (forcePreview) return true
+  if (!path) return false
+  return DOC_EXTS.has(extOfPath(path))
+}
+
+/** 二进制视图：进 Hex 而不是 CodeMirror。 */
+function isHexTab(viewType: string): boolean {
+  return viewType === 'hex'
+}
+
+/**
+ * 已经挂载过的标签 id。
+ *
+ * 为什么要记：v-for 全量挂载会让启动时把恢复出来的十几个文件全部读进内存
+ * （每个都是完整 CodeMirror 实例）。改成「首次激活才挂载，之后常驻」：
+ * 既不为没看过的文件付代价，也保证看过的不被销毁。
+ */
+const mounted = ref<Set<number>>(new Set())
+
+watch(
+  () => editor.activeId,
+  (id) => {
+    if (id != null && !mounted.value.has(id)) {
+      const next = new Set(mounted.value)
+      next.add(id)
+      mounted.value = next
+    }
+  },
+  { immediate: true },
+)
+// 标签被关掉后清掉记录：id 不复用，但集合不该无限增长。
+watch(
+  () => editor.tabs.length,
+  () => {
+    const alive = new Set(editor.tabs.map((x) => x.id))
+    let changed = false
+    const next = new Set<number>()
+    for (const id of mounted.value) {
+      if (alive.has(id)) next.add(id)
+      else changed = true
+    }
+    if (changed) mounted.value = next
+  },
+)
+
+/** 活跃标签的主视图（Minimap 要拿它）。 */
 const mainView = computed(() => {
   const id = editor.activeId
   return id != null ? (get(id) ?? null) : null
@@ -147,14 +109,8 @@ const mainView = computed(() => {
 const lineCount = computed(() => {
   const id = editor.activeId
   if (id == null) return 0
-  return getText(id).split('\n').length
-})
-
-const splitStyle = computed(() => {
-  const r = editor.splitRatio
-  return editor.active?.split
-    ? { gridTemplateColumns: `${r * 100}% 4px ${(1 - r) * 100}%` }
-    : { gridTemplateColumns: '1fr' }
+  const text = getText(id)
+  return text === '' ? 0 : text.split('\n').length
 })
 
 // ---- 分屏比例拖拽 ----
@@ -175,8 +131,9 @@ function startSplitDrag(e: MouseEvent) {
 }
 
 // ---- 拖放打开 ----
-// Tauri 的 dragDropEnabled=false（见 tauri.conf.json）：文件拖进来由
-// 前端接管，否则 WebView 会把它当成导航直接跳走。
+// Tauri 的 dragDropEnabled=false（见 tauri.conf.json）：文件拖进来由前端接管，
+// 否则 WebView 会把它当成导航直接跳走。文件路径从 Tauri 的 onDragDropEvent 拿，
+// 这里只负责显示提示层（见 composables/useFileDrop.ts）。
 const dragging = ref(false)
 let depth = 0
 
@@ -196,16 +153,12 @@ function onDragLeave() {
     dragging.value = false
   }
 }
-async function onDrop(e: DragEvent) {
-  depth = 0
-  dragging.value = false
-  const files = e.dataTransfer?.files
-  if (!files?.length) return
-  e.preventDefault()
-  // Tauri 2 的 webview 里 File.path 已废弃，用 webview 的 convertFileSrc 更稳；
-  // 这里用 dataTransfer 里可拿到的 name + 用户选择的目录不可靠，所以走
-  // `webviewWindow` 的 onDragDropEvent（见 composables/useFileDrop.ts）。
-  void files
+
+/** 拖放事件由 useFileDrop 派发到这里：它拿到路径后走统一打开链路。 */
+function onDragState(e: Event) {
+  const d = (e as CustomEvent).detail as { active: boolean }
+  dragging.value = !!d?.active
+  if (!d?.active) depth = 0
 }
 
 onMounted(() => {
@@ -213,15 +166,107 @@ onMounted(() => {
   window.addEventListener('dragenter', onDragEnter)
   window.addEventListener('dragover', onDragOver)
   window.addEventListener('dragleave', onDragLeave)
-  window.addEventListener('drop', onDrop)
+  document.addEventListener('nt-drag-state', onDragState)
 })
-onUnmounted(() => {
+onBeforeUnmount(() => {
   window.removeEventListener('dragenter', onDragEnter)
   window.removeEventListener('dragover', onDragOver)
   window.removeEventListener('dragleave', onDragLeave)
-  window.removeEventListener('drop', onDrop)
+  document.removeEventListener('nt-drag-state', onDragState)
 })
 </script>
+
+<template>
+  <div class="nt-editor-area">
+    <div v-if="!editor.active" class="nt-welcome">
+      <div class="nt-welcome-logo">N</div>
+      <h2 class="nt-welcome-title">NoteText</h2>
+      <p class="nt-welcome-hint">{{ t('welcome.hint') }}</p>
+      <div class="nt-welcome-actions">
+        <ElButton type="primary" @click="commands.run('file.new')">
+          <NtIcon name="plus" size="sm" />
+          <span class="nt-btn-text">{{ t('welcome.newFile') }}</span>
+        </ElButton>
+        <ElButton @click="commands.run('file.open')">
+          <NtIcon name="folder-open" size="sm" />
+          <span class="nt-btn-text">{{ t('welcome.openFile') }}</span>
+        </ElButton>
+        <ElButton @click="commands.run('file.openFolder')">
+          <NtIcon name="folder" size="sm" />
+          <span class="nt-btn-text">{{ t('welcome.openFolder') }}</span>
+        </ElButton>
+      </div>
+
+      <!-- 最近文件：真实使用场景里「接着上次干」比「新建」更常见 -->
+      <div v-if="recent.length > 0" class="nt-welcome-recent">
+        <div class="nt-welcome-recent-head">
+          <span>{{ t('welcome.recent') }}</span>
+          <button class="nt-text-btn nt-recent-more" @click="commands.run('file.openRecent')">
+            {{ t('common.all') }}
+          </button>
+        </div>
+        <button
+          v-for="f in recent"
+          :key="f.path"
+          class="nt-row-item nt-welcome-recent-row"
+          :title="f.path"
+          @click="onOpenRecent(f.path)"
+        >
+          <NtIcon name="file" size="sm" class="nt-welcome-recent-icon" />
+          <span class="nt-welcome-recent-name">{{ f.file_name }}</span>
+          <span class="nt-welcome-recent-dir">{{ ellipsisMiddle(f.dir, 42) }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!--
+      每个标签一个独立实例，只切 visibility（v-show 而非 v-if）：
+      v-if 会在切走时销毁视图，撤销历史与未保存的修改随之蒸发。
+      首次激活才挂载：恢复十几个文件时不必把每篇正文都读进内存。
+    -->
+    <div v-else class="nt-editor-stack">
+      <div
+        v-for="tab in editor.tabs"
+        v-show="tab.id === editor.activeId"
+        :key="tab.id"
+        class="nt-editor-slot"
+      >
+        <template v-if="mounted.has(tab.id)">
+          <div v-if="isHexTab(tab.view_type)" class="nt-inline-view">
+            <HexView :path="tab.path" />
+          </div>
+          <DocPreview
+            v-else-if="isDocTab(tab.path, tab.showing_preview)"
+            :path="tab.path"
+            @toggle-edit="tab.showing_preview = false"
+          />
+          <CodeEditor v-else :tab="tab" :view-id="'main'" />
+        </template>
+        <div v-else class="nt-editor-loading">
+          <span class="nt-spinner" />
+        </div>
+      </div>
+
+      <!-- 分屏：只在活跃标签上渲染第二个只读视图 -->
+      <template v-if="editor.active && editor.active.split && !isDocTab(editor.active.path, editor.active.showing_preview) && !isHexTab(editor.active.view_type)">
+        <div class="nt-split-handle" @mousedown="startSplitDrag" />
+        <div class="nt-split-second">
+          <CodeEditor :tab="editor.active" :view-id="'second'" :readonly="true" />
+        </div>
+      </template>
+
+      <Minimap
+        v-if="settings.config.editor.minimap && mainView"
+        :view="mainView"
+        :line-count="lineCount"
+        :visible="true"
+      />
+    </div>
+
+    <!-- 拖放打开的提示层 -->
+    <div v-if="dragging" class="nt-drop-target">{{ t('drop.hint') }}</div>
+  </div>
+</template>
 
 <style scoped>
 .nt-editor-area {
@@ -234,10 +279,61 @@ onUnmounted(() => {
   background: var(--nt-editor-bg);
 }
 
-.nt-split {
-  display: grid;
+/*
+  栈布局：编辑区 + 可选的分屏第二栏 + 小地图。
+  用 flex 而不是 grid：分屏宽度比例与最小宽度在窄窗口里的行为更可预期。
+*/
+.nt-editor-stack {
+  position: relative;
+  display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+}
+
+/* 标签槽：占满整块，切走时只是不显示，实例留着 */
+.nt-editor-slot {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nt-editor-slot[style*='display: none'] {
+  flex: 0;
+}
+
+.nt-editor-loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.nt-inline-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.nt-split-handle {
+  width: 4px;
+  flex: none;
+  cursor: col-resize;
+  background: var(--nt-border);
+  transition: background-color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-split-handle:hover {
+  background: var(--nt-primary);
+}
+
+.nt-split-second {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
 }
 
 .nt-welcome-hint {

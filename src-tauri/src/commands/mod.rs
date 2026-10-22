@@ -31,6 +31,7 @@ macro_rules! command_handlers {
         tauri::generate_handler![
             // 文件
             commands::file::read_file,
+            commands::file::read_binary,
             commands::file::write_file,
             commands::file::save_file_as,
             commands::file::read_dir,

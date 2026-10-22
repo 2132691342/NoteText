@@ -11,7 +11,7 @@
 | 出入参 | 一律 `domain` 的类型；两个以上参数用结构体而不是位置参数 |
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
-| 二进制 | 不经 invoke；走 `@tauri-apps/plugin-fs` |
+| 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
 | 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 `test_bootstrap_chain`） |
 
 ## 文件
@@ -19,6 +19,7 @@
 | 命令 | 入参 | 出参 |
 |---|---|---|
 | `read_file` | `path`, `mode?` | `FileContentVO` |
+| `read_binary` | `path` | `string`（base64，上限 20MB） |
 | `write_file` | `path`, `text`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO` |
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
 | `read_dir` | `dir` | `DirEntry[]` |

@@ -11,23 +11,27 @@
       </ElButton>
     </div>
     <template v-else>
-      <FileTreeNode v-for="e in tree.children.get(tree.root) ?? []" :key="e.path" :entry="e" :depth="0" />
+      <FileTreeNode
+        v-for="e in tree.children.get(tree.root) ?? []"
+        :key="e.path"
+        :entry="e"
+        :depth="0"
+      />
     </template>
   </div>
 
-  <Teleport to="body">
-    <div v-if="menu" class="nt-ctx-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" @click="menu = null">
-      <button class="nt-ctx-item" @click="onOpen">{{ t('menu.open') }}</button>
-      <button class="nt-ctx-item" @click="onReveal">{{ t('tab.revealInExplorer') }}</button>
-      <div class="nt-menu-sep" />
-      <button class="nt-ctx-item" @click="onCopy">{{ t('tab.copyPath') }}</button>
-      <button class="nt-ctx-item" @click="onRefresh">{{ t('common.refresh') }}</button>
-    </div>
-  </Teleport>
+  <!-- 右键菜单：与编辑器 / 标签栏共用 ContextMenu -->
+  <ContextMenu
+    v-if="menu"
+    :x="menu.x"
+    :y="menu.y"
+    :items="treeMenuItems"
+    @close="menu = null"
+  />
 </template>
 
 <script lang="ts" setup>
-import { h, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton } from 'element-plus'
 import { type Component } from 'vue'
@@ -37,6 +41,8 @@ import { useCommandStore } from '@/stores/commands'
 import { useToastStore } from '@/stores/toast'
 import { api } from '@/api'
 import { copyText, dirName } from '@/utils'
+import ContextMenu from '@/components/common/ContextMenu.vue'
+import type { MenuItem } from '@/components/common/contextMenu'
 import type { DirEntry } from '@/types/api'
 
 const { t } = useI18n()
@@ -119,33 +125,45 @@ function onBlankMenu(e: MouseEvent) {
   menu.value = { x: e.clientX, y: e.clientY }
 }
 
-async function onOpen() {
-  const e = menuEntry.value
-  menu.value = null
-  if (!e) return
-  if (e.is_dir) await tree.refresh(e.path)
-  else await editor.openPath(e.path)
-}
-
-function onReveal() {
-  const e = menuEntry.value
-  menu.value = null
-  if (!e) return
-  void api.openPath(e.is_dir ? e.path : dirName(e.path))
-}
-
-async function onCopy() {
-  const e = menuEntry.value
-  menu.value = null
-  if (!e) return
-  await copyText(e.path)
-  toast.ok(t('common.copied'))
-}
-
-function onRefresh() {
-  menu.value = null
-  if (tree.root) void tree.refresh(tree.root)
-}
+/** 右键菜单条目：按被点中的节点算（空白处只给目录级动作）。 */
+const treeMenuItems = computed<MenuItem[]>(() => {
+  const entry = menuEntry.value
+  return [
+    {
+      label: t('menu.open'),
+      disabled: !entry,
+      run: async () => {
+        if (!entry) return
+        if (entry.is_dir) await tree.refresh(entry.path)
+        else await editor.openPath(entry.path)
+      },
+    },
+    {
+      label: t('tab.revealInExplorer'),
+      disabled: !entry,
+      run: () => {
+        if (!entry) return
+        void api.openPath(entry.is_dir ? entry.path : dirName(entry.path))
+      },
+    },
+    { sep: true },
+    {
+      label: t('tab.copyPath'),
+      disabled: !entry,
+      run: async () => {
+        if (!entry) return
+        await copyText(entry.path)
+        toast.ok(t('common.copied'))
+      },
+    },
+    {
+      label: t('common.refresh'),
+      run: () => {
+        if (tree.root) void tree.refresh(tree.root)
+      },
+    },
+  ]
+})
 </script>
 
 <style scoped>

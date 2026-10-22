@@ -129,58 +129,5 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   display: inline-flex;
 }
 
-.nt-menu-dropdown {
-  position: fixed;
-  z-index: var(--nt-z-pop);
-  min-width: 220px;
-  padding: var(--nt-sp-1);
-  background: var(--nt-surface);
-  border: 1px solid var(--nt-border);
-  border-radius: var(--nt-radius);
-  box-shadow: var(--nt-card-shadow);
-}
-
-.nt-menu-entry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--nt-sp-6);
-  width: 100%;
-  height: calc(var(--nt-ctl-h) - 4px);
-  padding: 0 var(--nt-sp-2);
-  border-radius: var(--nt-radius-xs);
-  font-size: var(--nt-fs-sm);
-  color: var(--nt-ink);
-  text-align: left;
-  transition:
-    background-color var(--nt-dur-fast) var(--nt-ease),
-    color var(--nt-dur-fast) var(--nt-ease);
-}
-
-.nt-menu-entry:hover:not(:disabled) {
-  background: var(--nt-surface-selected);
-  color: var(--nt-primary);
-}
-
-.nt-menu-entry:active:not(:disabled) {
-  background: var(--nt-primary-soft);
-  color: var(--nt-primary-strong);
-}
-
-.nt-menu-entry:disabled {
-  color: var(--nt-ink-muted);
-  cursor: default;
-}
-
-.nt-menu-entry-key {
-  font-size: var(--nt-fs-hint);
-  color: var(--nt-ink-muted);
-  flex: none;
-}
-
-.nt-menu-sep {
-  height: 1px;
-  margin: var(--nt-sp-1) var(--nt-sp-2);
-  background: var(--nt-border);
-}
+/* 菜单容器与条目样式在 content.css（全局）：右键菜单也要用同一套。 */
 </style>

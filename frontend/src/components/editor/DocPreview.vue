@@ -41,7 +41,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton } from 'element-plus'
-import { readFile } from '@tauri-apps/plugin-fs'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { api, normalizeError } from '@/api'
 import { useToastStore } from '@/stores/toast'
@@ -124,7 +123,8 @@ async function classify() {
 async function renderMarkdown() {
   try {
     if (!host.value) return
-    const data = await readFile(props.path)
+    const data = await readBytes()
+    if (!data) return
     mdText.value = new TextDecoder('utf-8').decode(data)
     // 体积守卫：Markdown 渲染要把整篇插进 DOM，几 MB 就能卡死界面。
     if (mdText.value.length > MAX_PREVIEW) {
@@ -167,11 +167,8 @@ async function renderMarkdown() {
 
 async function renderPlainText() {
   if (!host.value) return
-  const data = await readFile(props.path)
-  if (data.length > MAX_PREVIEW) {
-    kind.value = 'tooLarge'
-    return
-  }
+  const data = await readBytes()
+  if (!data) return
   // 二进制不进纯文本预览：解成文本是一屏 NUL 与乱码，改用十六进制。
   if (looksBinary(data)) {
     kind.value = 'unsupported'
@@ -182,6 +179,33 @@ async function renderPlainText() {
   host.value.textContent = new TextDecoder('utf-8').decode(data)
   host.value.classList.add('is-plain')
   kind.value = 'plain'
+}
+
+/**
+ * 读文件字节：走后端 `read_binary`（base64），不走 WebView 的 fs 插件。
+ *
+ * 为什么不用 plugin-fs：那等于把整块磁盘的读权限交给渲染层，而预览
+ * 只需要「读这一个文件」。后端命令还带了 20MB 上限，超限直接给可读提示。
+ * 返回 null = 已经给出提示，调用方直接返回即可。
+ */
+async function readBytes(): Promise<Uint8Array | null> {
+  try {
+    const b64 = await api.readBinary(props.path)
+    return base64ToBytes(b64)
+  } catch (e) {
+    const err = normalizeError(e)
+    toast.warn(err.message)
+    kind.value = 'unsupported'
+    return null
+  }
+}
+
+/** base64 → 字节。atob 只处理 Latin-1，所以逐字节取 charCode。 */
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i)
+  return out
 }
 
 /** 前 8KB 出现 NUL 就当二进制：足够区分文本与可执行文件 / 压缩包。 */
@@ -195,11 +219,8 @@ function looksBinary(data: Uint8Array): boolean {
 
 async function renderXlsx() {
   if (!host.value) return
-  const data = await readFile(props.path)
-  if (data.length > MAX_PREVIEW) {
-    kind.value = 'tooLarge'
-    return
-  }
+  const data = await readBytes()
+  if (!data) return
   const XLSX = await import('xlsx')
   const wb = XLSX.read(data, { type: 'array' })
   // 只渲染第一张表：预览定位是「看一眼里面是什么」，多表切换属于编辑器功能。
@@ -209,22 +230,16 @@ async function renderXlsx() {
 
 async function renderDocx() {
   if (!host.value) return
-  const data = await readFile(props.path)
-  if (data.length > MAX_PREVIEW) {
-    kind.value = 'tooLarge'
-    return
-  }
+  const data = await readBytes()
+  if (!data) return
   const { renderAsync } = await import('docx-preview')
   await renderAsync(data, host.value)
 }
 
 async function renderPdf() {
   if (!host.value) return
-  const data = await readFile(props.path)
-  if (data.length > MAX_PREVIEW) {
-    kind.value = 'tooLarge'
-    return
-  }
+  const data = await readBytes()
+  if (!data) return
   const mod = await import('vue-pdf-embed')
   const { createApp, h } = await import('vue')
   // pdf 组件是 Vue 组件：动态建一个 app 挂进来，避免把它写进模板

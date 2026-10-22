@@ -83,10 +83,8 @@ async function exportBackup() {
     const text = JSON.stringify(json, null, 2)
     const path = await api.saveFileDialog('notetext-backup.json')
     if (!path) return
-    // 备份文件自己写：走 Rust 的 save 命令会带编码/行尾转换，
-    // 而备份要的是「原样 JSON」，所以这里用 dialog 插件拿到路径后直接写。
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs')
-    await writeTextFile(path, text)
+    // 备份是 UTF-8 JSON：显式给编码与 LF 行尾，走同一条写盘链路（含原子写）。
+    await api.writeFile(path, text, 'utf-8', 'lf', false)
     toast.ok(t('toast.backupExported', { path }))
   } catch (e) {
     toast.bad(`${t('settings.importFailed', { reason: normalizeError(e).message })}`)
@@ -100,8 +98,8 @@ async function importBackup() {
   try {
     const path = await api.openFileDialog()
     if (!path) return
-    const { readTextFile } = await import('@tauri-apps/plugin-fs')
-    const text = await readTextFile(path)
+    // 备份可能带 BOM 或是 GBK 存过的：交给后端的编码探测，别自己解。
+    const { text } = await api.readFile(path)
     const json = JSON.parse(text)
     const n = await api.importBackup(json)
     ElMessage.success(t('settings.importDone', { count: n }))

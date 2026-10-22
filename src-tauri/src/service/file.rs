@@ -32,14 +32,53 @@ pub struct FileService {
     db: Arc<Db>,
     /// 目录监控器：建一次复用，`watch` 只加路径。
     watcher: std::sync::Mutex<Option<RecommendedWatcher>>,
+    /// 自己刚写过的路径（路径 → 时刻）：用来吞掉自己触发的 fs 事件。
+    ///
+    /// 不做这一步的后果：每次 Ctrl+S 都会收到「文件已在外部修改」，
+    /// 用户要么被提示淹没，要么学会无条件忽略它——后者等于把真正的
+    /// 外部变更提示也废掉了。
+    ///
+    /// 用 `Arc` 是因为监控回调是 `move` 闭包，必须与这里共享同一张表。
+    self_writes: SelfWrites,
 }
+
+/// 自写路径表：路径 → 写入时刻。
+type SelfWrites =
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>;
+
+/// 该路径是否在自写窗口内（监控回调用，拿不到 &self）。
+fn is_recent(writes: &SelfWrites, path: &str, now: std::time::Instant) -> bool {
+    let Ok(map) = writes.lock() else {
+        return false;
+    };
+    map.get(path)
+        .is_some_and(|t| now.duration_since(*t) < SELF_WRITE_GRACE)
+}
+
+/// 自己写入后忽略外部变更事件的时长。
+///
+/// 覆盖「原子写先写临时文件再 rename」后文件系统投递事件的延迟；
+/// 不设过长：用户在自己保存后立刻用别的程序改这个文件，应该收到提示。
+const SELF_WRITE_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
 
 impl FileService {
     pub fn new(db: Arc<Db>) -> Self {
         Self {
             db,
             watcher: std::sync::Mutex::new(None),
+            self_writes: SelfWrites::default(),
         }
+    }
+
+    /// 记一笔「这个路径是我刚写的」。
+    fn note_self_write(&self, path: &str) {
+        let Ok(mut map) = self.self_writes.lock() else {
+            return;
+        };
+        let now = std::time::Instant::now();
+        // 顺手清掉过期条目：这张表只用于几秒内的去重，不该无界增长。
+        map.retain(|_, t| now.duration_since(*t) < SELF_WRITE_GRACE * 4);
+        map.insert(path.to_string(), now);
     }
 
     /// 读目录（一层，不递归）。排序：目录在前、名称不区分大小写。
@@ -116,6 +155,36 @@ impl FileService {
             read_only: meta.permissions().readonly(),
             is_binary: self.sniff_binary(p),
         })
+    }
+
+    /// 读原始字节：Hex 视图与图片 / PDF 预览用。
+    ///
+    /// 直接从 Rust 读而不是放给 WebView 的 fs 插件：这些文件动辄几十 MB，
+    /// 走插件等于把整个磁盘读权限交给渲染层。这里只允许读「存在且不超过
+    /// `limit`」的文件，越界就返回错误让调用方提示改用什么打开。
+    pub fn read_bytes(&self, path: &str, limit: u64) -> AppResult<Vec<u8>> {
+        let p = Path::new(path);
+        let meta = fs::metadata(p).map_err(|e| {
+            AppError::wrap(codes::FILE_NOT_FOUND, "读不了：文件不存在或已被移走", e)
+                .with_detail(format!("路径：{path}"))
+        })?;
+        if !p.is_file() {
+            return Err(AppError::new(
+                codes::FILE_NOT_FOUND,
+                "这是一个目录，不是文件",
+            ));
+        }
+        if meta.len() > limit {
+            return Err(AppError::new(
+                codes::FILE_TOO_LARGE,
+                format!(
+                    "文件较大（{} MB），已超出预览上限（{} MB），请用系统默认程序打开",
+                    meta.len() / 1024 / 1024,
+                    limit / 1024 / 1024
+                ),
+            ));
+        }
+        fs::read(p).map_err(|e| AppError::wrap("1002", "读不了：文件被占用", e))
     }
 
     /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。
@@ -271,6 +340,8 @@ impl FileService {
         }
         final_bytes.extend_from_slice(&body);
 
+        // 先登记再落盘：文件系统事件可能比 write 返回还早送到。
+        self.note_self_write(path);
         atomic_write(p, &final_bytes)?;
 
         // 写完记账：最近文件列表刷新。
@@ -328,18 +399,30 @@ impl FileService {
 
         if guard.is_none() {
             let handle = app.clone();
+            // 回调里要用「自己刚写过」的判据，所以把 self_writes 的句柄挪进去。
+            let self_writes = SelfWrites::clone(&self.self_writes);
             let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 match res {
                     Ok(ev) => {
                         // 只报「可能改了内容」与「结构变了」两类，噪音事件（访问时间）丢掉。
                         let relevant =
                             ev.kind.is_modify() || ev.kind.is_create() || ev.kind.is_remove();
-                        if relevant {
-                            let paths: Vec<String> = ev
-                                .paths
-                                .iter()
-                                .map(|p| p.to_string_lossy().to_string())
-                                .collect();
+                        if !relevant {
+                            return;
+                        }
+                        let now = std::time::Instant::now();
+                        let paths: Vec<String> = ev
+                            .paths
+                            .iter()
+                            .filter(|p| {
+                                // 自己刚写的文件不通知：否则每次保存都刷一条
+                                // 「文件已被外部修改」，提示就失去意义了。
+                                let key = p.to_string_lossy().to_string();
+                                !is_recent(&self_writes, &key, now)
+                            })
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect();
+                        if !paths.is_empty() {
                             let _ = tauri::Emitter::emit(&handle, "fs:changed", paths);
                         }
                     }

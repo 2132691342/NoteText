@@ -1,16 +1,21 @@
 // 退出守卫：关窗时先检查未保存内容。
 //
-// 链路（specs/04）：前端点 X → 后端发 `app:before-close` → 弹确认 →
-// 用户确认 → 调 `confirm_quit` + `force_quit` → 后端放行 CloseRequested。
+// 链路（specs/04）：前端点 X → 后端发 `app:before-close` → 逐个问未保存标签
+// → 用户确认 → 调 `confirm_quit` + `force_quit` → 后端放行 CloseRequested。
+//
+// 为什么逐个问而不是「有 N 个未保存，全存还是全丢」：全存会遇到「这个文件
+// 我不想存」的情况，全丢会遇到「上一个我想存」的情况。逐个问才有第三个
+// 选项（取消），代价是要多点几下——这在退出这种低频操作上是值得的。
 
 import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
+import { askUnsaved } from '@/components/dialogs/UnsavedDialog.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from 'vue-i18n'
 import { useToastStore } from '@/stores/toast'
 import { api, isDesktop } from '@/api'
-import { getText } from '@/composables/useEditorRegistry'
+import { getText, commitBaseline } from '@/composables/useEditorRegistry'
 
 export function useQuitGuard() {
   const { t } = useI18n()
@@ -21,22 +26,33 @@ export function useQuitGuard() {
   if (!isDesktop) return
 
   let unlisten: (() => void) | null = null
+  /** 正在处理关窗：防止重复弹确认（托盘隐藏 + 点 X 会连发两次事件）。 */
+  let busy = false
 
   onMounted(async () => {
     unlisten = await listen('app:before-close', async () => {
-      await onBeforeClose()
+      if (busy) return
+      busy = true
+      try {
+        await onBeforeClose()
+      } finally {
+        busy = false
+      }
     })
   })
 
   onUnmounted(() => unlisten?.())
 
-  async function onBeforeClose() {
-    // 关窗前先把会话存了：即使这次退出，下次启动的布局也是最新的。
+  /** 存会话 + 草稿：即使这次取消退出，下次启动的布局也是最新的。 */
+  async function persistLayout() {
     try {
       await api.saveSession({
         session: {
           id: 1,
-          active_index: Math.max(0, editor.tabs.findIndex((t) => t.id === editor.activeId)),
+          active_index: Math.max(
+            0,
+            editor.tabs.findIndex((x) => x.id === editor.activeId),
+          ),
           sidebar_open: settings.config.ui.show_sidebar,
           sidebar_tab: settings.config.ui.sidebar_tab,
           window_width: window.innerWidth,
@@ -50,7 +66,7 @@ export function useQuitGuard() {
         tabs: editor.toDOs(),
       })
       // 草稿正文另存一份：新建未保存标签的内容不该丢。
-      for (const tab of editor.tabs.filter((t) => t.path.startsWith('draft:'))) {
+      for (const tab of editor.tabs.filter((x) => x.path.startsWith('draft:'))) {
         await api.saveDraft({
           path: tab.path,
           title: tab.title,
@@ -60,32 +76,53 @@ export function useQuitGuard() {
     } catch {
       /* 存不上也继续退出：拦着用户不让关更糟 */
     }
+  }
 
-    if (editor.dirtyCount === 0) {
-      await api.confirmQuit()
-      await api.forceQuit()
-      return
-    }
+  async function onBeforeClose() {
+    await persistLayout()
 
-    const ok = await api.showConfirm(
-      t('app.quitConfirmTitle'),
-      t('app.quitConfirmBody', { count: editor.dirtyCount }),
-    )
-    if (!ok) {
-      // 用户取消：什么都不做，窗口保持打开。
-      await api.cancelQuit()
-      return
-    }
-
-    // 全部保存：逐个写盘，失败的留着自己处理（不阻断退出）。
-    for (const tab of editor.tabs.filter((x) => x.dirty && x.path && !x.path.startsWith('draft:'))) {
+    // 逐个处理脏标签：保存 / 不保存 / 取消。
+    for (const tab of [...editor.tabs]) {
+      if (!tab.dirty) continue
+      const name = tab.title || t('tab.untitled')
+      const choice = await askUnsaved(name)
+      if (choice === 'cancel') {
+        await api.cancelQuit()
+        return
+      }
+      if (choice === 'discard') continue
+      // 保存：写盘失败就停在这里，不静默丢掉用户内容。
+      if (!tab.path || tab.path.startsWith('draft:')) {
+        const res = await api.saveFileAs(
+          getText(tab.id),
+          name,
+          tab.encoding,
+          tab.line_ending,
+          tab.has_bom,
+        )
+        if (!res) {
+          await api.cancelQuit()
+          return
+        }
+        tab.path = res.path
+        tab.title = res.path.replace(/^.*[\\/]/, '')
+        commitBaseline(tab.id)
+        editor.markDirty(tab.id, false)
+        continue
+      }
       try {
         await api.writeFile(tab.path, getText(tab.id), tab.encoding, tab.line_ending, tab.has_bom)
+        commitBaseline(tab.id)
         editor.markDirty(tab.id, false)
-      } catch (e) {
+      } catch {
         toast.bad(t('toast.saveOnExitFailed', { name: tab.title }))
+        await api.cancelQuit()
+        return
       }
     }
+
+    // 再存一次布局：刚才的保存可能改了路径 / 标题。
+    await persistLayout()
     await api.confirmQuit()
     await api.forceQuit()
   }

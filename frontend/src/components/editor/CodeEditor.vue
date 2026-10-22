@@ -1,28 +1,88 @@
-// CodeMirror 容器：一个标签一个实例，切换不销毁。
+// CodeMirror 容器：一个标签一个实例，切换标签不销毁。
 //
 // 各关注点一个 compartment，运行时切换走 reconfigure；脏标记按
 // 「与载入时的快照不同」判——用户改了又改回来，标签该是干净的。
 <template>
-  <div ref="host" class="nt-code-editor" />
+  <div ref="host" class="nt-code-editor" @contextmenu="onContextMenu" />
+  <ContextMenu
+    v-if="menu"
+    :x="menu.x"
+    :y="menu.y"
+    :items="menuItems"
+    :min-width="200"
+    @close="menu = null"
+  />
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { EditorView, lineNumbers, highlightActiveLine, highlightSpecialChars, rectangularSelection, crosshairCursor, drawSelection, dropCursor } from '@codemirror/view'
+import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
+import {
+  EditorView,
+  lineNumbers,
+  gutter,
+  GutterMarker,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  rectangularSelection,
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  keymap,
+  highlightWhitespace,
+  placeholder,
+  scrollPastEnd,
+  type ViewUpdate,
+} from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
-import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirror/commands'
-import { keymap } from '@codemirror/view'
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap, indentOnInput, indentUnit } from '@codemirror/language'
+import {
+  indentWithTab,
+  history,
+  historyKeymap,
+  defaultKeymap,
+  undo,
+  redo,
+} from '@codemirror/commands'
+import {
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  bracketMatching,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+  indentUnit,
+} from '@codemirror/language'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-
-import { undo, redo, selectAll, deleteLine, copyLineDown, moveLineUp, moveLineDown } from '@codemirror/commands'
+import {
+  autocompletion,
+  completionKeymap,
+  closeBrackets,
+  closeBracketsKeymap,
+} from '@codemirror/autocomplete'
 import type { Tab } from '@/stores/editor'
 import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
-import { api, normalizeError } from '@/api'
+import { api } from '@/api'
 import { useToastStore } from '@/stores/toast'
-import { register, unregister } from '@/composables/useEditorRegistry'
+import { register, unregister, isDirty, getSelection } from '@/composables/useEditorRegistry'
+import ContextMenu from '@/components/common/ContextMenu.vue'
+import type { MenuItem } from '@/components/common/contextMenu'
+import {
+  doUndo,
+  doRedo,
+  doSelectAll,
+  doDeleteLine,
+  doDuplicateLine,
+  doMoveLine,
+  doIndent,
+  doSelectLine,
+  doDeleteSelection,
+  viewOf,
+} from '@/composables/useEditorActions'
+import { useCommandStore } from '@/stores/commands'
+import { useDialogStore } from '@/stores/dialogs'
+import { copyText, readClipboard } from '@/utils'
+import { i18n } from '@/i18n'
 import { useEditorTheme } from '@/composables/useEditorTheme'
 import { useEditorLanguage } from '@/composables/useEditorLanguage'
 import { recordDocChange } from '@/composables/useEditorMacro'
@@ -33,6 +93,12 @@ const props = defineProps<{ tab: Tab; viewId?: 'main' | 'second'; readonly?: boo
 const settings = useSettingsStore()
 const editor = useEditorStore()
 const toast = useToastStore()
+const commands = useCommandStore()
+const dialogs = useDialogStore()
+const tr = (k: string, n: Record<string, unknown> = {}) => i18n.global.t(k, n)
+
+/** 右键菜单位置：null = 不显示。 */
+const menu = ref<{ x: number; y: number } | null>(null)
 
 const host = ref<HTMLElement | null>(null)
 
@@ -44,13 +110,64 @@ const wrapComp = new Compartment()
 const tabSizeComp = new Compartment()
 const lineNumComp = new Compartment()
 const foldComp = new Compartment()
-const historyComp = new Compartment()
+const activeLineComp = new Compartment()
+const bracketComp = new Compartment()
+const whitespaceComp = new Compartment()
+const gutterComp = new Compartment()
+// 书签 gutter：行号左侧一列点。状态存在视图里（不进 store：书签是
+// 「这个文件在这个位置有个标记」，与标签元数据无关）。
+const bookmarkComp = new Compartment()
 
 let view: EditorView | null = null
-/** 载入时的正文快照：脏标记的判据。 */
-let baseline = ''
 
 const cfg = () => settings.config.editor
+
+/** 编辑器视图的扩展集合（不含语言与主题，那些是 compartment）。 */
+function baseExtensions(editable: boolean) {
+  return [
+    // history 只注册一次：注册两次会让每一步操作进两个栈，
+    // 撤销一次只退回半步，用户按两下才看到效果。
+    history(),
+    drawSelection(),
+    dropCursor(),
+    highlightSpecialChars(),
+    indentOnInput(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    closeBrackets(),
+    autocompletion(),
+    rectangularSelection(),
+    crosshairCursor(),
+    scrollPastEnd(),
+    // 选中即高亮同词：日志/代码里找「这个词还出现在哪」非常高频。
+    cfg().highlight_selection ? highlightSelectionMatches() : [],
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...searchKeymap,
+      ...historyKeymap,
+      ...foldKeymap,
+      ...completionKeymap,
+      indentWithTab,
+    ]),
+    editable ? EditorState.readOnly.of(false) : EditorState.readOnly.of(true),
+    EditorView.updateListener.of(onUpdate),
+    // 剪贴板历史：从 copy / cut 事件收集，不碰系统剪贴板（要权限）。
+    EditorView.domEventHandlers({
+      copy(_e, v) {
+        const { from, to } = v.state.selection.main
+        const text = v.state.sliceDoc(from, to)
+        if (text) pushClip(text)
+        return false
+      },
+      cut(_e, v) {
+        const { from, to } = v.state.selection.main
+        const text = v.state.sliceDoc(from, to)
+        if (text) pushClip(text)
+        return false
+      },
+    }),
+  ]
+}
 
 onMounted(async () => {
   if (!host.value) return
@@ -75,85 +192,36 @@ onMounted(async () => {
       props.tab.has_bom = c.has_bom
       props.tab.encoding_uncertain = c.truncated && c.encoding !== 'utf-8'
     } catch (e) {
-      toast.bad(`打开失败：${normalizeError(e).message}`)
+      toast.bad(`打开失败：${normalizeErr(e)}`)
       return
     }
   }
-  baseline = text
 
   const state = EditorState.create({
     doc: text,
     extensions: [
-      // 基础编辑行为
-      history(),
-      drawSelection(),
-      dropCursor(),
-      highlightSpecialChars(),
-      indentOnInput(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      bracketMatching(),
-      closeBrackets(),
-      autocompletion(),
-      rectangularSelection(),
-      crosshairCursor(),
-      highlightActiveLine(),
-      highlightSelectionMatches(),
-      keymap.of([
-        ...closeBracketsKeymap,
-        ...defaultKeymap,
-        ...searchKeymap,
-        ...historyKeymap,
-        ...foldKeymap,
-        ...completionKeymap,
-        indentWithTab,
-      ]),
+      ...baseExtensions(!props.readonly),
       // compartments（初值来自当前配置）
       themeComp.of(themeExtensions()),
       langComp.of(syncExtensions()),
       editableComp.of(props.readonly ? EditorState.readOnly.of(true) : []),
       wrapComp.of(cfg().word_wrap ? EditorView.lineWrapping : []),
-      tabSizeComp.of(indentUnit.of(' '.repeat(cfg().tab_size))),
+      tabSizeComp.of(indentUnit.of(indentText())),
       lineNumComp.of(cfg().line_numbers ? lineNumbers() : []),
+      activeLineComp.of(cfg().highlight_active_line ? [highlightActiveLine(), highlightActiveLineGutter()] : []),
+      bracketComp.of(cfg().bracket_matching ? bracketMatching() : []),
       foldComp.of(cfg().fold_gutter ? foldGutter() : []),
-      historyComp.of(history()),
-      EditorView.updateListener.of((vu) => {
-        if (vu.docChanged) {
-          // 宏录制：把插入的文本收成一步。
-          let inserted = ''
-          vu.changes.iterChanges((_fromA, _toA, _fromB, _toB, ins) => {
-            inserted += ins.toString()
-          })
-          recordDocChange(vu.view, inserted)
-          editor.markDirty(props.tab.id, vu.state.doc.toString() !== baseline)
-          emitCursor(vu.state)
-          emitStats(vu.state)
-          emitHistory()
-        }
-        if (vu.selectionSet || vu.docChanged) {
-          emitCursor(vu.state)
-        }
-      }),
-      // 剪贴板历史：从 copy / cut 事件收集，不碰系统剪贴板（要权限）。
-      EditorView.domEventHandlers({
-        copy(_e, v) {
-          const { from, to } = v.state.selection.main
-          const text = v.state.sliceDoc(from, to)
-          if (text) pushClip(text)
-          return false
-        },
-        cut(_e, v) {
-          const { from, to } = v.state.selection.main
-          const text = v.state.sliceDoc(from, to)
-          if (text) pushClip(text)
-          return false
-        },
-      }),
+      bookmarkComp.of(bookmarkGutter()),
+      gutterComp.of(cfg().indent_guides ? [] : []),
+      whitespaceComp.of(
+        cfg().show_whitespace ? highlightWhitespace() : placeholder(''),
+      ),
     ],
   })
 
   view = new EditorView({ state, parent: host.value })
-  register(props.tab.id, view)
-  emitHistory()
+  register(props.tab.id, view, view.state.doc)
+  document.dispatchEvent(new CustomEvent('nt-editor-ready', { detail: { tabId: props.tab.id } }))
 
   // 异步语言包：首屏先用同步能拿到的那几种，加载完再 reconfigure。
   void loadLanguage().then((ext) => {
@@ -162,8 +230,12 @@ onMounted(async () => {
 
   // 恢复光标与滚动：会话恢复时把视图放回原处。
   if (props.tab.position.line > 1 || props.tab.position.col > 1) {
-    const line = view.state.doc.line(Math.min(props.tab.position.line, view.state.doc.lines))
-    view.dispatch({ selection: { anchor: line.from + Math.min(props.tab.position.col - 1, line.length) } })
+    const line = view.state.doc.line(
+      Math.min(props.tab.position.line, view.state.doc.lines),
+    )
+    view.dispatch({
+      selection: { anchor: line.from + Math.min(props.tab.position.col - 1, line.length) },
+    })
   }
   if (props.tab.scroll_ratio > 0) {
     requestAnimationFrame(() => {
@@ -172,145 +244,60 @@ onMounted(async () => {
       view.scrollDOM.scrollTop = max * props.tab.scroll_ratio
     })
   }
+
+  void loadBookmarks()
+
+  // 主视图挂载后把焦点给它：用户按下 Ctrl+N 就期待能直接打字。
+  if (props.viewId !== 'second') {
+    void nextTick(() => view?.focus())
+  }
 })
 
 onBeforeUnmount(() => {
   unregister(props.tab.id)
-  document.removeEventListener('editor-cmd', onEditorCmd)
-  document.removeEventListener('editor-goto-line', onGotoLine)
-  document.removeEventListener('editor-replace-doc', onReplaceDoc)
-  document.removeEventListener('editor-select-range', onSelectRange)
   view?.destroy()
   view = null
 })
 
-// ---- 外部命令入口 ----
-//
-// `useCommands` 通过 `editor-cmd` 事件把菜单 / 工具栏 / 快捷键的动作发过来。
-// 编辑器实例在这里，也只有它能执行——之前这个事件没有任何监听方，
-// Ctrl+Z / Ctrl+D / Ctrl+L 全是死命令（派发了但没人做）。
-function onEditorCmd(e: Event) {
-  const d = (e as CustomEvent).detail as { cmd: string; payload?: unknown }
-  if (!d || !view) return
-  // 只响应发给自己的：分屏时两个视图共存，命令要落在活跃的那个。
-  if (props.viewId === 'second' && props.readonly) return
-
-  switch (d.cmd) {
-    case 'undo':
-      undo(view)
-      break
-    case 'redo':
-      redo(view)
-      break
-    case 'selectAll':
-      selectAll(view)
-      break
-    case 'deleteLine':
-      deleteLine(view)
-      break
-    case 'moveLineUp':
-      moveLineUp(view)
-      break
-    case 'moveLineDown':
-      moveLineDown(view)
-      break
-    case 'duplicateLine':
-      // CodeMirror 没有 duplicateLine：copyLineDown 是「向下复制一行」，
-      // 效果等价且保留撤销历史。
-      copyLineDown(view)
-      break
-    case 'insert': {
-      const text = typeof d.payload === 'string' ? d.payload : ''
-      if (!text) return
-      const { from, to } = view.state.selection.main
-      view.dispatch({
-        changes: { from, to, insert: text },
-        selection: { anchor: from + text.length },
-        scrollIntoView: true,
-      })
-      break
-    }
-    case 'replaceSelection': {
-      const text = typeof d.payload === 'string' ? d.payload : ''
-      const { from, to } = view.state.selection.main
-      view.dispatch({
-        changes: { from, to, insert: text },
-        selection: { anchor: from, head: from + text.length },
-        scrollIntoView: true,
-      })
-      break
-    }
-    default:
-      break
+/** 一次文档变更：脏标记、光标、撤销可用性、宏录制。 */
+function onUpdate(vu: ViewUpdate) {
+  if (vu.docChanged) {
+    // 宏录制：把插入的文本收成一步。
+    let inserted = ''
+    vu.changes.iterChanges((_fromA, _toA, _fromB, _toB, ins) => {
+      inserted += ins.toString()
+    })
+    recordDocChange(vu.view, inserted)
+    // 脏标记按「与基线不同」判：改了又改回来是干净的。
+    const dirty = isDirty(props.tab.id)
+    if (props.tab.dirty !== dirty) editor.markDirty(props.tab.id, dirty)
+    emitCursor(vu.state)
+    emitStats(vu.state)
+    emitHistory()
+    return
   }
-  view.focus()
+  if (vu.selectionSet) {
+    emitCursor(vu.state)
+    return
+  }
+  if (vu.viewportChanged && props.viewId !== 'second') {
+    emitScroll(vu.view)
+  }
 }
-
-function onGotoLine(e: Event) {
-  const d = (e as CustomEvent).detail as { tabId: number; line: number }
-  if (!d || !view || d.tabId !== props.tab.id) return
-  const n = Math.min(Math.max(d.line, 1), view.state.doc.lines)
-  const line = view.state.doc.line(n)
-  view.dispatch({
-    selection: { anchor: line.from },
-    effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
-  })
-  view.focus()
-}
-
-function onReplaceDoc(e: Event) {
-  const d = (e as CustomEvent).detail as { tabId: number; text: string }
-  if (!d || !view || d.tabId !== props.tab.id) return
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: d.text },
-  })
-  baseline = d.text
-  editor.markDirty(props.tab.id, false)
-}
-
-function onSelectRange(e: Event) {
-  const d = (e as CustomEvent).detail as { tabId: number; from: number; to: number }
-  if (!d || !view || d.tabId !== props.tab.id) return
-  view.dispatch({
-    selection: { anchor: d.from, head: d.to },
-    effects: EditorView.scrollIntoView(d.from, { y: 'center' }),
-  })
-  view.focus()
-}
-
-onMounted(() => {
-  document.addEventListener('editor-cmd', onEditorCmd)
-  document.addEventListener('editor-goto-line', onGotoLine)
-  document.addEventListener('editor-replace-doc', onReplaceDoc)
-  document.addEventListener('editor-select-range', onSelectRange)
-})
-
-// ---- 配置变化：只 reconfigure 对应的 compartment ----
-watch(() => cfg().word_wrap, (v) => view?.dispatch({ effects: wrapComp.reconfigure(v ? EditorView.lineWrapping : []) }))
-watch(() => cfg().tab_size, (v) => view?.dispatch({ effects: tabSizeComp.reconfigure(indentUnit.of(' '.repeat(v))) }))
-watch(() => cfg().line_numbers, (v) => view?.dispatch({ effects: lineNumComp.reconfigure(v ? lineNumbers() : []) }))
-watch(() => cfg().fold_gutter, (v) => view?.dispatch({ effects: foldComp.reconfigure(v ? foldGutter() : []) }))
-watch(() => props.tab.language, () => {
-  void loadLanguage().then((ext) => {
-    if (view) view.dispatch({ effects: langComp.reconfigure(ext) })
-  })
-})
-watch(() => settings.resolvedTheme, () => view?.dispatch({ effects: themeComp.reconfigure(themeExtensions()) }))
-watch(() => cfg().font_size, () => applyFont())
-watch(() => cfg().font_family, () => applyFont())
-watch(() => props.readonly, (v) => view?.dispatch({ effects: editableComp.reconfigure(v ? EditorState.readOnly.of(true) : []) }))
-
-// ---- 主题 / 语言 / 字体 ----
-const { themeExtensions, applyFont } = useEditorTheme(host)
-const { syncExtensions, loadLanguage } = useEditorLanguage(computed(() => props.tab.language))
 
 // ---- 事件出口：状态栏与工具栏从这里拿数据 ----
+// 一律带 tabId：分屏与多标签同时挂载，不带 id 的事件会让状态栏串位。
 function emitCursor(state: EditorState) {
   const { from, to } = state.selection.main
   const line = state.doc.lineAt(from)
   document.dispatchEvent(
-    new CustomEvent('editor-cursor-pos', {
-      detail: { line: line.number, col: from - line.from + 1, selection_len: to - from },
+    new CustomEvent('nt-cursor', {
+      detail: {
+        tabId: props.tab.id,
+        line: line.number,
+        col: from - line.from + 1,
+        selection_len: to - from,
+      },
     }),
   )
 }
@@ -318,21 +305,362 @@ function emitCursor(state: EditorState) {
 function emitStats(state: EditorState) {
   const text = state.doc.toString()
   document.dispatchEvent(
-    new CustomEvent('editor-stats', {
-      detail: { lines: text === '' ? 0 : text.split('\n').length },
+    new CustomEvent('nt-stats', {
+      detail: { tabId: props.tab.id, lines: text === '' ? 0 : text.split('\n').length },
     }),
   )
 }
 
 function emitHistory() {
-  // 撤销深度：CodeMirror 不直接暴露历史深度，用固定 1 表示「可用」；
-  // 工具栏只问可用性，精确深度对它没有意义。
   document.dispatchEvent(
-    new CustomEvent('editor-history', {
-      detail: { undo: 1, redo: 1 },
-    }),
+    new CustomEvent('nt-history', { detail: { tabId: props.tab.id } }),
   )
 }
+
+function emitScroll(v: EditorView) {
+  const max = v.scrollDOM.scrollHeight - v.scrollDOM.clientHeight
+  if (max <= 0) return
+  editor.setScroll(props.tab.id, v.scrollDOM.scrollTop / max)
+}
+
+// ---- 配置变化：只 reconfigure 对应的 compartment ----
+watch(() => cfg().word_wrap, (v) =>
+  view?.dispatch({ effects: wrapComp.reconfigure(v ? EditorView.lineWrapping : []) }),
+)
+watch(() => [cfg().tab_size, cfg().insert_spaces], () =>
+  view?.dispatch({ effects: tabSizeComp.reconfigure(indentUnit.of(indentText())) }),
+)
+watch(() => cfg().line_numbers, (v) =>
+  view?.dispatch({ effects: lineNumComp.reconfigure(v ? lineNumbers() : []) }),
+)
+watch(() => cfg().fold_gutter, (v) =>
+  view?.dispatch({ effects: foldComp.reconfigure(v ? foldGutter() : []) }),
+)
+watch(() => cfg().highlight_active_line, (v) =>
+  view?.dispatch({
+    effects: activeLineComp.reconfigure(
+      v ? [highlightActiveLine(), highlightActiveLineGutter()] : [],
+    ),
+  }),
+)
+watch(() => cfg().bracket_matching, (v) =>
+  view?.dispatch({ effects: bracketComp.reconfigure(v ? bracketMatching() : []) }),
+)
+watch(() => cfg().show_whitespace, (v) =>
+  view?.dispatch({
+    effects: whitespaceComp.reconfigure(v ? highlightWhitespace() : placeholder('')),
+  }),
+)
+watch(() => props.tab.language, () => {
+  void loadLanguage().then((ext) => {
+    if (view) view.dispatch({ effects: langComp.reconfigure(ext) })
+  })
+})
+watch(() => settings.resolvedTheme, () =>
+  view?.dispatch({ effects: themeComp.reconfigure(themeExtensions()) }),
+)
+watch([() => cfg().font_size, () => cfg().font_family], () => applyFont())
+watch(() => props.readonly, (v) =>
+  view?.dispatch({ effects: editableComp.reconfigure(v ? EditorState.readOnly.of(true) : []) }),
+)
+watch(() => props.tab.id, () => {
+  // 理论上不会发生（每个标签一个组件实例），保留给未来复用场景。
+})
+
+// ---- 书签 ----
+
+/** 书签集合：行号（1 基）。空数组表示该文件没有书签。 */
+const bookmarkLines = ref<number[]>([])
+
+/** 书签 gutter 标记：一个主色小圆点。 */
+class BookMark extends GutterMarker {
+  override toDOM() {
+    const dot = document.createElement('span')
+    dot.className = 'nt-bookmark-dot'
+    return dot
+  }
+}
+
+const marker = new BookMark()
+
+/**
+ * 书签 gutter。
+ *
+ * `lineMarker` 按行号查表：gutter 只对可见行求值，几万行的文件也不会因为
+ * 「给每一行都算一遍」而变慢。点圆点直接切书签——比「先定位再按 F2」少两步。
+ */
+function bookmarkGutter() {
+  return gutter({
+    class: 'nt-bookmark-gutter',
+    lineMarker: (v, line) => {
+      const n = v.state.doc.lineAt(line.from).number
+      return bookmarkLines.value.includes(n) ? marker : null
+    },
+    domEventHandlers: {
+      mousedown: (v, line) => {
+        const n = v.state.doc.lineAt(line.from).number
+        toggleBookmarkAt(n, v)
+        return true
+      },
+    },
+  })
+}
+
+/** 切换某一行的书签并重绘 gutter。 */
+function toggleBookmarkAt(lineNo: number, v: EditorView) {
+  const has = bookmarkLines.value.includes(lineNo)
+  bookmarkLines.value = has
+    ? bookmarkLines.value.filter((n) => n !== lineNo)
+    : [...bookmarkLines.value, lineNo].sort((a, b) => a - b)
+  // 重配一次：GutterMarker 的求值不会自己失效。
+  v.dispatch({ effects: bookmarkComp.reconfigure(bookmarkGutter()) })
+  void syncBookmarksToBackend(lineNo, !has)
+}
+
+/** 与后端同步：书签要跨会话保留，否则「标记一下明天看」就失效了。 */
+async function syncBookmarksToBackend(lineNo: number, add: boolean) {
+  if (!props.tab.path || props.tab.path.startsWith('draft:')) return
+  try {
+    if (add) {
+      await api.addBookmark({ path: props.tab.path, line: lineNo })
+    } else {
+      const list = await api.listFileBookmarks(props.tab.path)
+      const hit = list.find((b) => b.line === lineNo)
+      if (hit) await api.removeBookmark(hit.id)
+    }
+    document.dispatchEvent(new CustomEvent('bookmarks-changed'))
+  } catch {
+    /* 同步失败不影响编辑：gutter 上已经显示出来了 */
+  }
+}
+
+/** 把后端已有的书签读进 gutter（挂载与外部改书签后各调一次）。 */
+async function loadBookmarks() {
+  if (!props.tab.path || props.tab.path.startsWith('draft:')) return
+  try {
+    const list = await api.listFileBookmarks(props.tab.path)
+    bookmarkLines.value = list.map((b) => b.line)
+    view?.dispatch({ effects: bookmarkComp.reconfigure(bookmarkGutter()) })
+  } catch {
+    /* 读不出来就当没有书签 */
+  }
+}
+
+/** 缩进单位：空格模式给 N 个空格，Tab 模式给 \t。 */
+function indentText(): string {
+  return cfg().insert_spaces ? ' '.repeat(cfg().tab_size) : '\t'
+}
+
+// ---- 主题 / 语言 / 字体 ----
+const { themeExtensions, applyFont } = useEditorTheme(host)
+const { syncExtensions, loadLanguage } = useEditorLanguage(computed(() => props.tab.language))
+
+/** 行号点击选中整行；行号右键给出「在此行加书签」。 */
+function onGutterClick(e: MouseEvent) {
+  if (!view) return
+  const target = e.target as HTMLElement
+  const gutter = target.closest('.cm-lineNumbers')
+  if (!gutter) return
+  const el = target.closest('.cm-gutterElement') as HTMLElement | null
+  if (!el) return
+  const n = Number(el.textContent)
+  if (!Number.isFinite(n) || n < 1) return
+  const line = view.state.doc.line(Math.min(n, view.state.doc.lines))
+  view.dispatch({
+    selection: { anchor: line.from, head: line.to },
+    scrollIntoView: true,
+  })
+  view.focus()
+}
+
+defineExpose({ gutterClick: onGutterClick })
+
+function normalizeErr(e: unknown): string {
+  if (typeof e === 'string') return e
+  const o = e as { message?: string }
+  return o?.message ?? '未知错误'
+}
+
+/**
+ * 撤销 / 重做：
+ * CodeMirror 的 historyKeymap 只绑了 Mod-z 与 Mod-Shift-z，Windows 用户习惯
+ * Ctrl+Y 重做；另外 WebView 自身有「撤销整个文档编辑」的默认行为，
+ * 不拦会让 Ctrl+Z 一次退掉整段输入。
+ */
+function onKeyFallback(e: KeyboardEvent) {
+  if (!view || !view.hasFocus) return
+  if (!(e.ctrlKey || e.metaKey)) return
+  const key = e.key.toLowerCase()
+  if (key === 'y') {
+    e.preventDefault()
+    redo(view)
+  } else if (e.shiftKey && key === 'z') {
+    e.preventDefault()
+    redo(view)
+  } else if (key === 'z') {
+    e.preventDefault()
+    undo(view)
+  }
+}
+
+/**
+ * 编辑器右键菜单。
+ *
+ * 为什么不复用 WebView 的原生菜单：它给的是「撤销 / 剪切 / 复制 / 粘贴」，
+ * 与编辑器的实际能力对不上（我们有行操作、注释、书签、工具），
+ * 而且样式与全站两套语言。
+ */
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  menu.value = { x: e.clientX, y: e.clientY }
+}
+
+/** 菜单项：每次打开时按当前状态算（有选区 / 是否只读）。 */
+const menuItems = computed<MenuItem[]>(() => {
+  const v = viewOf(props.tab.id)
+  const hasSel = v ? !v.state.selection.main.empty : false
+  const ro = props.readonly || props.tab.read_only
+  const id = props.tab.id
+  return [
+    {
+      label: tr('menu.undo'),
+      hint: 'Ctrl+Z',
+      disabled: ro,
+      run: () => doUndo(id),
+    },
+    {
+      label: tr('menu.redo'),
+      hint: 'Ctrl+Y',
+      disabled: ro,
+      run: () => doRedo(id),
+    },
+    { sep: true },
+    {
+      label: tr('menu.cut'),
+      hint: 'Ctrl+X',
+      disabled: ro || !hasSel,
+      run: () => {
+        const sel = getSelection(id)
+        if (!sel) return
+        void copyText(sel).then((ok) => {
+          if (ok) doDeleteSelection(id)
+        })
+      },
+    },
+    {
+      label: tr('menu.copy'),
+      hint: 'Ctrl+C',
+      disabled: !hasSel,
+      run: () => {
+        const sel = getSelection(id)
+        if (!sel) return
+        void copyText(sel).then((ok) => {
+          if (ok) toast.ok(tr('common.copied'))
+        })
+      },
+    },
+    {
+      label: tr('menu.paste'),
+      hint: 'Ctrl+V',
+      disabled: ro,
+      run: async () => {
+        const text = await readClipboard()
+        if (!text) {
+          toast.warn(tr('toast.clipboardEmpty'))
+          return
+        }
+        commands.run('edit.paste')
+      },
+    },
+    { sep: true },
+    {
+      label: tr('menu.selectAll'),
+      hint: 'Ctrl+A',
+      run: () => doSelectAll(id),
+    },
+    {
+      label: tr('menu.selectLine'),
+      run: () => doSelectLine(id),
+    },
+    { sep: true },
+    {
+      label: tr('menu.duplicateLine'),
+      hint: 'Ctrl+D',
+      disabled: ro,
+      run: () => doDuplicateLine(id),
+    },
+    {
+      label: tr('menu.deleteLine'),
+      hint: 'Ctrl+Shift+K',
+      disabled: ro,
+      run: () => doDeleteLine(id),
+    },
+    {
+      label: tr('menu.moveLineUp'),
+      hint: 'Alt+↑',
+      disabled: ro,
+      run: () => doMoveLine(id, 'up'),
+    },
+    {
+      label: tr('menu.moveLineDown'),
+      hint: 'Alt+↓',
+      disabled: ro,
+      run: () => doMoveLine(id, 'down'),
+    },
+    { sep: true },
+    {
+      label: tr('menu.indent'),
+      hint: 'Ctrl+]',
+      disabled: ro,
+      run: () => doIndent(id, false),
+    },
+    {
+      label: tr('menu.outdent'),
+      hint: 'Ctrl+[',
+      disabled: ro,
+      run: () => doIndent(id, true),
+    },
+    {
+      label: tr('menu.toggleComment'),
+      hint: 'Ctrl+/',
+      disabled: ro,
+      run: () => commands.run('edit.toggleComment'),
+    },
+    { sep: true },
+    {
+      label: tr('menu.find'),
+      hint: 'Ctrl+F',
+      run: () => commands.run('edit.find'),
+    },
+    {
+      label: tr('menu.gotoLine'),
+      hint: 'Ctrl+G',
+      run: () => dialogs.open('gotoLine'),
+    },
+    {
+      label: tr('menu.toggleBookmark'),
+      hint: 'F2',
+      disabled: !props.tab.path,
+      run: () => commands.run('bookmark.toggle'),
+    },
+  ]
+})
+
+/** 别处（命令层 / 侧栏）改了书签，这里跟着重绘。 */
+function onBookmarksChanged() {
+  void loadBookmarks()
+}
+
+onMounted(() => {
+  document.addEventListener('bookmarks-changed', onBookmarksChanged)
+  host.value?.addEventListener('mousedown', onGutterClick)
+  document.addEventListener('keydown', onKeyFallback, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('bookmarks-changed', onBookmarksChanged)
+  host.value?.removeEventListener('mousedown', onGutterClick)
+  document.removeEventListener('keydown', onKeyFallback, true)
+})
 </script>
 
 <style scoped>
@@ -351,6 +679,10 @@ function emitHistory() {
   font-size: var(--nt-fs-md);
 }
 
+.nt-code-editor :deep(.cm-editor.cm-focused) {
+  outline: none;
+}
+
 .nt-code-editor :deep(.cm-scroller) {
   line-height: 1.55;
   font-family: var(--nt-font-editor);
@@ -360,6 +692,16 @@ function emitHistory() {
   background: var(--nt-editor-gutter-bg);
   border-right: 1px solid var(--nt-border);
   color: var(--nt-editor-gutter-ink);
+}
+
+/* 行号可点：悬停给一点反馈，用户才知道能点 */
+.nt-code-editor :deep(.cm-lineNumbers .cm-gutterElement) {
+  cursor: pointer;
+  transition: color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-code-editor :deep(.cm-lineNumbers .cm-gutterElement:hover) {
+  color: var(--nt-primary);
 }
 
 .nt-code-editor :deep(.cm-activeLine) {
@@ -373,6 +715,20 @@ function emitHistory() {
 
 .nt-code-editor :deep(.cm-selectionBackground) {
   background: var(--nt-editor-selection);
+}
+
+.nt-code-editor :deep(.nt-bookmark-gutter) {
+  width: 12px;
+  cursor: pointer;
+}
+
+.nt-code-editor :deep(.nt-bookmark-dot) {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--nt-primary);
 }
 
 .nt-code-editor :deep(.cm-cursor) {

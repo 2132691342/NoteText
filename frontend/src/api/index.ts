@@ -119,6 +119,8 @@ export const api = {
   // 文件
   readFile: (path: string, mode?: ReadMode) =>
     call<FileContentVO>('read_file', { path, mode: serializeReadMode(mode) }),
+  /** 读二进制（预览 / Hex）。返回 base64：走 Vec<u8> 会被序列化成 number[]。 */
+  readBinary: (path: string) => call<string>('read_binary', { path }),
   writeFile: (
     path: string,
     text: string,

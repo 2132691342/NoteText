@@ -121,8 +121,9 @@ watch_dir(dir, app)
 
 ## 约束
 
-- **只读文本走 invoke，二进制走 `plugin-fs`**：`Vec<u8>` 会序列化成 `number[]`，
-  几 MB 就把通道堵死。图片 / PDF / docx 前端直读；
+- **文本与二进制都走 invoke**：文本出参是 `String`；二进制的 `Vec<u8>` 会
+  序列化成 `number[]`（体积约 4 倍），所以 `read_binary` 出参是 base64，
+  并带 20MB 上限。图片 / PDF / docx / Hex 都用它——不给渲染层 fs 插件权限；
 - 空文件按 UTF-8，`has_bom = false`，`line_ending = "lf"`；
 - `stat_file` 的 `is_binary` 判据是「前 8KB 含 NUL」：UTF-16 文本也含 NUL，
   但编辑器用 UTF-16 打开的场景远少于真二进制文件，误判代价（用户手动切编码）可接受。

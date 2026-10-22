@@ -72,7 +72,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEditorStore } from '@/stores/editor'
 import { useSettingsStore } from '@/stores/settings'
@@ -168,14 +168,17 @@ const endingLabel = computed(() => {
 })
 
 // 光标与行数由编辑器组件通过自定义事件推：状态栏不轮询。
+/** 事件一律带 tabId：分屏与多标签同时挂载，别的标签的读数不能串过来。 */
 function onCursor(e: Event) {
-  const d = (e as CustomEvent).detail
-  if (d) pos.value = d
+  const d = (e as CustomEvent).detail as { tabId?: number; line: number; col: number; selection_len: number }
+  if (!d || d.tabId !== editor.activeId) return
+  pos.value = { line: d.line, col: d.col, selection_len: d.selection_len }
 }
 
 function onStats(e: Event) {
-  const d = (e as CustomEvent).detail
-  if (d) lines.value = d.lines
+  const d = (e as CustomEvent).detail as { tabId?: number; lines: number }
+  if (!d || d.tabId !== editor.activeId) return
+  lines.value = d.lines
   void fetchStats()
 }
 
@@ -194,14 +197,17 @@ function syncFromEditor() {
 }
 
 onMounted(() => {
-  document.addEventListener('editor-cursor-pos', onCursor)
-  document.addEventListener('editor-stats', onStats)
+  document.addEventListener('nt-cursor', onCursor)
+  document.addEventListener('nt-stats', onStats)
   syncFromEditor()
 })
 onUnmounted(() => {
-  document.removeEventListener('editor-cursor-pos', onCursor)
-  document.removeEventListener('editor-stats', onStats)
+  document.removeEventListener('nt-cursor', onCursor)
+  document.removeEventListener('nt-stats', onStats)
 })
+
+// 切标签主动同步一次：编辑器在显示之前发的读数可能被过滤掉了。
+watch(() => editor.activeId, () => syncFromEditor())
 </script>
 
 <style scoped>

@@ -1,4 +1,4 @@
-// 命令注册：把「菜单 / 工具栏 / 快捷键」三个入口接到同一份命令表。
+// 命令注册：把「菜单 / 工具栏 / 快捷键 / 右键菜单」接到同一份命令表。
 //
 // 铁律：新功能先在这里注册，再在菜单或工具栏加入口。
 // 反过来做（先在菜单写死一个动作）就会出现「菜单能用的功能按键按不了」。
@@ -10,7 +10,19 @@ import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
 import { useI18n } from 'vue-i18n'
 import { api, normalizeError } from '@/api'
-import { getText, getSelection, focusedTabId, get } from '@/composables/useEditorRegistry'
+import { getText, getSelection, focusedTabId } from '@/composables/useEditorRegistry'
+import {
+  doUndo,
+  doRedo,
+  doSelectAll,
+  doDeleteLine,
+  doMoveLine,
+  doDuplicateLine,
+  doInsert,
+  doToggleComment,
+  doIndent,
+  doGotoLine,
+} from '@/composables/useEditorActions'
 import { baseName, nextUntitledIndex, readClipboard } from '@/utils'
 import { toggleFullscreen } from '@/utils/window'
 import {
@@ -20,8 +32,15 @@ import {
   stopRecording,
   playSteps,
 } from '@/composables/useEditorMacro'
-import { columnMode, setColumnMode, insertAtColumn, selectLinesAsColumns } from '@/composables/useEditorColumnMode'
+import {
+  columnMode,
+  setColumnMode,
+  insertAtColumn,
+  selectLinesAsColumns,
+} from '@/composables/useEditorColumnMode'
+import { get } from '@/composables/useEditorRegistry'
 import { useFindResultsStore } from '@/stores/findResults'
+import { saveTabById, saveTabAsById, closeTabById } from '@/composables/useCloseTab'
 
 export function registerCommands() {
   const { t } = useI18n()
@@ -36,6 +55,25 @@ export function registerCommands() {
   const hasTab = () => editor.activeId != null
   const hasFile = () => !!editor.active?.path && !editor.active?.path.startsWith('draft:')
   const hasDirty = () => editor.dirtyCount > 0
+  /** 命令的作用对象：用户正在编辑的那个标签，退化为活跃标签。 */
+  const targetId = () => focusedTabId() ?? editor.activeId
+
+  /** 命令层用的薄封装：真正的实现在 useCloseTab（标签栏共用同一条链路）。 */
+  const saveTab = saveTabById
+  const saveTabAs = saveTabAsById
+  const closeTab = closeTabById
+
+  /** 打开一个路径并记入最近文件。 */
+  async function openPath(path: string): Promise<void> {
+    if (settings.config.file.remember_last_folder) {
+      settings.updateFile({ last_folder: path.replace(/\\[^\\]*$/, '') })
+    }
+    const tab = await editor.openPath(path)
+    if (tab) {
+      void api.touchRecent(path)
+      toast.ok(t('toast.opened', { name: baseName(path) }))
+    }
+  }
 
   const list: Command[] = [
     // ---- 文件 ----
@@ -46,10 +84,17 @@ export function registerCommands() {
       key: 'Control+N',
       run: () => {
         const taken = editor.tabs
-          .map((t) => /^未命名-(\d+)$/.exec(t.title))
+          .map((x) => /(?:未命名|Untitled)-(\d+)$/.exec(x.title))
           .filter(Boolean)
           .map((m) => Number(m![1]))
-        editor.newTab({ title: `未命名-${nextUntitledIndex(taken)}` })
+        editor.newTab({
+          title: `${t('tab.untitled')}-${nextUntitledIndex(taken)}`,
+        })
+        // 新标签的编辑器挂载后自动聚焦：用户按完 Ctrl+N 就期待能直接打字。
+        requestAnimationFrame(() => {
+          const id = editor.activeId
+          if (id != null) get(id)?.focus()
+        })
       },
     },
     {
@@ -59,18 +104,12 @@ export function registerCommands() {
       key: 'Control+O',
       run: async () => {
         const p = await api.openFileDialog(
-          settings.config.file.remember_last_folder ? settings.config.file.last_folder : undefined,
+          settings.config.file.remember_last_folder
+            ? settings.config.file.last_folder
+            : undefined,
         )
         if (!p) return
-        if (settings.config.file.remember_last_folder) {
-          const dir = p.replace(/\\[^\\]*$/, '')
-          settings.updateFile({ last_folder: dir })
-        }
-        const tab = await editor.openPath(p)
-        if (tab) {
-          void api.touchRecent(p)
-          toast.ok(t('toast.opened', { name: baseName(p) }))
-        }
+        await openPath(p)
       },
     },
     {
@@ -89,6 +128,7 @@ export function registerCommands() {
         const p = await api.openFolderDialog(tree.root || undefined)
         if (!p) return
         await tree.open(p)
+        settings.updateUI({ show_sidebar: true })
         if (settings.config.file.remember_last_folder) {
           settings.updateFile({ last_folder: p })
         }
@@ -101,13 +141,8 @@ export function registerCommands() {
       key: 'Control+S',
       enabled: () => hasTab(),
       run: async () => {
-        const tab = editor.active
-        if (!tab) return
-        if (tab.path.startsWith('draft:')) {
-          await commands.run('file.saveAs')
-          return
-        }
-        await saveTab(tab.id)
+        const id = targetId()
+        if (id != null) await saveTab(id)
       },
     },
     {
@@ -117,24 +152,15 @@ export function registerCommands() {
       key: 'Control+Shift+S',
       enabled: () => hasTab(),
       run: async () => {
-        const tab = editor.active
-        if (!tab) return
-        const text = getText(tab.id)
-        const suggested = tab.title || '未命名.txt'
-        const res = await api.saveFileAs(text, suggested, tab.encoding, tab.line_ending, tab.has_bom)
-        if (!res) return
-        tab.path = res.path
-        tab.title = baseName(res.path)
-        tab.dirty = false
-        if (tab.path.startsWith('draft:')) void api.removeDraft(tab.path.slice(6))
-        void api.touchRecent(res.path)
-        toast.ok(t('toast.saved', { name: tab.title }))
+        const id = targetId()
+        if (id != null) await saveTabAs(id)
       },
     },
     {
       id: 'file.saveAll',
       group: 'file',
       labelKey: 'menu.saveAll',
+      key: 'Control+Alt+S',
       enabled: () => hasDirty(),
       run: async () => {
         for (const tab of editor.tabs.filter((x) => x.dirty)) {
@@ -149,23 +175,9 @@ export function registerCommands() {
       key: 'Control+W',
       enabled: () => hasTab(),
       run: async () => {
-        const tab = editor.active
-        if (!tab) return
-        if (!tab.dirty) {
-          editor.close(tab.id)
-          return
-        }
-        // 脏标签：弹原生确认（保存 / 不保存 / 取消三选一）。
-        const ok = await api.showConfirm(
-          t('app.quitConfirmTitle'),
-          t('app.quitConfirmBody', { count: 1 }),
-        )
-        if (ok) {
-          await saveTab(tab.id)
-          editor.close(tab.id, true)
-        } else {
-          editor.close(tab.id, true)
-        }
+        // 关「当前聚焦的」而不是「store 里的 active」：分屏时两者会不一致。
+        const id = targetId()
+        if (id != null) await closeTab(id)
       },
     },
     {
@@ -174,19 +186,10 @@ export function registerCommands() {
       labelKey: 'menu.closeAll',
       enabled: () => hasTab(),
       run: async () => {
-        if (!hasDirty()) {
-          editor.closeAll()
-          return
+        // 逐个走确认：一次问一个，用户能在中途停下。
+        for (const tab of [...editor.tabs]) {
+          if (!(await closeTab(tab.id))) return
         }
-        const ok = await api.showConfirm(
-          t('app.quitConfirmTitle'),
-          t('app.quitConfirmBody', { count: editor.dirtyCount }),
-        )
-        if (!ok) return
-        for (const tab of editor.tabs.filter((x) => x.dirty)) {
-          await saveTab(tab.id)
-        }
-        editor.closeAll()
       },
     },
 
@@ -195,62 +198,116 @@ export function registerCommands() {
       id: 'edit.undo',
       group: 'edit',
       labelKey: 'menu.undo',
-      run: () => emitEditorCmd('undo'),
+      key: 'Control+Z',
+      enabled: () => hasTab(),
+      run: () => {
+        doUndo(targetId())
+      },
     },
     {
       id: 'edit.redo',
       group: 'edit',
       labelKey: 'menu.redo',
-      run: () => emitEditorCmd('redo'),
+      key: 'Control+Y',
+      enabled: () => hasTab(),
+      run: () => {
+        doRedo(targetId())
+      },
     },
     {
       id: 'edit.selectAll',
       group: 'edit',
       labelKey: 'menu.selectAll',
-      run: () => emitEditorCmd('selectAll'),
+      key: 'Control+A',
+      enabled: () => hasTab(),
+      run: () => {
+        doSelectAll(targetId())
+      },
     },
-    // 剪贴板三件套：默认键位表里一直有 Ctrl+X/C/V，但没有任何命令用这三个 id，
-    // 按下完全无响应。不拦默认：CodeMirror 自己的 keymap 先拿到，
-    // 这里只是让它们能注册、能被键位表与菜单引用。
+    // 剪贴板三件套：WebView 自带 Ctrl+X/C/V；菜单点下来得能落地。
     {
       id: 'edit.cut',
       group: 'edit',
       labelKey: 'menu.cut',
+      key: 'Control+X',
       enabled: () => hasTab(),
-      run: () => document.execCommand('cut'),
+      run: () => {
+        const id = targetId()
+        const sel = getSelection(id ?? -1)
+        if (!sel) return
+        void import('@/utils').then(async ({ copyText }) => {
+          if (await copyText(sel)) doInsert(id, '')
+        })
+      },
     },
     {
       id: 'edit.copy',
       group: 'edit',
       labelKey: 'menu.copy',
+      key: 'Control+C',
       enabled: () => hasTab(),
-      run: () => document.execCommand('copy'),
+      run: () => {
+        const sel = getSelection(targetId() ?? -1)
+        if (!sel) return
+        void import('@/utils').then(async ({ copyText }) => {
+          if (await copyText(sel)) toast.ok(t('common.copied'))
+        })
+      },
     },
     {
       id: 'edit.paste',
       group: 'edit',
       labelKey: 'menu.paste',
+      key: 'Control+V',
       enabled: () => hasTab(),
       run: async () => {
         const text = await readClipboard()
-        if (!text) return
-        emitEditorCmd('insert', text)
+        if (!text) {
+          toast.warn(t('toast.clipboardEmpty'))
+          return
+        }
+        doInsert(targetId(), text)
       },
     },
-    // 行移动：CodeMirror 自带这两个命令，只是之前没接到命令表。
     {
       id: 'edit.moveLineUp',
       group: 'edit',
       labelKey: 'menu.moveLineUp',
+      key: 'Alt+Up',
       enabled: () => hasTab(),
-      run: () => emitEditorCmd('moveLineUp'),
+      run: () => {
+        doMoveLine(targetId(), 'up')
+      },
     },
     {
       id: 'edit.moveLineDown',
       group: 'edit',
       labelKey: 'menu.moveLineDown',
+      key: 'Alt+Down',
       enabled: () => hasTab(),
-      run: () => emitEditorCmd('moveLineDown'),
+      run: () => {
+        doMoveLine(targetId(), 'down')
+      },
+    },
+    {
+      id: 'edit.indent',
+      group: 'edit',
+      labelKey: 'menu.indent',
+      key: 'Control+]',
+      enabled: () => hasTab(),
+      run: () => {
+        doIndent(targetId(), false)
+      },
+    },
+    {
+      id: 'edit.outdent',
+      group: 'edit',
+      labelKey: 'menu.outdent',
+      key: 'Control+[',
+      enabled: () => hasTab(),
+      run: () => {
+        doIndent(targetId(), true)
+      },
     },
     {
       id: 'edit.find',
@@ -285,25 +342,37 @@ export function registerCommands() {
       id: 'edit.toggleComment',
       group: 'edit',
       labelKey: 'menu.toggleComment',
+      key: 'Control+/',
       enabled: () => hasTab(),
       run: async () => {
-        const tab = editor.active
-        if (!tab) return
-        const out = await api.toggleLineComment(tab.language, getSelection(tab.id) || getText(tab.id))
-        emitEditorCmd('replaceSelection', out)
+        const id = targetId()
+        const tab = editor.tabs.find((x) => x.id === id)
+        if (!tab || id == null) return
+        await doToggleComment(id, async () => {
+          const sel = getSelection(id) || getText(id)
+          return api.toggleLineComment(tab.language, sel)
+        })
       },
     },
     {
       id: 'edit.duplicateLine',
       group: 'edit',
-      labelKey: 'menu.copy',
-      run: () => emitEditorCmd('duplicateLine'),
+      labelKey: 'menu.duplicateLine',
+      key: 'Control+D',
+      enabled: () => hasTab(),
+      run: () => {
+        doDuplicateLine(targetId())
+      },
     },
     {
       id: 'edit.deleteLine',
       group: 'edit',
-      labelKey: 'menu.cut',
-      run: () => emitEditorCmd('deleteLine'),
+      labelKey: 'menu.deleteLine',
+      key: 'Control+Shift+K',
+      enabled: () => hasTab(),
+      run: () => {
+        doDeleteLine(targetId())
+      },
     },
 
     // ---- 视图 ----
@@ -311,36 +380,55 @@ export function registerCommands() {
       id: 'view.zoomIn',
       group: 'view',
       labelKey: 'menu.zoomIn',
+      key: 'Control+=',
       run: () => settings.updateUI({ zoom_level: Math.min(200, settings.config.ui.zoom_level + 10) }),
     },
     {
       id: 'view.zoomOut',
       group: 'view',
       labelKey: 'menu.zoomOut',
+      key: 'Control+-',
       run: () => settings.updateUI({ zoom_level: Math.max(50, settings.config.ui.zoom_level - 10) }),
     },
     {
       id: 'view.resetZoom',
       group: 'view',
       labelKey: 'menu.resetZoom',
+      key: 'Control+0',
       run: () => settings.updateUI({ zoom_level: 100 }),
     },
     {
       id: 'view.toggleSidebar',
       group: 'view',
       labelKey: 'menu.toggleSidebar',
+      key: 'Control+B',
       run: () => settings.updateUI({ show_sidebar: !settings.config.ui.show_sidebar }),
     },
     {
       id: 'view.toggleStatusbar',
       group: 'view',
       labelKey: 'menu.toggleStatusbar',
+      key: 'Control+Alt+B',
       run: () => settings.updateUI({ show_status_bar: !settings.config.ui.show_status_bar }),
+    },
+    {
+      id: 'view.toggleWordWrap',
+      group: 'view',
+      labelKey: 'menu.toggleWordWrap',
+      key: 'Alt+Z',
+      run: () => settings.updateEditor({ word_wrap: !settings.config.editor.word_wrap }),
+    },
+    {
+      id: 'view.toggleMinimap',
+      group: 'view',
+      labelKey: 'menu.toggleMinimap',
+      run: () => settings.updateEditor({ minimap: !settings.config.editor.minimap }),
     },
     {
       id: 'view.splitView',
       group: 'view',
       labelKey: 'menu.splitView',
+      key: 'Control+\\',
       enabled: () => hasTab(),
       run: () => {
         const tab = editor.active
@@ -352,8 +440,17 @@ export function registerCommands() {
       group: 'view',
       labelKey: 'menu.theme',
       run: () => {
-        const next = settings.resolvedTheme === 'dark' ? 'light' : 'dark'
+        // 三档循环：浅 → 深 → 跟随系统 → 浅
+        const cur = settings.config.theme
+        const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light'
         settings.update({ theme: next })
+        const label =
+          next === 'light'
+            ? t('menu.themeLight')
+            : next === 'dark'
+              ? t('menu.themeDark')
+              : t('menu.themeSystem')
+        toast.ok(label)
       },
     },
     {
@@ -361,8 +458,6 @@ export function registerCommands() {
       group: 'view',
       labelKey: 'menu.fullscreen',
       key: 'F11',
-      // 全屏是窗口态，不进配置（那是后端持久化的契约，
-      // 存一个重启后为假的字段只会把两边弄不一致）。
       run: () => void toggleFullscreen(),
     },
     {
@@ -372,7 +467,7 @@ export function registerCommands() {
       key: 'Control+P',
       enabled: () => hasTab(),
       run: () => {
-        // 打印走 WebView 自带对话框：打印样式表已把chrome隐藏（print.css），
+        // 打印走 WebView 自带对话框：打印样式表已把 chrome 隐藏（print.css），
         // 打印出来只有正文。不引入 PDF 库——系统打印对话框自带「另存为 PDF」。
         window.print()
       },
@@ -389,20 +484,6 @@ export function registerCommands() {
       group: 'view',
       labelKey: 'menu.lineEnding',
       enabled: () => hasTab(),
-      run: async () => {
-        const tab = editor.active
-        if (!tab) return
-        const next = tab.line_ending === 'crlf' ? 'lf' : tab.line_ending === 'lf' ? 'cr' : 'crlf'
-        const out = await api.convertLineEnding(tab.path, getText(tab.id), next)
-        emitEditorCmd('replaceSelection', out)
-        tab.line_ending = next
-      },
-    },
-    {
-      id: 'view.language',
-      group: 'view',
-      labelKey: 'menu.tools',
-      enabled: () => hasTab(),
       run: () => dialogs.open('encoding'),
     },
 
@@ -411,36 +492,42 @@ export function registerCommands() {
       id: 'tools.json',
       group: 'tools',
       labelKey: 'tool.json',
+      key: 'Control+Shift+J',
       run: () => dialogs.open('json', getSelection(focusedTabId() ?? -1)),
     },
     {
       id: 'tools.diff',
       group: 'tools',
       labelKey: 'tool.diffText',
+      key: 'Control+Shift+D',
       run: () => dialogs.open('diff'),
     },
     {
       id: 'tools.hash',
       group: 'tools',
       labelKey: 'tool.hash',
+      key: 'Control+Shift+H',
       run: () => dialogs.open('hash'),
     },
     {
       id: 'tools.regex',
       group: 'tools',
       labelKey: 'tool.regex',
+      key: 'Control+Shift+R',
       run: () => dialogs.open('regex'),
     },
     {
       id: 'tools.encoding',
       group: 'tools',
       labelKey: 'tool.encoding',
+      key: 'Control+Shift+E',
       run: () => dialogs.open('encoding'),
     },
     {
       id: 'tools.lineOp',
       group: 'tools',
       labelKey: 'tool.lineOp',
+      key: 'Control+Shift+L',
       enabled: () => hasTab(),
       run: () => dialogs.open('lineOp'),
     },
@@ -450,6 +537,7 @@ export function registerCommands() {
       id: 'edit.columnMode',
       group: 'edit',
       labelKey: 'menu.columnMode',
+      key: 'Alt+C',
       enabled: () => hasTab(),
       run: () => {
         const next = !columnMode.value
@@ -480,6 +568,7 @@ export function registerCommands() {
       id: 'macro.record',
       group: 'tools',
       labelKey: 'menu.macroRecord',
+      key: 'Control+Shift+M',
       run: () => {
         if (recording.value) {
           const got = stopRecording()
@@ -496,6 +585,7 @@ export function registerCommands() {
       id: 'macro.play',
       group: 'tools',
       labelKey: 'menu.macroPlay',
+      key: 'Control+Shift+P',
       enabled: () => hasTab() && steps.value.length > 0,
       run: async () => {
         const id = focusedTabId() ?? editor.activeId
@@ -504,27 +594,20 @@ export function registerCommands() {
         await playSteps(v, steps.value, (cmdId) => commands.run(cmdId))
       },
     },
-    {
-      id: 'macro.list',
-      group: 'tools',
-      labelKey: 'menu.macroList',
-      run: () => {
-        settings.updateUI({ show_sidebar: true })
-        document.dispatchEvent(new CustomEvent('sidebar-tab', { detail: 'macros' }))
-      },
-    },
 
     // ---- 剪贴板 / 预览 ----
     {
       id: 'tools.clipboard',
       group: 'tools',
       labelKey: 'tool.clipboard',
+      key: 'Control+Shift+V',
       run: () => dialogs.open('clipboard'),
     },
     {
       id: 'tools.hex',
       group: 'tools',
       labelKey: 'tool.hexViewer',
+      key: 'Control+Alt+H',
       enabled: () => hasFile(),
       run: () => dialogs.open('hex', '', { path: editor.active!.path }),
     },
@@ -547,16 +630,18 @@ export function registerCommands() {
       id: 'tools.batchFindReplace',
       group: 'tools',
       labelKey: 'tool.batchFindReplace',
+      key: 'Control+Shift+B',
       run: () => dialogs.open('batchFindReplace'),
     },
     {
       id: 'tools.batchRename',
       group: 'tools',
       labelKey: 'tool.batchRename',
+      key: 'Control+Alt+R',
       run: () => dialogs.open('batchRename'),
     },
 
-    // ---- 书签 / 宏 / 帮助 ----
+    // ---- 书签 / 帮助 ----
     {
       id: 'bookmark.toggle',
       group: 'tools',
@@ -575,6 +660,7 @@ export function registerCommands() {
       id: 'bookmark.next',
       group: 'tools',
       labelKey: 'menu.bookmarkNext',
+      key: 'Shift+F2',
       enabled: () => hasFile(),
       run: async () => {
         const tab = editor.active
@@ -586,10 +672,10 @@ export function registerCommands() {
         }
         // 下一个：按行号升序找第一个大于当前光标行的，没有则回到第一个。
         const cur = tab.position.line
-        const next = list.map((b) => b.line).sort((a, b) => a - b).find((n) => n > cur) ?? list[0].line
-        document.dispatchEvent(
-          new CustomEvent('editor-goto-line', { detail: { tabId: tab.id, line: next } }),
-        )
+        const next =
+          list.map((b) => b.line).sort((a, b) => a - b).find((n) => n > cur) ??
+          list[0].line
+        doGotoLine(tab.id, next)
       },
     },
     {
@@ -601,38 +687,26 @@ export function registerCommands() {
         window.location.hash = '#/help'
       },
     },
+    {
+      id: 'help.shortcuts',
+      group: 'help',
+      labelKey: 'menu.shortcuts',
+      run: () => {
+        window.location.hash = '#/help/shortcuts'
+      },
+    },
+    {
+      id: 'view.settings',
+      group: 'view',
+      labelKey: 'menu.settings',
+      key: 'Control+,',
+      run: () => {
+        window.location.hash = '#/settings'
+      },
+    },
   ]
 
   commands.register(list)
-
-  /** 保存一个标签：正文从编辑器取，编码 / 行尾 / BOM 按 tab 上的值写回。 */
-  async function saveTab(id: number) {
-    const tab = editor.tabs.find((x) => x.id === id)
-    if (!tab?.path || tab.path.startsWith('draft:')) return
-    // 截断的标签只有部分内容：写回就是把剩余部分删掉，直接拒绝。
-    if (tab.truncated) {
-      toast.warn(t('toast.saveBlockedTruncated'))
-      return
-    }
-    const text = getText(id)
-    try {
-      await api.writeFile(tab.path, text, tab.encoding, tab.line_ending, tab.has_bom)
-      editor.markDirty(id, false)
-      tree.markDirty(tab.path, false)
-      void api.touchRecent(tab.path)
-      toast.ok(t('toast.saved', { name: tab.title }))
-    } catch (e) {
-      const err = normalizeError(e)
-      toast.bad(`${t('error.writeFailed', { reason: err.message })}`)
-    }
-  }
-
-  /** 给编辑器组件发一个命令：编辑器自己知道怎么执行。 */
-  function emitEditorCmd(cmd: string, payload?: unknown) {
-    document.dispatchEvent(
-      new CustomEvent('editor-cmd', { detail: { cmd, payload } }),
-    )
-  }
 
   /** 把录到的步骤存成宏。名字用「宏 N」：用户可以在侧栏改名。 */
   async function saveMacro(list: typeof steps.value) {
@@ -659,5 +733,5 @@ export function registerCommands() {
     settings.updateUI({ show_sidebar: true })
   }
 
-  return { pushFindResults }
+  return { pushFindResults, saveTab, saveTabAs, closeTab, openPath }
 }

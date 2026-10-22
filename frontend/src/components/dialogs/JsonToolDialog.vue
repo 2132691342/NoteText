@@ -56,6 +56,7 @@ import { api } from '@/api'
 import { useDialogStore } from '@/stores/dialogs'
 import { useEditorStore } from '@/stores/editor'
 import { getText } from '@/composables/useEditorRegistry'
+import { doReplaceDoc } from '@/composables/useEditorActions'
 import { useToastStore } from '@/stores/toast'
 import type { JsonFormatVO } from '@/types/api'
 
@@ -118,11 +119,7 @@ async function run() {
 function writeBack() {
   const id = editor.activeId
   if (id == null) return
-  document.dispatchEvent(
-    new CustomEvent('editor-replace-doc', {
-      detail: { tabId: id, text: result.value.output },
-    }),
-  )
+  doReplaceDoc(id, result.value.output)
   emit('close')
 }
 </script>

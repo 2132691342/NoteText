@@ -234,8 +234,13 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /** 从后端会话恢复标签。正文由组件层按 path / draft 拉。 */
-  function restore(dos: TabDO[]) {
+  /**
+   * 从后端会话恢复标签。正文由组件层按 path / draft 拉。
+   *
+   * `activeIndex` 必须用上：只恢复标签不恢复活跃项，启动后一个标签都不显示，
+   * 用户看到的是欢迎页——「上次的文件全没了」这种报告就是这么来的。
+   */
+  function restore(dos: TabDO[], activeIndex = 0) {
     for (const d of dos) {
       const tab: Tab = {
         id: nextId++,
@@ -263,6 +268,10 @@ export const useEditorStore = defineStore('editor', () => {
         encoding_uncertain: false,
       }
       tabs.value.push(tab)
+    }
+    if (tabs.value.length > 0) {
+      const i = Math.min(Math.max(activeIndex, 0), tabs.value.length - 1)
+      activeId.value = tabs.value[i].id
     }
   }
 
@@ -306,6 +315,7 @@ export const useEditorStore = defineStore('editor', () => {
     setSplit,
     openPath,
     reload,
+    applyContent,
     restore,
     toDOs,
   }
