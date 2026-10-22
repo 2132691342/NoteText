@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
 import { useI18n } from 'vue-i18n'
+import { setLocale } from '@/i18n'
 import { api, normalizeError } from '@/api'
 import { getText, getSelection, focusedTabId } from '@/composables/useEditorRegistry'
 import {
@@ -536,6 +537,19 @@ export function registerCommands() {
       },
     },
     {
+      // 状态栏的语言读数：两档循环切换。与 view.theme 同构——
+      // 没有这个 id 时状态栏的语言按钮是死的（点了没反应）。
+      id: 'view.language',
+      group: 'view',
+      labelKey: 'menu.language',
+      run: () => {
+        const next = settings.config.language === 'zh-CN' ? 'en' : 'zh-CN'
+        settings.update({ language: next })
+        setLocale(next)
+        toast.ok(next === 'zh-CN' ? 'menu.langZh' : 'menu.langEn')
+      },
+    },
+    {
       id: 'view.fullscreen',
       group: 'view',
       labelKey: 'menu.fullscreen',
@@ -774,7 +788,7 @@ export function registerCommands() {
         if (!tab?.path) return
         const list = await api.listFileBookmarks(tab.path)
         if (list.length === 0) {
-          toast.warn(t('toast.noBookmarksInFile'))
+          toast.warn(t('sidebar.noBookmarksInFile'))
           return
         }
         // 下一个：按行号升序找第一个大于当前光标行的，没有则回到第一个。

@@ -90,7 +90,7 @@ async function run() {
     result.value = r
     if (!r.ok && r.error_line) {
       // 定位到出错行列：把「哪一行」标出来，用户不用自己数。
-      toast.warn(tr('tool.jsonErrorAtLine', { reason: r.error_message ?? '', line: r.error_line }))
+      toast.warn(tr('error.jsonErrorAtLine', { reason: r.error_message ?? '', line: r.error_line }))
     }
     return
   }

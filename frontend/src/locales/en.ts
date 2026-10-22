@@ -83,6 +83,8 @@ export default {
     themeLight: 'Light',
     themeDark: 'Dark',
     themeSystem: 'Follow system',
+    langZh: '已切换到中文',
+    langEn: 'Switched to English',
     encoding: 'Encoding',
     lineEnding: 'Line ending',
     about: 'About',
@@ -449,6 +451,7 @@ export default {
   },
   about: {
     tagline: 'Lightweight Windows desktop text editor. Tauri 2 + Rust + Vue 3.',
+    system: 'System',
   },
   drop: {
     hint: 'Drop to open with NoteText',
@@ -539,6 +542,8 @@ export default {
     browse: 'Browse…',
     apply: 'Apply',
     removeFromList: 'Remove from list',
+    refresh: 'Refresh',
+    result: 'Result',
   },
   error: {
     pathEmpty: 'Path cannot be empty',
@@ -580,6 +585,11 @@ export default {
     '6001': 'Restart the app; if it still fails, use a different folder as the workspace.',
     '7001': 'Restart the app.',
     '8000': 'Restart the app and try again.',
+  },
+  window: {
+    minimize: 'Minimize',
+    maximize: 'Maximize',
+    restore: 'Restore down',
   },
   // Human wording for common os error numbers: the raw string means nothing to a user.
   os: {

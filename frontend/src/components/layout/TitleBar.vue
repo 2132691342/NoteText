@@ -44,10 +44,10 @@
         <NtIcon name="settings" />
       </button>
       <span v-if="onEditor" class="nt-titlebar-sep" />
-      <button class="nt-icon-btn" :title="t('common.minimize')" @click="api.windowMinimize()">
+      <button class="nt-icon-btn" :title="t('window.minimize')" @click="api.windowMinimize()">
         <NtIcon name="minus" />
       </button>
-      <button class="nt-icon-btn" :title="t('common.maximize')" @click="api.windowToggleMaximize()">
+      <button class="nt-icon-btn" :title="t('window.maximize')" @click="api.windowToggleMaximize()">
         <NtIcon :name="maximized ? 'square' : 'square-dashed'" />
       </button>
       <button class="nt-icon-btn is-close" :title="t('common.close')" @click="api.windowClose()">

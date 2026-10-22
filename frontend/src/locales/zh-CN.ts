@@ -86,6 +86,8 @@ export default {
     themeLight: '浅色',
     themeDark: '深色',
     themeSystem: '跟随系统',
+    langZh: '已切换到中文',
+    langEn: 'Switched to English',
     encoding: '编码',
     lineEnding: '行尾',
     about: '关于',
@@ -452,6 +454,7 @@ export default {
   },
   about: {
     tagline: '轻量级 Windows 桌面文本编辑器。Tauri 2 + Rust + Vue 3。',
+    system: '系统',
   },
   drop: {
     hint: '松手即用 NoteText 打开',
@@ -542,6 +545,8 @@ export default {
     browse: '浏览…',
     apply: '应用',
     removeFromList: '从列表移除',
+    refresh: '刷新',
+    result: '结果',
   },
   error: {
     pathEmpty: '路径不能为空',
@@ -582,6 +587,11 @@ export default {
     '6001': '重启应用；若仍失败，换一个目录作为工作目录。',
     '7001': '重启应用。',
     '8000': '重启应用后重试。',
+  },
+  window: {
+    minimize: '最小化',
+    maximize: '最大化',
+    restore: '向下还原',
   },
   // 常见 os error 号的人话翻译：原始字符串对用户没有意义。
   os: {

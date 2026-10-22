@@ -145,7 +145,7 @@ const treeMenuItems = computed<MenuItem[]>(() => {
       run: () => void paste(targetDir, true),
     },
     {
-      label: t('menu.rename'),
+      label: t('common.rename'),
       hint: 'F2',
       disabled: !entry,
       run: () => void startMenuEdit('rename'),

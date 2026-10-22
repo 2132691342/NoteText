@@ -96,7 +96,7 @@ onMounted(load)
 
 async function onOpen(f: RecentFileVO) {
   if (!f.exists) {
-    toast.warn(t('toast.fileMissing', { name: f.file_name }))
+    toast.warn(t('sidebar.fileMissing', { name: f.file_name }))
     return
   }
   emit('close')
@@ -133,7 +133,7 @@ async function onRemove() {
 
 async function onClear() {
   const n = await api.clearRecent()
-  toast.ok(t('toast.recentCleared', { n }))
+  toast.ok(t('sidebar.recentCleared', { n }))
   await load()
 }
 </script>

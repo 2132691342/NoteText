@@ -18,7 +18,7 @@
         <div v-if="mode === 'replace'" class="nt-rename-row">
           <span class="nt-label">{{ t('dialog.find') }}</span>
           <ElInput v-model="find" size="small" />
-          <span class="nt-label">{{ t('dialog.replaceWith') }}</span>
+          <span class="nt-label">{{ t('tool.renameReplace') }}</span>
           <ElInput v-model="replace" size="small" />
         </div>
 

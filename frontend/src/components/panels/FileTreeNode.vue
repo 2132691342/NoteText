@@ -5,7 +5,7 @@
 // setupState，于是 instance.render 落空，整棵树渲染成空占位符——打开文件夹
 // 「没反应」的根因。详见 docs 的错误处理章节。拆成真正的 SFC 是唯一稳的写法。
 //
-// 递归：Vue SFC 可以按文件名自引用（<FileTreeNode>），不需要工厂闭包。
+// 递归：Vue SFC 可以按文件名自引用，不需要工厂闭包。
 // 这段 Logic 原本内联在 FileTreePanel 里，抽出来时行为逐条保留：
 // 懒展开、行内新建/重命名、右键委托、树内拖拽移动（禁止拖进自身子目录）。
 
@@ -67,11 +67,11 @@ import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { dirName, joinPath } from '@/utils'
-import type { FileOpVO } from '@/types/api'
+import type { DirEntry, FileOpVO } from '@/types/api'
 
 const props = defineProps<{
-  entry: { path: string; name: string; is_dir: boolean }
-  depth?: number
+  entry: DirEntry
+  depth: number
 }>()
 
 const { t } = useI18n()
@@ -80,7 +80,7 @@ const editor = useEditorStore()
 const toast = useToastStore()
 
 const emit = defineEmits<{
-  (e: 'contextmenu', payload: { x: number; y: number; entry: unknown }): void
+  (e: 'contextmenu', payload: { x: number; y: number; entry: DirEntry }): void
 }>()
 
 const expanded = ref(false)

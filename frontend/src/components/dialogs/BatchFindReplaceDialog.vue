@@ -16,13 +16,13 @@
           <span class="nt-label">{{ t('tool.batchGlob') }}</span>
           <ElInput v-model="glob" size="small" placeholder="*.ts" />
           <ElCheckbox v-model="recursive" size="small">{{ t('tool.batchRecursive') }}</ElCheckbox>
-          <ElCheckbox v-model="caseSensitive" size="small">{{ t('dialog.caseSensitive') }}</ElCheckbox>
+          <ElCheckbox v-model="caseSensitive" size="small">{{ t('dialog.matchCase') }}</ElCheckbox>
           <ElCheckbox v-model="regexMode" size="small">{{ t('tool.regexMode') }}</ElCheckbox>
         </div>
         <div class="nt-batch-row">
           <span class="nt-label">{{ t('dialog.find') }}</span>
           <ElInput v-model="find" size="small" @keydown.enter="onScan" />
-          <span class="nt-label">{{ t('dialog.replaceWith') }}</span>
+          <span class="nt-label">{{ t('tool.renameReplace') }}</span>
           <ElInput v-model="replace" size="small" />
           <ElButton size="small" type="primary" :disabled="!canScan" :loading="scanning" @click="onScan">
             {{ t('tool.batchScan') }}
@@ -45,7 +45,7 @@
             :model-value="allChecked"
             size="small"
             @change="(v: unknown) => toggleAll(v === true)"
-          >{{ t('common.selectAll') }}</ElCheckbox>
+          >{{ t('menu.selectAll') }}</ElCheckbox>
         </div>
 
         <div v-if="result.hits.length === 0" class="nt-empty">

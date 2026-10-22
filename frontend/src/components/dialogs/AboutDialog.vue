@@ -33,7 +33,7 @@
           </ElButton>
         </div>
         <div class="nt-about-row">
-          <span class="nt-label">{{ t('common.system') }}</span>
+          <span class="nt-label">{{ t('about.system') }}</span>
           <span class="nt-readout">{{ info?.os }} / {{ info?.arch }}</span>
         </div>
       </div>
