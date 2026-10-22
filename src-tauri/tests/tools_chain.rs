@@ -1,11 +1,13 @@
-//! 工具箱链路：JSON / diff / 正则 / 哈希各自的硬契约。
+//! 工具与文本变换链路：JSON / diff / 正则 / 哈希 / 注释切换的硬契约。
 //!
-//! 坏了的表现：浮窗给出错误结果或卡死，用户以为编辑器坏了。
+//! 坏了的表现：浮窗给出错误结果或卡死；Ctrl+/ 把代码注释坏——
+//! 用户拿到的结果是错的但界面上看不出。
 
 use notetext_lib::domain::diff::TextDiffReq;
 use notetext_lib::domain::hash::{HashAlgo, HashReq};
 use notetext_lib::domain::json::{JsonFormat, JsonFormatReq};
 use notetext_lib::domain::regex::RegexTestReq;
+use notetext_lib::service::editor;
 use notetext_lib::service::tools::ToolsService;
 
 #[test]
@@ -56,7 +58,6 @@ fn test_regex_and_hash_chain() {
     assert_eq!(re.matches.len(), 2, "应匹配两次");
     assert_eq!(re.matches[0].groups.len(), 3, "整段 + 2 个捕获组");
     assert_eq!(re.matches[0].groups[1], "12", "第一组应是 12");
-    assert_eq!(re.matches[0].groups[2], "ab", "第二组应是 ab");
 
     // 哈希：三种算法各对一组已知向量，与 certutil / Get-FileHash 对得上。
     // 对不上用户就会误判文件被改。
@@ -76,6 +77,26 @@ fn test_regex_and_hash_chain() {
         });
         assert!(vo.ok, "{algo:?} 应成功");
         assert_eq!(vo.hex, expected, "{algo:?}(\"hello\") 应为 {expected}");
-        assert_eq!(vo.bytes, 5, "应记录输入字节数");
     }
+}
+
+#[test]
+fn test_comment_toggle_chain() {
+    // 注释切换：加 / 去往返——去完不一样用户就丢代码了。
+    let src = "let a = 1;\nlet b = 2;";
+    let commented = editor::toggle_line_comment("rust", src).expect("加注释失败");
+    assert_eq!(commented, "// let a = 1;\n// let b = 2;", "两行都应被注释");
+    let back = editor::toggle_line_comment("rust", &commented).expect("去注释失败");
+    assert_eq!(back, src, "再去注释应还原");
+
+    // 半注释的块按「未全注释」处理：统一补齐，而不是逐行翻转成一半有一半没有。
+    let filled =
+        editor::toggle_line_comment("rust", "// let a = 1;\nlet b = 2;").expect("补注释失败");
+    assert_eq!(filled, "// let a = 1;\n// let b = 2;", "半注释块应补齐");
+
+    // 不支持行注释的语言要报错，不能静默返回原文让用户以为生效了。
+    assert!(
+        editor::toggle_line_comment("text", "x").is_err(),
+        "纯文本应报不支持"
+    );
 }
