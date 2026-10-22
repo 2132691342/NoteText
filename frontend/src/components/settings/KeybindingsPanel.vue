@@ -173,14 +173,24 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, { capture: true
     transform var(--nt-dur-fast) var(--nt-ease);
 }
 
+/* 五态对齐全站：悬停 1.06、按下 0.92（±0.14 的差值才读得出「按压感」）。
+   此前这里用 0.97，与其他按钮不同档，按下去几乎没有反馈。 */
 .nt-key-btn:hover {
   border-color: var(--nt-control-border-hover);
   color: var(--nt-ink);
+  transform: scale(1.06);
 }
 
 .nt-key-btn:active {
   background: var(--nt-surface-selected);
-  transform: scale(0.97);
+  transform: scale(0.92);
+}
+
+.nt-key-btn:disabled {
+  opacity: 0.42;
+  color: var(--nt-ink-muted);
+  cursor: not-allowed;
+  transform: none;
 }
 
 .nt-key-btn.is-editing {
