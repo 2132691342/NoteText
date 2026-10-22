@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import { ElButton } from 'element-plus'
 import CodeEditor from '@/components/editor/CodeEditor.vue'
 import Minimap from '@/components/editor/Minimap.vue'
+import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
 import DocPreview from '@/components/editor/DocPreview.vue'
 import HexView from '@/components/editor/HexView.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
@@ -58,6 +59,18 @@ function isDocTab(path: string, forcePreview: boolean): boolean {
   if (forcePreview) return true
   if (!path) return false
   return DOC_EXTS.has(extOfPath(path))
+}
+
+/**
+ * 该标签走 Markdown 三态编辑器。
+ *
+ * 与 DocPreview 的分工：`showing_preview` 是用户主动按了「预览」后的只读态；
+ * 这里默认就把 .md 送进可编辑的三态视图——用户点开一个 .md
+ * 是想改它，不是想先看一遍再找按钮切回编辑。
+ */
+function isMarkdownTab(path: string): boolean {
+  const e = extOfPath(path)
+  return e === 'md' || e === 'markdown'
 }
 
 /** 二进制视图：进 Hex 而不是 CodeMirror。 */
@@ -235,6 +248,12 @@ onBeforeUnmount(() => {
           <div v-if="isHexTab(tab.view_type)" class="nt-inline-view">
             <HexView :path="tab.path" />
           </div>
+          <MarkdownEditor
+            v-else-if="isMarkdownTab(tab.path) && !tab.showing_preview"
+            :path="tab.path"
+            :tab="tab"
+            @toggle-edit="tab.showing_preview = true"
+          />
           <DocPreview
             v-else-if="isDocTab(tab.path, tab.showing_preview)"
             :path="tab.path"
@@ -248,7 +267,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 分屏：只在活跃标签上渲染第二个只读视图 -->
-      <template v-if="editor.active && editor.active.split && !isDocTab(editor.active.path, editor.active.showing_preview) && !isHexTab(editor.active.view_type)">
+      <template v-if="editor.active && editor.active.split && !isDocTab(editor.active.path, editor.active.showing_preview) && !isMarkdownTab(editor.active.path) && !isHexTab(editor.active.view_type)">
         <div class="nt-split-handle" @mousedown="startSplitDrag" />
         <div class="nt-split-second">
           <CodeEditor :tab="editor.active" :view-id="'second'" :readonly="true" />

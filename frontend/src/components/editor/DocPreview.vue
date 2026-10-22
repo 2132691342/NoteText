@@ -29,10 +29,6 @@
       <img :src="src" :alt="fileName" />
     </div>
 
-    <div v-else-if="kind === 'markdown'" class="nt-doc-markdown">
-      <div ref="host" class="nt-md-body" />
-    </div>
-
     <div v-else ref="host" class="nt-doc-host" />
   </div>
 </template>
@@ -54,17 +50,6 @@ const { t } = useI18n()
 const toast = useToastStore()
 
 const host = ref<HTMLElement | null>(null)
-/**
- * Markdown 预览挂载的应用：卸载时要 unmount，否则切换文件会漏实例。
- * 类型是「能挂能卸」的最小形状——不引 App 的完整类型，
- * 那会把 vue 的内部类型拖进这个组件。
- */
-let mdApp: { mount: (el: Element) => unknown; unmount: () => void } | null = null
-const mdText = ref('')
-
-/** 预览体积上限：再大的文档渲染会把界面卡死，不如让用户用外部程序打开。 */
-const MAX_PREVIEW = 20 * 1024 * 1024
-
 const fileName = computed(() => baseName(props.path))
 const ext = computed(() => extName(props.path))
 
@@ -73,7 +58,6 @@ type Kind =
   | 'docx'
   | 'pdf'
   | 'image'
-  | 'markdown'
   | 'plain'
   | 'unsupported'
   | 'tooLarge'
@@ -87,10 +71,6 @@ async function classify() {
   const e = ext.value.toLowerCase()
   if (IMG.has(e)) {
     kind.value = 'image'
-    return
-  }
-  if (e === 'md' || e === 'markdown') {
-    await renderMarkdown()
     return
   }
   if (e === 'xlsx' || e === 'xlsm' || e === 'csv') {
@@ -110,59 +90,6 @@ async function classify() {
   }
   // 其余一律按纯文本预览：用户主动按了「预览」，就该看到只读全文。
   await renderPlainText()
-}
-
-/**
- * Markdown 预览：挂 mavon-editor 的组件（只读预览态）。
- *
- * 用它自带的渲染器而不是新引 marked：依赖清单里已经有一个 Markdown 实现，
- * 再加一个是重复付费。mavon 是 UMD 包、导出名 MavonEditor，
- * 所以走动态 import + createApp 挂载，不写进模板——
- * 那样只要打开 .txt 的用户也会加载 Markdown 运行时。
- */
-async function renderMarkdown() {
-  try {
-    if (!host.value) return
-    const data = await readBytes()
-    if (!data) return
-    mdText.value = new TextDecoder('utf-8').decode(data)
-    // 体积守卫：Markdown 渲染要把整篇插进 DOM，几 MB 就能卡死界面。
-    if (mdText.value.length > MAX_PREVIEW) {
-      kind.value = 'tooLarge'
-      return
-    }
-    const mod = (await import('mavon-editor')) as unknown as {
-      default?: { mavonEditor?: unknown }
-      mavonEditor?: unknown
-    }
-    const comp = (mod.mavonEditor ?? (mod.default as { mavonEditor?: unknown })?.mavonEditor) as
-      | unknown
-      | undefined
-    if (!comp) {
-      // 拿不到组件就退回纯文本：总比一片空白好。
-      kind.value = 'unsupported'
-      return
-    }
-    const { createApp, h } = await import('vue')
-    mdApp?.unmount()
-    mdApp = createApp({
-      render: () =>
-        h(comp as never, {
-          modelValue: mdText.value,
-          defaultOpen: 'preview',
-          editable: false,
-          toolbarsFlag: false,
-         subfield: false,
-          // 预览区高度交给容器：写死会把弹窗撑破。
-          boxShadow: false,
-        }),
-    })
-    mdApp.mount(host.value)
-    kind.value = 'markdown'
-  } catch (e) {
-    toast.bad(normalizeError(e).message)
-    kind.value = 'unsupported'
-  }
 }
 
 async function renderPlainText() {
@@ -268,8 +195,6 @@ onMounted(classify)
 onBeforeUnmount(() => {
   pdfApp?.unmount()
   pdfApp = null
-  mdApp?.unmount()
-  mdApp = null
 })
 
 watch(() => props.path, () => {
@@ -277,8 +202,6 @@ watch(() => props.path, () => {
   // 不卸会越积越多，而且旧内容会盖在新容器上。
   pdfApp?.unmount()
   pdfApp = null
-  mdApp?.unmount()
-  mdApp = null
   void classify()
 })
 </script>

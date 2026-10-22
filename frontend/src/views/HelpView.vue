@@ -29,8 +29,10 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useMarkdown } from '@/composables/useMarkdown'
 
 const { t } = useI18n()
+const md = useMarkdown()
 const route = useRoute()
 const router = useRouter()
 
@@ -53,36 +55,17 @@ const DOC_RAW = import.meta.glob('../../../assets/docs/*.md', {
 
 const host = ref<HTMLElement | null>(null)
 /** 挂载后的 Markdown 子应用：只需要 unmount，不存整个 App 实例。 */
-let mdApp: { unmount: () => void } | null = null
 
-/** 用 mavon 的预览态渲染 Markdown：依赖里已经有一个 Markdown 实现，不再引第二个。 */
+/** 用 markdown-it 渲染帮助文档：与编辑器预览共用同一个渲染器。 */
 async function render() {
   if (!host.value) return
   const raw = DOC_RAW[`../../../assets/docs/${current.value}.md`]
-  mdApp?.unmount()
-  mdApp = null
   host.value.innerHTML = ''
   if (!raw) return
-  const mod = (await import('mavon-editor')) as unknown as {
-    default?: { mavonEditor?: unknown }
-    mavonEditor?: unknown
-  }
-  const comp = (mod.mavonEditor ?? (mod.default as { mavonEditor?: unknown })?.mavonEditor) as unknown
-  if (!comp) return
-  const { createApp, h } = await import('vue')
-  const app = createApp({
-    render: () =>
-      h(comp as never, {
-        modelValue: raw,
-        defaultOpen: 'preview',
-        editable: false,
-        toolbarsFlag: false,
-        subfield: false,
-        boxShadow: false,
-      }),
-  })
-  app.mount(host.value)
-  mdApp = app
+  host.value.innerHTML = await md.renderHtml(raw)
+  await nextTick()
+  await md.renderDiagrams(host.value)
+  md.renderMath(host.value)
 }
 
 onMounted(() => void nextTick(render))

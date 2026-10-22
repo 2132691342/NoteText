@@ -910,3 +910,149 @@
   margin: var(--nt-sp-1) var(--nt-sp-2);
   background: var(--nt-border);
 }
+
+/* ============================================================
+   Markdown 预览
+   ============================================================
+   由 markdown-it 生成的 HTML，类名以 nt-md- 开头。
+   配色一律取 --nt-* 令牌：预览区与编辑器表面同底，
+   读起来是「同一份文档的两种看法」，不是两个应用。 */
+.nt-md-preview > :first-child {
+  margin-top: 0;
+}
+
+.nt-md-preview h1,
+.nt-md-preview h2,
+.nt-md-preview h3,
+.nt-md-preview h4 {
+  margin: var(--nt-sp-6) 0 var(--nt-sp-3);
+  font-weight: 600;
+  line-height: var(--nt-lh-tight);
+  color: var(--nt-ink);
+}
+
+.nt-md-preview h1 {
+  font-size: var(--nt-fs-2xl);
+  padding-bottom: var(--nt-sp-2);
+  border-bottom: 1px solid var(--nt-border);
+}
+
+.nt-md-preview h2 {
+  font-size: var(--nt-fs-xl);
+  padding-bottom: var(--nt-sp-1);
+  border-bottom: 1px solid var(--nt-border);
+}
+
+.nt-md-preview h3 {
+  font-size: var(--nt-fs-lg);
+}
+
+.nt-md-preview p {
+  margin: 0 0 var(--nt-sp-3);
+}
+
+/* 代码块：编辑器表面同色，靠 1px 描边分界（不另起灰底） */
+.nt-md-pre,
+.nt-md-preview pre {
+  margin: 0 0 var(--nt-sp-4);
+  padding: var(--nt-sp-3);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  line-height: var(--nt-lh-base);
+  background: var(--nt-elev-surface);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-sm);
+}
+
+.nt-md-preview pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.nt-md-preview :not(pre) > code {
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--nt-elev-selected);
+  border-radius: var(--nt-radius-xs);
+}
+
+.nt-md-preview blockquote {
+  margin: 0 0 var(--nt-sp-4);
+  padding: var(--nt-sp-1) var(--nt-sp-4);
+  color: var(--nt-ink-2);
+  border-left: 3px solid var(--nt-border-strong);
+}
+
+.nt-md-preview ul,
+.nt-md-preview ol {
+  margin: 0 0 var(--nt-sp-4);
+  padding-left: var(--nt-sp-6);
+}
+
+.nt-md-preview li {
+  margin-bottom: var(--nt-sp-1);
+}
+
+.nt-md-preview a {
+  color: var(--nt-primary);
+  text-decoration: none;
+}
+
+.nt-md-preview a:hover {
+  text-decoration: underline;
+}
+
+.nt-md-preview table {
+  margin: 0 0 var(--nt-sp-4);
+  border-collapse: collapse;
+  font-size: var(--nt-fs-sm);
+}
+
+.nt-md-preview th,
+.nt-md-preview td {
+  padding: var(--nt-sp-1) var(--nt-sp-3);
+  border: 1px solid var(--nt-border);
+}
+
+.nt-md-preview th {
+  background: var(--nt-elev-surface);
+  font-weight: 600;
+  text-align: left;
+}
+
+.nt-md-preview hr {
+  height: 1px;
+  margin: var(--nt-sp-6) 0;
+  background: var(--nt-border);
+  border: none;
+}
+
+.nt-md-preview img {
+  max-width: 100%;
+  border-radius: var(--nt-radius-sm);
+}
+
+/* Mermaid 图：居中，失败时退回源码并给危险色 */
+.nt-md-mermaid {
+  margin: var(--nt-sp-4) 0;
+  text-align: center;
+}
+
+.nt-md-mermaid.is-failed {
+  padding: var(--nt-sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-danger);
+  text-align: left;
+  white-space: pre-wrap;
+  background: var(--nt-danger-bg);
+  border-radius: var(--nt-radius-sm);
+}
+
+/* 公式：行内不额外撑行高，块级留出间距 */
+.nt-md-math .katex {
+  font-size: 1.05em;
+}

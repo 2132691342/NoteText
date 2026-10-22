@@ -36,6 +36,7 @@ declare module 'vue' {
     JsonToolDialog: typeof import('./components/dialogs/JsonToolDialog.vue')['default']
     KeybindingsPanel: typeof import('./components/settings/KeybindingsPanel.vue')['default']
     LineOpToolDialog: typeof import('./components/dialogs/LineOpToolDialog.vue')['default']
+    MarkdownEditor: typeof import('./components/editor/MarkdownEditor.vue')['default']
     MenuBar: typeof import('./components/layout/MenuBar.vue')['default']
     Minimap: typeof import('./components/editor/Minimap.vue')['default']
     MonitorPanel: typeof import('./components/panels/MonitorPanel.vue')['default']
