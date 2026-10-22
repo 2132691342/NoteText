@@ -176,9 +176,9 @@ pub fn bom_bytes(encoding: &str) -> &'static [u8] {
 /// 按编码把字节解成字符串。
 ///
 /// 实现方式：手写一张小的单字节码表 + UTF-16 特判。
-/// 为什么不引 `encoding_rs`：它是正确的选择，但本项目只支持 13 种编码，
-/// 其中 11 种是单字节表，手写表总共几百行且可测；引一个 200KB+ 的
-/// 码表 crate 只为了「也许将来支持 ISO-2022-JP」不划算。
+/// 为什么不引 `encoding_rs`：它是正确的选择，但本项目只支持 12 种编码，
+/// 其中 2 种（Windows-1252 / ISO-8859-1）是手写单字节表，手写表总共几百行且可测；
+/// 引一个 200KB+ 的码表 crate 只为了「也许将来支持更多编码」不划算。
 /// **要扩展编码清单时优先换 encoding_rs**，别继续往表里加。
 pub fn decode(bytes: &[u8], encoding: &str) -> AppResult<String> {
     match encoding {

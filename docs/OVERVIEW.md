@@ -25,7 +25,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | 对比 | 对比浮窗 | 文本 LCS 行级 + 行内高亮；目录一层逐文件 |
 | 哈希 | 哈希浮窗 | MD5 / SHA-1 / SHA-256，大小写两种输出 |
 | 正则 | 正则浮窗 | 实时匹配 + 捕获组表格，`i` `m` `s` `x` 四开关 |
-| 编码转换 | 编码浮窗 | 24 种编码互转，可选写 BOM |
+| 编码转换 | 编码浮窗 | 12 种编码互转，可选写 BOM |
 | 行编辑 | 行编辑浮窗 | 11 种行级变换，可预览后应用 |
 | 书签 / 片段 / 宏 | 侧栏面板 | `F2` 加书签；片段双击插入；宏 `Ctrl+Shift+M` 录制、`Ctrl+Shift+P` 回放 |
 | 函数列表 | 侧栏面板 | 按语言正则提取符号，点击跳转 |
@@ -82,7 +82,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | `src-tauri/src/service/editor.rs` | 语言清单、注释切换、行编辑、行列换算 | [06](specs/06-editor-domain.md) |
 | `src-tauri/src/service/tools.rs` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](specs/09-tools.md) |
 | `src-tauri/src/service/userdata.rs` | 书签 / 片段 / 宏 / 草稿 / 最近 / 配置 / 备份 | [08](specs/08-user-data.md) |
-| `src-tauri/src/service/encoding.rs` | 13 种编码的探测 / 解码 / 编码 / BOM | [05](specs/05-file-domain.md) |
+| `src-tauri/src/service/encoding.rs` | 12 种编码的探测 / 解码 / 编码 / BOM | [05](specs/05-file-domain.md) |
 | `src-tauri/src/service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](specs/13-batch-operations.md) |
 | `frontend/src/components/editor` | CodeMirror 容器 + compartments | [06](specs/06-editor-domain.md) |
 | `frontend/src/composables` | 命令表 / 主题 / 语言 / 宏 / 列编辑 / 退出守卫 | [07](specs/07-frontend-state.md) |
@@ -132,7 +132,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | 纯 invoke，不内嵌 HTTP 服务 | 无端口、无常驻服务、无 CSP 麻烦 | 浏览器里 `npm run dev` 只能看空态 |
 | 正文归编辑器，元数据归后端 | 大文件不卡；保存 / 恢复只需元数据 | 需要 `useEditorRegistry` 这层间接 |
 | rusqlite bundled | 用户机器不用装 SQLite，无 CGO | 二进制 +1.5MB |
-| 手写编码表 + 迷你正则引擎 | 二进制小、行为可解释可测 | 只支持 13 种编码、正则不支持 `{n,m}` |
+| 手写编码表 + 迷你正则引擎 | 二进制小、行为可解释可测 | 只支持 12 种编码、正则不支持 `{n,m}` |
 | 单窗口 + 多标签 | 没有「窗口跑哪去了」的问题 | 不能并排看两个文件夹 |
 | 不做插件系统 | 功能面收得住，没有插件兼容性负担 | 高级需求靠外部工具 |
 | 配置整块 JSON 存一个 KV 键 | 前端防抖回写即可，不用算差集 | 配置量大几十倍时才需要拆（现在没有） |

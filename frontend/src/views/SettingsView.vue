@@ -107,11 +107,13 @@ async function onReset() {
   min-height: 0;
 }
 
+/* 左栏宽度按最长标签定：中英切换后 "Files & encoding" / "快捷键" 都要能整行显示，
+   固定 160px 在英文下会折行甚至裁掉半个字。 */
 .nt-settings-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 160px;
+  width: 168px;
   padding: var(--nt-sp-3) var(--nt-sp-2);
   border-right: 1px solid var(--nt-border);
   flex: none;
@@ -124,6 +126,9 @@ async function onReset() {
   border-radius: var(--nt-radius-sm);
   font-size: var(--nt-fs-sm);
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--nt-ink-2);
 }
 

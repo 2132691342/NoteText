@@ -1,6 +1,6 @@
 //! 文件域模型：目录项、文件元信息、读取结果。
 //!
-//! 大文件策略（notepad-- 的「大文本 / 超大文本两种打开方式」）落在
+//! 大文件策略（超阈值自动降级为只读前段）落在
 //! `ReadMode`：超阈值时前端提示用户选「只读前 N MB」还是「强制全量」，
 //! 而不是默默把 500MB 读进 WebView 把界面卡死。
 
@@ -32,8 +32,11 @@ pub struct FileMeta {
 }
 
 /// 读取模式：调用方按文件大小与用户选择决定。
+///
+/// 内部标签 `mode` 与前端 `types/api.ts` 的 ReadMode 契约一致：
+/// 字段名改一处，两边同时编译不过，不会静默失联。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "mode", rename_all = "snake_case")]
 pub enum ReadMode {
     /// 全量读入（默认；上限见 service::file::MAX_FULL_READ）。
     Full,

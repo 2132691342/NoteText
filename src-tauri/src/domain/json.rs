@@ -114,7 +114,7 @@ pub struct JsonDiffVO {
     pub error_message: Option<String>,
 }
 
-/// 文本 Diff：LCS 行级对齐 + 行内字符级高亮（两个参考项目共有的做法）。
+/// 文本 Diff：LCS 行级对齐 + 行内字符级高亮。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TextDiffReq {
     pub left: String,

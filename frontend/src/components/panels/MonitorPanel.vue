@@ -125,9 +125,16 @@ onMounted(() => {
 
 onBeforeUnmount(stop)
 
-// 切换标签：监控目标跟着变，从头读新文件。
-watch(path, () => {
-  if (watching.value) start()
+/**
+ * 目标文件变了重新开始读。
+ *
+ * 必须覆盖「从空到有」这一跳：侧栏比会话恢复先挂载，此时 active.path 还是空串，
+ * onMounted 里 start() 被跳过且面板不会二次挂载（v-else-if），
+ * 于是面板永远停在 0 行。所以这里不判断 watching，见到有效路径就起。
+ */
+watch(path, (p) => {
+  if (!p) return
+  start()
 })
 </script>
 

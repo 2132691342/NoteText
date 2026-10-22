@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 书签：文件 + 行号（notepad-- 的 F2 切换书签、8 种书签功能）。
+/// 书签：文件 + 行号，由 F2 切换。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookmarkDO {
     pub id: i64,

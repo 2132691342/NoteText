@@ -255,6 +255,22 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /** 关掉 id 左侧的标签。脏标签跳过——不替用户丢未保存的修改。 */
+  function closeLeft(id: number) {
+    const i = tabs.value.findIndex((t) => t.id === id)
+    if (i < 0) return
+    tabs.value = tabs.value.filter((t, idx) => idx >= i || t.dirty)
+    if (!tabs.value.some((t) => t.id === activeId.value)) activeId.value = id
+  }
+
+  /** 关掉 id 右侧的标签。脏标签跳过。 */
+  function closeRight(id: number) {
+    const i = tabs.value.findIndex((t) => t.id === id)
+    if (i < 0) return
+    tabs.value = tabs.value.filter((t, idx) => idx <= i || t.dirty)
+    if (!tabs.value.some((t) => t.id === activeId.value)) activeId.value = id
+  }
+
   /**
    * 从后端会话恢复标签。正文由组件层按 path / draft 拉。
    *
@@ -330,6 +346,8 @@ export const useEditorStore = defineStore('editor', () => {
     closeAll,
     closeOthers,
     closeSaved,
+    closeLeft,
+    closeRight,
     markDirty,
     setPosition,
     setScroll,

@@ -191,19 +191,36 @@ function syncFromEditor() {
     return
   }
   pos.value = getPosition(id)
-  const text = getText(id)
-  lines.value = text === '' ? 0 : text.split('\n').length
+  lines.value = getText(id) === '' ? 0 : getText(id).split('\n').length
   void fetchStats()
 }
+
+/**
+ * 编辑器挂载完成时同步一次。
+ *
+ * 首屏必须靠这个事件：状态栏比编辑器先挂载，此时注册表还是空的，
+ * 只在 onMounted 里同步一次会停在「行 1, 列 1 / 总行数 0」，
+ * 直到用户敲第一个字才对得上。
+ */
+function onEditorReady(e: Event) {
+  const d = (e as CustomEvent).detail as { tabId?: number }
+  if (!d || d.tabId !== editor.activeId) return
+  syncFromEditor()
+}
+
+// 标签元数据里没有正文（AGENTS.md §1.2），所以编辑器挂载前读不出真实行数。
+// 不猜：等 nt-editor-ready 或用户首次输入，读数随即被覆盖。
 
 onMounted(() => {
   document.addEventListener('nt-cursor', onCursor)
   document.addEventListener('nt-stats', onStats)
+  document.addEventListener('nt-editor-ready', onEditorReady)
   syncFromEditor()
 })
 onUnmounted(() => {
   document.removeEventListener('nt-cursor', onCursor)
   document.removeEventListener('nt-stats', onStats)
+  document.removeEventListener('nt-editor-ready', onEditorReady)
 })
 
 // 切标签主动同步一次：编辑器在显示之前发的读数可能被过滤掉了。

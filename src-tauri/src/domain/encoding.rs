@@ -1,7 +1,6 @@
 //! 编码域模型：检测结果与转换请求。
 //!
-//! 支持范围对齐两个参考项目的交集（notepad-- 的编码转换 + EasyText 的 38 种）：
-//! 常用中文编码 + UTF 家族 + 拉丁系，共 24 种，覆盖真实用户的 99% 文件。
+//! 后端内置 12 种编码：UTF 家族 + GB18030 / Big5 / Shift_JIS / EUC-JP / EUC-KR / KOI8-R + Windows-1252 / ISO-8859-1。
 
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +44,7 @@ pub struct LineEndingReq {
     pub target: String,
 }
 
-/// 大小写转换请求（notepad-- 的 1.17 功能）。
+/// 大小写转换请求（行编辑功能之一）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CaseTarget {

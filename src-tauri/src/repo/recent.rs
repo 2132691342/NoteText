@@ -1,6 +1,6 @@
 //! 最近文件持久化：打开 / 保存记账，支持置顶与上限淘汰。
 //!
-//! 淘汰规则（与 EasyText 一致）：按 `opened_at` 淘汰最旧的**非置顶**项，
+//! 淘汰规则：按 `opened_at` 淘汰最旧的**非置顶**项，
 //! 置顶项永不淘汰。置顶是用户明确说「这个我常用」，不该被自动清理挤掉。
 
 use rusqlite::{params, Connection, OptionalExtension};

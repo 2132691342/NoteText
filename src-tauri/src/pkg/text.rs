@@ -70,7 +70,7 @@ pub fn prefix_by_bytes(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
-/// 移除空行（notepad-- 与 EasyText 都有这个行编辑功能）。
+/// 移除空行（行编辑功能之一）。
 ///
 /// 只移「完全空白」的行；保留缩进可见性由上层决定，这里不猜。
 pub fn remove_blank_lines(text: &str) -> String {

@@ -182,7 +182,7 @@ offset_at_line_col(text, line, col) -> Option<usize>
 用户点一下发现不对就换一个——可接受。函数列表面板因此标着
 「这个文件里没有识别到函数」而不是「解析失败」。
 
-**不引 Vim / Emacs 键位模式**：目标用户是 Windows 桌面用户，
+**不引模态键位系统**：目标用户是 Windows 桌面用户，
  modal editing 的学习成本与收益不成比例。
 
 ## 右键菜单与文本变换

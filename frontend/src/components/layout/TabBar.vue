@@ -83,6 +83,8 @@ const tabMenuItems = computed<MenuItem[]>(() => {
   return [
     { label: t('tab.close'), hint: 'Ctrl+W', run: () => tab && onClose(tab) },
     { label: t('tab.closeOthers'), run: () => tab && editor.closeOthers(tab.id) },
+    { label: t('tab.closeLeft'), run: () => tab && editor.closeLeft(tab.id) },
+    { label: t('tab.closeRight'), run: () => tab && editor.closeRight(tab.id) },
     { label: t('tab.closeSaved'), run: () => editor.closeSaved() },
     { label: t('tab.closeAll'), run: () => commands.run('file.closeAll') },
     { sep: true },

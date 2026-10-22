@@ -38,7 +38,7 @@
 - **微前端（Qiankun）**：单窗口桌面编辑器没有多团队并行开发的诉求，引入只增构建复杂度；
 - **图编排（AntV X6 / BPMN-JS）**：编辑器不做流程设计，引入 ~2MB 体积无对应功能；
 - **Axios**：前后端纯 Tauri invoke 通信，没有 HTTP 客户端的使用场景；
-- **encoding_rs**：当前只支持 13 种编码，其中 11 种是单字节表，手写表可测且可解释。
+- **encoding_rs**：当前只支持 12 种编码，其中 2 种（Windows-1252 / ISO-8859-1）是手写单字节表，手写表可测且可解释。
   **要扩展编码清单时优先换 encoding_rs**，别继续往表里加；
 - **regex crate**：工具箱的正则测试器只需常见语法，手写引擎省 ~1MB 体积。
   要支持 `{n,m}` 量词与命名组时换 regex crate。
@@ -162,7 +162,7 @@ Rust 的 nil slice 序列化成 `null`，前端按数组读就是
 
 `frontend/src` 是唯一源码目录，只有一层：
 `api / components / composables / locales / router / stores / types / utils / views`，
-外加四个 CSS：
+外加五个 CSS：
 
 | 文件 | 职责 |
 |---|---|
@@ -170,11 +170,12 @@ Rust 的 nil slice 序列化成 `null`，前端按数组读就是
 | `ep-theme.css` | Element Plus 变量 → `--nt-*` 的桥，外加按钮五态等细节对齐 |
 | `base.css` | 重置、排版基线、滚动条、可复用的面与图标基元 |
 | `content.css` | EP 没有对应物的自绘区：编辑器 Chrome、标签、查找高亮、diff |
+| `print.css` | 打印样式：只印正文、界面骨架不印、语法高亮转黑 |
 
 `components/` 下按域分子目录：`layout`（标题栏 / 菜单 / 工具栏 / 标签 / 侧栏 / 状态栏）、
 `editor`、`panels`、`dialogs`、`common`（图标、模态、提示）。
 
-**禁止**：新增第五个顶层 CSS；在组件里写死色值；把布局间距写成裸像素。
+**禁止**：新增第六个顶层 CSS；在组件里写死色值；把布局间距写成裸像素。
 布局与间距用 UnoCSS 原子类（其刻度已接到 `--nt-*` 令牌）。
 
 Tauri 生成的绑定**不入库**：`@tauri-apps/api` 是 npm 包，不需要 `wailsjs` 那种
@@ -441,17 +442,16 @@ mod dialog_stub;
 
 ### 3.4 测试索引
 
-9 条链，分 4 个文件（`src-tauri/tests/`），一个域一个文件。
+8 条链，分 4 个文件（`src-tauri/tests/`），一个域一个文件。每条链都是跨模块的复杂长链路，
+优先守护「用户文件没了 / 界面崩白屏」级别的事故，简单纯函数断言不入链。
 
 | 文件 | 链 | 覆盖的链路 |
 |---|---|---|
-| `session_chain.rs` | `test_bootstrap_chain` | **装配与往返**：首次启动写默认配置、空库恢复给空标签、会话顺序与窗口尺寸往返、书签增查删与幂等 |
-| | `test_serialization_contract_chain` | **序列化契约**：空列表必须序列化成 `[]` 而不是 `null`（前端按数组读就崩） |
-| `file_chain.rs` | `test_file_roundtrip_chain` | **文件往返**：CRLF 读出归一成 LF、不指定行尾按原样写回、显式切换才改、原子写不留临时文件、目标目录不存在不静默创建 |
-| | `test_encoding_detection_chain` | **编码探测**：BOM 判 utf-8-bom、合法 UTF-8 判 utf-8、GBK 字节判 gb18030、空文件按 UTF-8、BOM 剥离与补回 |
+| `session_chain.rs` | `test_bootstrap_chain` | **装配与往返**：首次启动写默认配置、空库恢复给空标签、会话顺序与窗口尺寸往返、书签增查删与幂等、空列表序列化契约（空数组必须 `[]` 而非 `null`） |
+| `file_chain.rs` | `test_file_roundtrip_chain` | **文件往返 + 编码**：CRLF 读出归一成 LF、不指定行尾按原样写回、显式切换才改、原子写不留临时文件、目标目录不存在不静默创建、编码探测与 BOM 剥离补回 |
 | | `test_file_ops_chain` | **文件操作护栏**：目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账、新建文件已存在即拒 |
 | `tools_chain.rs` | `test_json_and_diff_chain` | **JSON 与 Diff**：坏 JSON 给行列号、行级 diff 对齐与增删计数 |
-| | `test_regex_and_hash_chain` | **正则与哈希**：捕获组编号、三种哈希对已知向量 |
+| | `test_regex_and_hash_chain` | **正则与哈希**：捕获组编号、空匹配推进、三种哈希对已知向量 |
 | | `test_comment_toggle_chain` | **注释切换**：加去往返、半注释块补齐、不支持行注释报错 |
 | `batch_chain.rs` | `test_batch_find_replace_chain` | **批量查找替换护栏**：扫描阶段不改文件、应用只改勾选的 |
 | | `test_batch_rename_chain` | **批量重命名护栏**：冲突整体拒绝不覆盖、无冲突真的落地 |
@@ -482,7 +482,8 @@ pwsh scripts/check.ps1 -Full         # rustfmt + 前端构建 + cargo check + cl
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check   # 必须无输出
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets    # 编译比测试更早暴露类型错误
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --lib --test integration
+cargo test --manifest-path src-tauri/Cargo.toml --lib \
+  --test batch_chain --test file_chain --test session_chain --test tools_chain
 cd frontend && npm run build         # vue-tsc -b && vite build：类型检查已串在构建里
 ```
 

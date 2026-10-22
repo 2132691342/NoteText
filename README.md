@@ -15,7 +15,7 @@
 |---|---|
 | 编辑内核 | 多标签（每个标签独立撤销历史）、分屏、30 种语言高亮、代码折叠、括号配对着色、列块编辑、选中即高亮、右键菜单（撤销/剪切复制/行操作/大小写/排序/去重/Tab 空格/书签行/5 色标记）、行号点选整行、书签（gutter 点一下即标记）、转到行 |
 | 文件树 | 懒展开、右键全套（新建文件/文件夹、重命名、删除、剪切/复制/粘贴、创建副本、复制路径、资源管理器显示）、树内拖拽移动到目标文件夹 |
-| 编码 | 打开时探测（BOM 优先），状态栏一键切换，24 种编码互转；行尾独立切换，保存按原样写回 |
+| 编码 | 打开时探测（BOM 优先），状态栏一键切换，12 种编码互转；行尾独立切换，保存按原样写回 |
 | 查找替换 | 本文件 `Ctrl+F` / `Ctrl+H`（实时计数、结果带行号、替换全部一次撤销），文件夹级 `Ctrl+Shift+F`（支持 glob 与超大文件跳过） |
 | 视图器 | Markdown 三态（编辑/分屏/预览，Mermaid 图表 + KaTeX 公式 + 代码高亮 + 导出 HTML）、图片、日志（ERROR/WARN 着色）、十六进制、文档预览（xlsx / docx / pdf） |
 | 工具箱 | JSON（格式化/校验/JSONPath/转结构体）、格式转换（JSON/YAML/TOML/XML 互转）、文本与目录 Diff、哈希、正则测试、编码转换、11 种行编辑、取色器、日志查看器 |
@@ -80,7 +80,7 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/                 # 按域分文件：session / file / text / tools / batch
+│   └── tests/                 # 按域分文件：session / file / tools / batch
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
@@ -92,7 +92,7 @@ NoteText/
 │       └── *.css              # themes / base / ep-theme / content / print 五个 CSS
 ├── assets/docs/               # 内置用户手册（帮助页渲染）
 ├── docs/ specs/               # 项目级文档与子系统规格
-└── scripts/                   # 验证入口（check.ps1）+ 实测工具（inspect-*.mjs）
+└── scripts/                   # 验证入口（check.ps1）
 ```
 
 ## 技术栈
@@ -138,7 +138,7 @@ NoteText/
 
 ## 测试
 
-9 条链，分 4 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
+8 条链，分 4 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -146,9 +146,9 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 | 文件 | 覆盖 |
 |---|---|
-| `session_chain.rs` | 装配 → 建表 → 会话与书签往返 → 空数组序列化契约 |
-| `file_chain.rs` | 编码探测、行尾按原样写回、BOM 剥离补回、原子写不留痕、文件操作护栏（不覆盖/不成环/拒绝 `..`） |
-| `tools_chain.rs` | JSON / diff / 正则硬契约、三种哈希已知向量、注释切换往返 |
+| `session_chain.rs` | 装配 → 建表 → 默认配置 / 会话顺序与窗口尺寸往返 / 书签增查删与幂等 / 空数组序列化契约（合并为一条长链路） |
+| `file_chain.rs` | 行尾按原样写回、CRLF 归一成 LF、BOM 剥离补回、原子写不留痕、编码探测、文件操作护栏（不覆盖/不成环/拒绝 `..`） |
+| `tools_chain.rs` | JSON 坏输入给行列号、diff 增删计数、正则捕获组与空匹配、三种哈希已知向量、注释切换往返 |
 | `batch_chain.rs` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
 
 只看某一个域：`pwsh scripts/check.ps1 -Chain file`。

@@ -59,33 +59,20 @@ export default defineConfig({
     sourcemap: false,
     target: 'es2022',
     // WebView2 支持 es2022；不引 legacy 转换（省体积，也避免 polyfill 掩盖真实不兼容）
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined
-          // 文档预览族（xlsx / docx-preview / vue-pdf-embed + 它们内嵌的 pdfjs）
-          // 必须是第一个分支：这些包里混着 webpack UMD 产物，
-          // 它们和 vue-i18n 都在 vendor 里时会互相 import 形成 ESM 环，
-          // 顶层求值命中 TDZ（Cannot access 'require$$0' before initialization），
-          // 整个入口模块崩掉、#app 永不挂载——表现为白屏。
-          if (id.includes('docx-preview') || id.includes('xlsx') || id.includes('pdf') || id.includes('jszip')) {
-            return 'vendor-doc'
-          }
-          if (id.includes('codemirror') || id.includes('@codemirror') || id.includes('@lezer')) {
-            return 'vendor-cm'
-          }
-          if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts'
-          if (id.includes('@wangeditor')) return 'vendor-wang'
-          // vue-pdf-embed / mavon 走单独 chunk：它们内嵌 webpack UMD bundle，
-          // 顶层就要执行 require 包装器，不能与任何 import 它们的 chunk 形成环。
-          if (id.includes('mavon')) return 'vendor-md'
-          if (id.includes('element-plus') || id.includes('@element-plus')) return undefined
-          if (id.includes('vue') || id.includes('pinia') || id.includes('vue-router') || id.includes('vue-i18n')) {
-            return 'vendor'
-          }
-          return undefined
-        },
-      },
-    },
+    //
+    // 这里**故意不写 manualChunks**。曾经有一份按包名归类的分块表
+    // （xlsx / docx-preview / pdfjs -> vendor-doc，vue / pinia / i18n -> vendor），
+    // 注释还写着「必须这样分才能避免白屏」。事实相反：那正是白屏的原因。
+    //
+    // 机制：这些包内嵌 CJS/UMD 产物，Vite 转 ESM 时会生成 `require$$0` 包装，
+    // 并要求一个 Vue 实例（vue-pdf-embed 之类）。手工把「被 vue 依赖」和
+    // 「依赖 vue」的模块劈成两个 chunk，就得到 vendor <-> vendor-doc 的双向环；
+    // ESM 循环里顶层求值命中 TDZ —— `Cannot access 'require$$0' before initialization`，
+    // 入口模块整个作废、`#app` 永不挂载，用户看到一个纯白窗口。
+    //
+    // 分包交给 Rollup 默认策略：它只在动态 import 的真实边界上切，环不可能出现。
+    // 重库（xlsx / docx-preview / vue-pdf-embed / mermaid）本来就写在
+    // DocPreview.vue、useMarkdown.ts 的动态 import 里，按需自然落到异步 chunk，
+    // 既省了首屏 preload，也不需要任何人再维护一张会过期的包名清单。
   },
 })

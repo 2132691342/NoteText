@@ -1,12 +1,9 @@
 <#
-验证入口：一个脚本收口全部验证动作，按「改了多大」选档。
-
+验证入口：一个脚本收口全部验证动作。
   pwsh scripts/check.ps1              日常快门：格式 → 编译 → 全量测试
-  pwsh scripts/check.ps1 -Chain 行尾   只跑名字含该关键字的测试（编译增量，省时间）
+  pwsh scripts/check.ps1 -Chain 行尾   只跑名字含该关键字的测试
   pwsh scripts/check.ps1 -Full        提交前门禁：+ clippy + 前端构建
   pwsh scripts/check.ps1 -List        列出全部测试链
-
-测试在 src-tauri/tests/，一个域一个文件，入口一律叫 test_<domain>_chain。
 #>
 [CmdletBinding()]
 param(
@@ -33,7 +30,7 @@ function Invoke-Step {
     }
 }
 
-# 失败时从日志摘出可定位的片段：测试名 + .rs:行号 直接指到断言。
+# 失败摘要：从日志摘出测试名 + .rs:行号，直接指到断言。
 function Write-FailureSummary {
     if (-not (Test-Path $TestLog)) { return }
     $log = Get-Content $TestLog -ErrorAction SilentlyContinue
@@ -71,8 +68,7 @@ Invoke-Step 'rustfmt' {
     $global:LASTEXITCODE = [int][bool]$bad
 }
 
-# 前端产物先于 Rust 编译就位（tauri.conf.json 的 frontendDist 指向 frontend/dist）。
-# -Full 必建；平时 dist 还没有时也建一次，之后增量编译直接复用。
+# 前端产物先于 Rust 编译就位；-Full 必建，平时无 dist 时也建一次。
 if ($Full -or -not (Test-Path 'frontend/dist/index.html')) {
     if (-not (Test-Path 'frontend/node_modules')) {
         Invoke-Step 'frontend deps' {
@@ -86,7 +82,6 @@ if ($Full -or -not (Test-Path 'frontend/dist/index.html')) {
     }
 }
 
-# 编译比测试更早暴露类型错误，覆盖全部包（含没有测试的）。
 Invoke-Step 'cargo check' {
     cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 }

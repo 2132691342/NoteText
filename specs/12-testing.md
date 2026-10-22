@@ -2,7 +2,7 @@
 
 ## 定位
 
-`src-tauri/tests/`（按域分文件，9 条链）+ `scripts/check.ps1`（验证入口）。
+`src-tauri/tests/`（按域分文件，8 条链）+ `scripts/check.ps1`（验证入口）。
 完整的测试规范在 [AGENTS.md §3](../AGENTS.md)，这里只讲「为什么这么组织」。
 
 ## 设计
@@ -28,8 +28,8 @@
 ```
 src-tauri/tests/
 ├── common/mod.rs      临时目录、装配、样本数据
-├── session_chain.rs   装配与会话往返
-├── file_chain.rs      文件读写 + 编码探测 + 文件树操作
+├── session_chain.rs   装配 / 会话 / 书签 / 序列化契约（合并为一条长链路）
+├── file_chain.rs      文件读写 + 编码探测 / BOM + 文件树操作
 ├── tools_chain.rs     工具箱 + 注释切换
 └── batch_chain.rs     批量操作
 ```
@@ -44,10 +44,8 @@ src-tauri/tests/
 
 | 文件 | 链 | 守护的坏事 |
 |---|---|---|
-| `session_chain` | `test_bootstrap_chain` | **启动即失败**（DB 建不起来，用户看到原生错误框）；**重启后窗口尺寸与标签顺序全丢**；书签连按两次 F2 多出一行 |
-| | `test_serialization_contract_chain` | **空面板崩白屏**（前端漏写 `?? []` 就 `Cannot read properties of null`） |
-| `file_chain` | `test_file_roundtrip_chain` | **打开 CRLF 文件按一下保存，整个文件行尾变 LF**，同事那边 diff 出几千行；保存后文件头多三个字节；**保存中途断电留下半个文件** |
-| | `test_encoding_detection_chain` | GBK 打开一片乱码；BOM 存回去时丢了 |
+| `session_chain` | `test_bootstrap_chain` | **启动即失败**（DB 建不起来，用户看到原生错误框）；**重启后窗口尺寸与标签顺序全丢**；书签连按两次 F2 多出一行；**空面板崩白屏**（空列表序列化必须 `[]` 而非 `null`） |
+| `file_chain` | `test_file_roundtrip_chain` | **打开 CRLF 文件按一下保存，整个文件行尾变 LF**，同事那边 diff 出几千行；保存后文件头多三个字节；**保存中途断电留下半个文件**；GBK 打开一片乱码；BOM 存回去时丢了 |
 | | `test_file_ops_chain` | **重命名把已有文件覆盖**、**目录拖进自己的子目录树成环**、相对路径与 `..` 逃出操作范围、整批删除因一个失败而全失败、新建文件覆盖已有文件 |
 | `tools_chain` | `test_json_and_diff_chain` | 坏 JSON 不说在哪一行，用户找不到错处；diff 增删算错 |
 | | `test_regex_and_hash_chain` | 正则死循环挂住 UI；**算出来的摘要与 certutil 对不上**，用户校验文件时误判文件被改 |
