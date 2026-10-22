@@ -176,6 +176,8 @@ export default {
     logWarns: '警告',
     logEmpty: '这个文件里没有匹配的行',
     openLogFile: '打开日志文件…',
+    pickUnsupported: '当前环境不支持屏幕取色，可手动输入色值转换',
+    badHex: '不是合法的 HEX 色值（#rgb 或 #rrggbb）',
   },
   status: {
     modified: '已修改',

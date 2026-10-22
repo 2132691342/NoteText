@@ -188,4 +188,12 @@ function removePattern(i: number) {
 .nt-chip-x:active {
   transform: scale(0.92);
 }
+
+/* 禁用态：五态里不能少的一个。移除按钮在只有一个规则时也不该看起来能点。 */
+.nt-chip-x:disabled {
+  color: var(--nt-ink-muted);
+  transform: none;
+  cursor: not-allowed;
+  opacity: 0.42;
+}
 </style>

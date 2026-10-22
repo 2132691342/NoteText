@@ -36,6 +36,10 @@ const COMPONENTS = {
   batchFindReplace: () => import('@/components/dialogs/BatchFindReplaceDialog.vue'),
   batchRename: () => import('@/components/dialogs/BatchRenameDialog.vue'),
   recentFiles: () => import('@/components/dialogs/RecentFilesDialog.vue'),
+  convert: () => import('@/components/dialogs/ConvertDialog.vue'),
+  dirDiff: () => import('@/components/dialogs/DirDiffDialog.vue'),
+  colorPicker: () => import('@/components/dialogs/ColorPickerDialog.vue'),
+  logViewer: () => import('@/components/dialogs/LogViewerDialog.vue'),
 } as const
 
 const current = computed(() => dialogs.active)
@@ -69,6 +73,10 @@ const currentTitle = computed(() => {
     batchFindReplace: 'tool.batchFindReplace',
     batchRename: 'tool.batchRename',
     recentFiles: 'menu.recentFiles',
+    convert: 'convert.title',
+    dirDiff: 'dirDiff.title',
+    colorPicker: 'viewer.colorPicker',
+    logViewer: 'viewer.logViewer',
   }
   return t(map[key] ?? key)
 })

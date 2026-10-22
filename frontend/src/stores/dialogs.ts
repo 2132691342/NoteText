@@ -23,6 +23,10 @@ export type DialogKind =
   | 'batchFindReplace'
   | 'batchRename'
   | 'recentFiles'
+  | 'convert'
+  | 'dirDiff'
+  | 'colorPicker'
+  | 'logViewer'
 
 export const useDialogStore = defineStore('dialogs', () => {
   const active = ref<DialogKind | null>(null)

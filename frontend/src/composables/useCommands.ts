@@ -611,6 +611,31 @@ export function registerCommands() {
       enabled: () => hasTab(),
       run: () => dialogs.open('lineOp'),
     },
+    {
+      id: 'tools.convert',
+      group: 'tools',
+      labelKey: 'convert.title',
+      key: 'Control+Shift+C',
+      run: () => dialogs.open('convert'),
+    },
+    {
+      id: 'tools.dirDiff',
+      group: 'tools',
+      labelKey: 'dirDiff.title',
+      run: () => dialogs.open('dirDiff'),
+    },
+    {
+      id: 'tools.colorPicker',
+      group: 'tools',
+      labelKey: 'viewer.colorPicker',
+      run: () => dialogs.open('colorPicker'),
+    },
+    {
+      id: 'tools.logViewer',
+      group: 'tools',
+      labelKey: 'viewer.logViewer',
+      run: () => dialogs.open('logViewer'),
+    },
 
     // ---- 列编辑 ----
     {

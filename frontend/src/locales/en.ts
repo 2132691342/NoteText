@@ -173,6 +173,8 @@ export default {
     logWarns: 'Warnings',
     logEmpty: 'No matching lines in this file',
     openLogFile: 'Open log file…',
+    pickUnsupported: 'Screen picking is unavailable here — type a color value to convert it',
+    badHex: 'Not a valid HEX color (#rgb or #rrggbb)',
   },
   status: {
     modified: 'Modified',
