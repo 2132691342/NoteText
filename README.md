@@ -138,7 +138,7 @@ NoteText/
 
 ## 测试
 
-13 条链，分 6 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
+9 条链，分 4 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -147,11 +147,9 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 文件 | 覆盖 |
 |---|---|
 | `session_chain.rs` | 装配 → 建表 → 会话与书签往返 → 空数组序列化契约 |
-| `file_chain.rs` | 编码探测、行尾按原样写回、BOM 剥离补回、原子写不留痕 |
-| `text_chain.rs` | 注释切换（含半注释块）、行编辑、行列换算、统计按 char |
-| `tools_chain.rs` | JSON / diff / 正则硬契约、三种哈希已知向量 |
+| `file_chain.rs` | 编码探测、行尾按原样写回、BOM 剥离补回、原子写不留痕、文件操作护栏（不覆盖/不成环/拒绝 `..`） |
+| `tools_chain.rs` | JSON / diff / 正则硬契约、三种哈希已知向量、注释切换往返 |
 | `batch_chain.rs` | 批量替换只改勾选的、重命名遇冲突不覆盖 |
-| `file_ops_chain.rs` | 文件树操作护栏：目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账 |
 
 只看某一个域：`pwsh scripts/check.ps1 -Chain file`。
 

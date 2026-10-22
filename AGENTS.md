@@ -441,7 +441,7 @@ mod dialog_stub;
 
 ### 3.4 测试索引
 
-13 条链，分 6 个文件（`src-tauri/tests/`），一条链一个域。
+9 条链，分 4 个文件（`src-tauri/tests/`），一个域一个文件。
 
 | 文件 | 链 | 覆盖的链路 |
 |---|---|---|
@@ -449,15 +449,12 @@ mod dialog_stub;
 | | `test_serialization_contract_chain` | **序列化契约**：空列表必须序列化成 `[]` 而不是 `null`（前端按数组读就崩） |
 | `file_chain.rs` | `test_file_roundtrip_chain` | **文件往返**：CRLF 读出归一成 LF、不指定行尾按原样写回、显式切换才改、原子写不留临时文件、目标目录不存在不静默创建 |
 | | `test_encoding_detection_chain` | **编码探测**：BOM 判 utf-8-bom、合法 UTF-8 判 utf-8、GBK 字节判 gb18030、空文件按 UTF-8、BOM 剥离与补回 |
-| `text_chain.rs` | `test_text_pipeline_chain` | **注释切换**：加去往返、半注释块补齐、空行不动、不支持行注释报错 |
-| | `test_line_op_chain` | **行编辑**：去空行、去重保序、升序排序 |
-| | `test_position_and_stats_chain` | **位置与统计**：多字节不算多列、行列反查、越界给 None、统计按 char |
+| | `test_file_ops_chain` | **文件操作护栏**：目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账、新建文件已存在即拒 |
 | `tools_chain.rs` | `test_json_and_diff_chain` | **JSON 与 Diff**：坏 JSON 给行列号、行级 diff 对齐与增删计数 |
 | | `test_regex_and_hash_chain` | **正则与哈希**：捕获组编号、三种哈希对已知向量 |
+| | `test_comment_toggle_chain` | **注释切换**：加去往返、半注释块补齐、不支持行注释报错 |
 | `batch_chain.rs` | `test_batch_find_replace_chain` | **批量查找替换护栏**：扫描阶段不改文件、应用只改勾选的 |
 | | `test_batch_rename_chain` | **批量重命名护栏**：冲突整体拒绝不覆盖、无冲突真的落地 |
-| `file_ops_chain.rs` | `test_file_ops_chain` | **文件树操作护栏**：重命名落地、目标已存在整体拒绝且不覆盖、目录不进自己子目录、移动 / 复制（auto_suffix 落序号名）、删除逐个记账、新建目录与文件已存在即拒 |
-| | `test_file_ops_rejects_relative_and_dotdot` | **路径形式护栏**：相对路径与含 `..` 的路径一律拒绝 |
 
 **改这里 → 只跑这条**：
 

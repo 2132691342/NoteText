@@ -37,6 +37,12 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | 批量查找替换 | 批量浮窗 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 批量浮窗 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
 | 查找结果 | 侧栏面板 | 目录级查找命中常驻，点击跳文件 + 行 |
+| 文件树 | 侧栏面板 | 懒展开 + 右键全套（新建/重命名/删除/剪切/复制/粘贴/副本/资源管理器）+ 树内拖拽移动 |
+| 编辑器右键 | 编辑器 | 大小写 / 排序 / 去重 / 去空白 / Tab 空格互转 / 书签行操作 / 5 色词标记 |
+| Markdown 三态 | 编辑器页 | `.md` 默认三态：编辑 / 分屏 / 预览；Mermaid 图表 + KaTeX 公式 + 代码高亮 + 导出 HTML |
+| 格式转换 | 浮窗 | JSON / YAML / TOML / XML 互转，可从当前标签载入 |
+| 取色器 | 浮窗 | 屏幕取色（不支持时手动输入），HEX / RGB / HSL 互拷 |
+| 日志查看器 | 浮窗 | 读应用日志，按级别着色与过滤，只取末 2000 行 |
 | 文件监控 | 侧栏面板 | `tail -f` 当前文件，只读增量 |
 | 会话恢复 | 壳层 | 启动恢复标签 / 光标 / 窗口大小；未保存草稿也恢复 |
 | 托盘与单实例 | 壳层 | 关闭到托盘；二次启动转交文件路径 |
@@ -72,6 +78,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。**内核是 CodeMirr
 | `src-tauri/src/app` | 路径解析、装配（组合根）、生命周期 | [04](specs/04-desktop-shell.md) |
 | `src-tauri/src/shell` | 单实例、托盘、关闭策略 | [04](specs/04-desktop-shell.md) |
 | `src-tauri/src/service/file.rs` | 读 / 写 / 目录树 / 编码探测 / 原子写 / 监控 | [05](specs/05-file-domain.md) |
+| `src-tauri/src/service/file_ops.rs` | 文件树操作：新建 / 重命名 / 移动 / 复制 / 删除（护栏统一在 validate_target） | [05](specs/05-file-domain.md) |
 | `src-tauri/src/service/editor.rs` | 语言清单、注释切换、行编辑、行列换算 | [06](specs/06-editor-domain.md) |
 | `src-tauri/src/service/tools.rs` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](specs/09-tools.md) |
 | `src-tauri/src/service/userdata.rs` | 书签 / 片段 / 宏 / 草稿 / 最近 / 配置 / 备份 | [08](specs/08-user-data.md) |

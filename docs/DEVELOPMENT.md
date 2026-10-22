@@ -100,17 +100,6 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 浏览器里看界面：`npm run dev` 会因为没有后端而显示空态——
 要连真后端请用 `./frontend/node_modules/.bin/tauri dev`。
 
-**视觉实测工具**（需要先起 dev server 与浏览器）：
-
-```bash
-node scripts/inspect-visual.mjs   # 图标真实尺寸、字号分布、各层高度
-node scripts/inspect-chunks.mjs   # 分包体积与各 chunk 拉进的库
-node scripts/shot.mjs 9225 .check/shot.png
-```
-
-`inspect-visual` 量的是**渲染结果**而不是样式表：CSS 规则写错时
-（如选择器匹配不到目标元素），样式表看起来完全正常，渲染出来却是错的。
-
 ## 常见问题
 
 | 现象 | 先看 |

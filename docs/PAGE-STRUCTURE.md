@@ -84,6 +84,10 @@ App.vue
 | 批量查找替换 | `dialogs/BatchFindReplaceDialog.vue` | 先扫描预览再勾选应用，扫完才允许写盘 |
 | 批量重命名 | `dialogs/BatchRenameDialog.vue` | 三种模式；冲突项标红且不可选 |
 | 最近文件 | `dialogs/RecentFilesDialog.vue` | 可钉住、显示所在目录、右键移除 / 显位置 |
+| 格式转换 | `dialogs/ConvertDialog.vue` | JSON / YAML / TOML / XML 互转；源格式 / 目标格式 / 一键互换；可从当前标签载入 |
+| 目录对比 | `dialogs/DirDiffDialog.vue` | 递归比较两目录；四态分类；差异排前；点行用系统程序打开 |
+| 取色器 | `dialogs/ColorPickerDialog.vue` | EyeDropper 屏幕取色；HEX / RGB / HSL 三种表示分别可复制 |
+| 日志查看器 | `dialogs/LogViewerDialog.vue` | 读应用日志；按级别着色与过滤；只取末 2000 行 |
 | 关于 | `dialogs/AboutDialog.vue` | 版本 / 数据目录 / 日志目录（排障第一步） |
 
 **为什么查找与替换共用一个组件**：交互几乎相同（同一套选项、同一套跳转），

@@ -2,7 +2,7 @@
 
 ## 定位
 
-`src-tauri/tests/`（按域分文件，13 条链）+ `scripts/check.ps1`（验证入口）。
+`src-tauri/tests/`（按域分文件，9 条链）+ `scripts/check.ps1`（验证入口）。
 完整的测试规范在 [AGENTS.md §3](../AGENTS.md)，这里只讲「为什么这么组织」。
 
 ## 设计
@@ -14,10 +14,14 @@
 
 | 保留 | 删除 |
 |---|---|
-| 跨模块的长链路（装配 → 建表 → 会话往返 → 序列化契约） | 单个纯函数的输入输出 |
+| 跨模块的长链路（装配 → 建表 → 会话往返 → 序列化契约） | 单个纯函数的输入输出（行编辑、行列换算） |
 | 协议硬约束（空数组永不 null、行尾按原样写回、BOM 剥离与补回） | 简单 CRUD、字段映射 |
-| 安全护栏（批量操作不覆盖别人的文件、原子写不留临时文件） | 构造函数冒烟 |
-| 顺序语义（标签顺序、光标恢复） | 只验「不 panic」的弱断言 |
+| 安全护栏（批量操作不覆盖别人的文件、目录不进自己的子目录） | 构造函数冒烟、只验「不 panic」的弱断言 |
+
+纯函数断言是最大的一类冗余：函数签名就是契约，编译器挡了一半，
+剩下一半坏了也只影响一个工具窗的一个按钮，不值得为它付出
+「每次改代码都要跑一遍」的代价。**护栏类断言失败时对应的都是
+「用户的文件没了 / 界面崩白屏」级别的事故**，必须常驻。
 
 ### 文件划分：一个域一个文件
 
@@ -25,9 +29,8 @@
 src-tauri/tests/
 ├── common/mod.rs      临时目录、装配、样本数据
 ├── session_chain.rs   装配与会话往返
-├── file_chain.rs      文件读写与编码探测
-├── text_chain.rs      文本变换
-├── tools_chain.rs     工具箱
+├── file_chain.rs      文件读写 + 编码探测 + 文件树操作
+├── tools_chain.rs     工具箱 + 注释切换
 └── batch_chain.rs     批量操作
 ```
 
@@ -45,11 +48,10 @@ src-tauri/tests/
 | | `test_serialization_contract_chain` | **空面板崩白屏**（前端漏写 `?? []` 就 `Cannot read properties of null`） |
 | `file_chain` | `test_file_roundtrip_chain` | **打开 CRLF 文件按一下保存，整个文件行尾变 LF**，同事那边 diff 出几千行；保存后文件头多三个字节；**保存中途断电留下半个文件** |
 | | `test_encoding_detection_chain` | GBK 打开一片乱码；BOM 存回去时丢了 |
-| `text_chain` | `test_text_pipeline_chain` | **Ctrl+/ 把代码注释坏**（半注释块出 `// //`） |
-| | `test_line_op_chain` | 行编辑去重时打乱顺序，用户以为文件坏了 |
-| | `test_position_and_stats_chain` | 「转到行」在中文上跳错位置；统计把字节当字符，用户以为数字不对 |
+| | `test_file_ops_chain` | **重命名把已有文件覆盖**、**目录拖进自己的子目录树成环**、相对路径与 `..` 逃出操作范围、整批删除因一个失败而全失败、新建文件覆盖已有文件 |
 | `tools_chain` | `test_json_and_diff_chain` | 坏 JSON 不说在哪一行，用户找不到错处；diff 增删算错 |
 | | `test_regex_and_hash_chain` | 正则死循环挂住 UI；**算出来的摘要与 certutil 对不上**，用户校验文件时误判文件被改 |
+| | `test_comment_toggle_chain` | **Ctrl+/ 把代码注释坏**（去注释回不到原文；半注释块出 `// //`） |
 | `batch_chain` | `test_batch_find_replace_chain` | **批量替换静默改掉用户没勾选的文件** |
 | | `test_batch_rename_chain` | **重命名把已有文件覆盖**——用户的文件没了，且没有撤销键 |
 
@@ -71,9 +73,11 @@ Windows 上 `tempdir` 要求句柄已释放：`Db` 的 `Connection` 在 Drop 时
 
 ## 验证入口
 
+`scripts/` 下只有一个脚本，全部验证动作收在这里。
+
 ```
 pwsh scripts/check.ps1              快门：rustfmt → check → 全量测试
-pwsh scripts/check.ps1 -Chain batch  只跑名字命中的那条链
+pwsh scripts/check.ps1 -Chain 行尾   只跑名字含该关键字的测试
 pwsh scripts/check.ps1 -List         列出全部测试链
 pwsh scripts/check.ps1 -Full         + clippy -D warnings + 前端构建
 ```
@@ -100,23 +104,6 @@ pwsh scripts/check.ps1 -Full         + clippy -D warnings + 前端构建
 抽不到再退回末尾 30 行。CI 里同一份内容追加进 job summary，
 不必下载 artifact。
 
-**摘要收在脚本内，不另起一个脚本**：两个文件就要维护两处。
-
-## 配套脚本
-
-除 `check.ps1` 外，`scripts/` 下有三个实测工具。它们不进 CI——
-CI 验的是「能不能过」，这些验的是「过得好不好看」。
-
-| 脚本 | 作用 |
-|---|---|
-| `inspect-visual.mjs` | 量出图标真实尺寸、字号分布、各层高度、浮窗宽度 |
-| `inspect-chunks.mjs` | 看每个 chunk 的体积与它拉进了哪些库 |
-| `shot.mjs` | 抓当前视口截图 |
-
-`inspect-visual` 存在的理由：CSS 规则与实际渲染结果可以差很远——
-写错一条选择器时，样式表看起来完全正常，渲染出来的图标却是撑满的。
-肉眼判断不可靠，量出来才可信。
-
 ## 约束
 
 - 一个断言只讲一种坏法：能写成「A、B、C 都对」的断言，
@@ -128,8 +115,8 @@ CI 验的是「能不能过」，这些验的是「过得好不好看」。
 ## 取舍
 
 **按域拆文件，代价是跨域的阅读顺序被打断**。补偿办法是文件名与域同名
-（`file_chain.rs` ↔ `service/file.rs`），`check.ps1 -List` 按文件列出，
-不用记测试在哪。
+（`file_chain.rs` ↔ `service/file.rs` + `service/file_ops.rs`），
+`check.ps1 -List` 按文件列出，不用记测试在哪。
 
 **不引 mock 框架**：`bootstrap::build(&paths)` 就是最好的装配入口——
 给它一个临时目录，拿到的就是真实的 `AppState`。
