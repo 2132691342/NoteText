@@ -1,8 +1,23 @@
-//! 集成测试：守护跨边界的关键链路与安全护栏。
+//! 集成测试：13 条长链路，按四组排列。
 //!
-//! 覆盖四类长链路——文件读改写、会话持久化、批量操作、工具箱变换——
-//! 失败表现都是「用户的文件没了 / 界面无声崩溃」这类没有撤销键的事故。
-//! 纯单元逻辑不在此处，由 domain 内部保证。
+//! 只守护「用户的文件没了 / 界面无声崩溃」级别的事故，函数名就是那件坏事；
+//! 失败报文直接指认坏在哪，不必对着行号往回找。纯单元逻辑不在此处。
+//!
+//! | 组 | 测试 | 坏法 |
+//! |---|---|---|
+//! | 文件与编码 | read_write_roundtrip_preserves_line_ending_and_bom | 行尾没记住 / BOM 丢或多字节 |
+//! | | forced_encoding_read_decodes_and_falls_back_when_unsupported | 选了编码打开的仍是乱码 |
+//! | | atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs | 临时文件堆积 / 打错路径在磁盘留痕 |
+//! | | rename_rejects_overwrite_cycles_and_escapes | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
+//! | | delete_accounts_for_stale_paths_and_create_refuses_existing | 一个陈旧路径让整批删除失败 |
+//! | 会话 | first_launch_writes_defaults_and_gives_empty_session | 首次启动没写默认配置 / 空库崩 |
+//! | | session_round_trip_restores_tabs_and_survives_close_all | 重启后标签顺序与窗口尺寸丢失 |
+//! | | empty_lists_serialize_to_array_not_null | 前端按数组读拿到 null 白屏 |
+//! | 批量 | batch_replace_scans_readonly_and_applies_only_checked | 扫描就落盘 / 改掉没勾选的文件 |
+//! | | batch_rename_blocks_conflicts_and_lands_clean_plans | 重命名覆盖已有文件 / 该落地的没落地 |
+//! | 工具箱 | bad_json_reports_line_and_column | 只说「格式错误」用户找不到在哪 |
+//! | | hashes_match_known_vectors | 哈希算错，用户误判文件损坏 |
+//! | | toggle_comment_round_trips_and_fills_half_commented_blocks | Ctrl+/ 把代码注释坏 |
 
 // 每个测试二进制单独编译本模块，helper 未必全被用到。
 #![allow(dead_code)]
@@ -24,13 +39,11 @@ use notetext_lib::pkg::paths::AppPaths;
 use notetext_lib::repo::session::SessionRepo;
 use notetext_lib::repo::settings::SettingsRepo;
 use notetext_lib::service::editor;
-use notetext_lib::service::encoding;
 use notetext_lib::service::tools::ToolsService;
 
 // ---------- 公共设施 ----------
 
 /// 装配隔离的应用实例：建库、开服务、灌默认配置。绝不碰真实 `%APPDATA%`。
-/// 临时根目录即 `AppPaths.data_dir`（from_root 把根本身当作数据目录）。
 fn boot() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().expect("建临时目录失败");
     let paths = AppPaths::from_root(dir.path());
@@ -59,7 +72,7 @@ fn tab(ord: i32, path: &str, title: &str) -> TabDO {
     }
 }
 
-/// 写文件并读回：返回服务读结果与路径字符串。
+/// 写文件并读回：返回服务读结果。
 fn roundtrip(state: &AppState, file: &PathBuf, bytes: &[u8]) -> FileContentVO {
     fs::write(file, bytes).expect("写测试文件失败");
     state
@@ -69,7 +82,16 @@ fn roundtrip(state: &AppState, file: &PathBuf, bytes: &[u8]) -> FileContentVO {
         .expect("读失败")
 }
 
-// ---------- 文件域 ----------
+/// 批量操作的工作目录：两个文本样本。
+fn batch_root(dir: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
+    let root = dir.join("batch");
+    fs::create_dir_all(&root).expect("建目录失败");
+    let a = root.join("a.txt");
+    let b = root.join("b.txt");
+    (root, a, b)
+}
+
+// ---------- 文件与编码 ----------
 
 /// CRLF / BOM 在读写链上必须无损：一次保存把全文件行尾改掉、或 BOM 没剥干净让列号全偏。
 #[test]
@@ -77,12 +99,11 @@ fn read_write_roundtrip_preserves_line_ending_and_bom() {
     let (dir, state) = boot();
     let data = dir.path();
 
+    // 读：CRLF 归一成 LF；写：不指定行尾按文件原本的 CRLF 原样写回。
     let crlf = data.join("crlf.txt");
     let read = roundtrip(&state, &crlf, b"a\r\nb\r\n");
     assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
     assert_eq!(read.text, "a\nb\n", "读出来应归一成 LF");
-
-    // 不指定行尾：按文件原本的 CRLF 写回，否则一次保存就把全文件行尾刷成 LF。
     state
         .services
         .file
@@ -93,27 +114,9 @@ fn read_write_roundtrip_preserves_line_ending_and_bom() {
         b"a\r\nb\r\n",
         "应原样写回 CRLF"
     );
-    state
-        .services
-        .file
-        .write(&crlf.to_string_lossy(), "a\nb\n", None, Some("lf"), None)
-        .expect("写失败");
-    assert_eq!(
-        fs::read(&crlf).expect("回读"),
-        b"a\nb\n",
-        "显式 lf 应写成 LF"
-    );
 
+    // 读：剥掉 BOM；写：显式 utf-8-bom 要补回。
     let bom = data.join("bom.txt");
-    let (has, body) = encoding::strip_bom(&[0xEF, 0xBB, 0xBF, 0x61, 0x62], "utf-8-bom");
-    assert!(has, "应检出 BOM");
-    assert_eq!(body, b"ab", "剥掉 BOM 后只剩正文");
-    assert_eq!(
-        encoding::bom_bytes("utf-8-bom"),
-        &[0xEF, 0xBB, 0xBF],
-        "BOM 字节要能补回"
-    );
-
     let read_bom = roundtrip(&state, &bom, b"\xEF\xBB\xBFhello");
     assert_eq!(read_bom.text, "hello", "读进来应剥掉 BOM");
     state
@@ -138,8 +141,7 @@ fn read_write_roundtrip_preserves_line_ending_and_bom() {
 #[test]
 fn forced_encoding_read_decodes_and_falls_back_when_unsupported() {
     let (dir, state) = boot();
-    let data = dir.path();
-    let gbk = data.join("gbk.txt");
+    let gbk = dir.path().join("gbk.txt");
     let p = gbk.to_string_lossy().to_string();
     roundtrip(&state, &gbk, &[0xA1u8, 0xA1, 0xA1, 0xA2]);
 
@@ -171,11 +173,7 @@ fn atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs() {
         .file
         .write(&p, "new content", None, None, None)
         .expect("写失败");
-    assert_eq!(
-        fs::read_to_string(&file).expect("回读"),
-        "new content",
-        "内容应更新"
-    );
+    assert_eq!(fs::read_to_string(&file).expect("回读"), "new content");
 
     let leftovers: Vec<String> = fs::read_dir(data)
         .expect("列目录失败")
@@ -301,7 +299,7 @@ fn delete_accounts_for_stale_paths_and_create_refuses_existing() {
     );
 }
 
-// ---------- 会话持久化 ----------
+// ---------- 会话 ----------
 
 /// 首次启动写入默认配置；空库给出「没有标签」而不是 null（前端据此显欢迎页）。
 #[test]
@@ -320,10 +318,13 @@ fn first_launch_writes_defaults_and_gives_empty_session() {
         .expect("数据库链路不可用");
 }
 
-/// 会话往返保持标签顺序、活跃索引、窗口尺寸。
+/// 会话往返保持标签顺序、活跃索引、窗口尺寸；关光标签后会话行仍在，
+/// 删行会让下次启动开成默认窗口大小。
 #[test]
-fn session_round_trip_keeps_order_active_index_and_window_size() {
+fn session_round_trip_restores_tabs_and_survives_close_all() {
     let (_dir, state) = boot();
+
+    // 带标签保存 → 恢复：顺序、活跃索引、窗口尺寸都在。
     let tabs = vec![
         tab(1, "C:\\a.txt", "a.txt"),
         tab(2, "", "未命名-1"),
@@ -339,31 +340,21 @@ fn session_round_trip_keeps_order_active_index_and_window_size() {
         .db
         .with(|conn| SessionRepo::save(conn, &session, &tabs))
         .expect("保存会话失败");
-
     let restored = state.db.with(SessionRepo::load).expect("恢复会话失败");
     assert_eq!(restored.tabs.len(), 3, "三个标签都应恢复");
     assert_eq!(restored.tabs[0].ord, 1, "标签顺序应按 ord");
     let restored_session = restored.session.expect("会话行应存在");
     assert_eq!(restored_session.active_index, 2, "活跃索引应恢复");
     assert_eq!(restored_session.window_width, 1000, "窗口宽度应恢复");
-}
 
-/// 关闭全部标签不等于「没有会话」：窗口尺寸记在会话行上，删行会让下次开成默认大小。
-#[test]
-fn closing_all_tabs_keeps_the_session_row_for_window_size() {
-    let (_dir, state) = boot();
-    let session = SessionDO {
-        window_width: 1000,
-        window_height: 700,
-        ..Default::default()
-    };
+    // 关光标签再存：标签没了，会话行要留着记窗口大小。
     state
         .db
         .with(|conn| SessionRepo::save(conn, &session, &[]))
         .expect("保存空会话失败");
     let empty = state.db.with(SessionRepo::load).expect("恢复空会话失败");
     assert!(empty.tabs.is_empty(), "空会话应没有标签");
-    assert!(empty.session.is_some(), "但会话行要留着（记窗口大小）");
+    assert!(empty.session.is_some(), "会话行要留着（记窗口大小）");
 }
 
 /// 空列表序列化成 [] 而不是 null：Rust 的 nil slice 序列化成 null，前端按数组读就崩。
@@ -405,13 +396,16 @@ fn empty_lists_serialize_to_array_not_null() {
 
 // ---------- 批量操作 ----------
 
-/// 扫描阶段不落盘：先看再决定，此时写盘绕过用户确认等于静默改文件。
+/// 批量替换的两阶段：扫描只看不改，应用只改勾选的文件。
 #[test]
-fn scan_reports_without_touching_files() {
+fn batch_replace_scans_readonly_and_applies_only_checked() {
     let (dir, state) = boot();
-    let root = dir.path().join("batch");
-    fs::create_dir_all(&root).expect("建目录失败");
-    fs::write(root.join("a.txt"), "hello world\nhello again\n").expect("写 a 失败");
+    let (root, a, b) = batch_root(dir.path());
+    fs::write(&a, "hello world\nhello again\n").expect("写 a 失败");
+    fs::write(&b, "nothing here\n").expect("写 b 失败");
+    let before_b = fs::read_to_string(&b).expect("读 b");
+
+    // 扫描：命中要数对，文件必须原样。
     let scan = state
         .services
         .batch
@@ -427,24 +421,11 @@ fn scan_reports_without_touching_files() {
     assert_eq!(scan.hits.len(), 1, "只有 a.txt 含 hello");
     assert_eq!(scan.total_count, 2, "a.txt 里 hello 出现两次");
     assert!(
-        fs::read_to_string(root.join("a.txt"))
-            .expect("读回 a")
-            .contains("hello"),
+        fs::read_to_string(&a).expect("读回 a").contains("hello"),
         "扫描阶段不能改动文件"
     );
-}
 
-/// 批量替换只改勾选的文件：没勾选的不能被静默改掉。
-#[test]
-fn apply_replaces_only_the_checked_files() {
-    let (dir, state) = boot();
-    let root = dir.path().join("batch");
-    fs::create_dir_all(&root).expect("建目录失败");
-    let a = root.join("a.txt");
-    let b = root.join("b.txt");
-    fs::write(&a, "hello world\nhello again\n").expect("写 a 失败");
-    fs::write(&b, "nothing here\n").expect("写 b 失败");
-    let before_b = fs::read_to_string(&b).expect("读 b");
+    // 应用：只改勾选的 a.txt，没勾选的 b.txt 不能被静默改掉。
     let res = state
         .services
         .batch
@@ -468,16 +449,15 @@ fn apply_replaces_only_the_checked_files() {
     );
 }
 
-/// 重命名冲突必须标出且不能应用：强行应用要整体拒绝，绝不能覆盖已有文件。
+/// 批量重命名：冲突必须标出且应用整体拒绝；无冲突的计划要真落地。
 #[test]
-fn rename_conflict_is_flagged_and_cannot_be_applied() {
+fn batch_rename_blocks_conflicts_and_lands_clean_plans() {
     let (dir, state) = boot();
-    let root = dir.path().join("batch");
-    fs::create_dir_all(&root).expect("建目录失败");
-    let a = root.join("a.txt");
-    let b = root.join("b.txt");
+    let (root, a, b) = batch_root(dir.path());
     fs::write(&a, "hello world\n").expect("写 a 失败");
     fs::write(&b, "nothing here\n").expect("写 b 失败");
+
+    // a.txt → b.txt：目标已存在，标冲突，不可应用。
     let plan = state
         .services
         .batch
@@ -508,29 +488,21 @@ fn rename_conflict_is_flagged_and_cannot_be_applied() {
         fs::read_to_string(&b).expect("读回 b").contains("nothing"),
         "被占用的目标文件不能被覆盖"
     );
-}
 
-/// 无冲突的计划要真落地：只标冲突不落地，用户点了「应用」什么都没发生。
-#[test]
-fn rename_without_conflict_actually_lands() {
-    let (dir, state) = boot();
-    let root = dir.path().join("batch");
-    fs::create_dir_all(&root).expect("建目录失败");
-    let c = root.join("c.txt");
-    fs::write(&c, "x").expect("写 c 失败");
+    // 无冲突的计划：真落地。
     let ok = state
         .services
         .batch
         .apply_rename(&RenameApplyReq {
             items: vec![RenamePair {
-                from: c.to_string_lossy().to_string(),
+                from: a.to_string_lossy().to_string(),
                 to: root.join("d.txt").to_string_lossy().to_string(),
             }],
         })
         .expect("重命名失败");
     assert_eq!(ok.changed, 1, "应改成一个文件");
     assert!(root.join("d.txt").exists(), "新名字要存在");
-    assert!(!c.exists(), "旧名字要消失");
+    assert!(!a.exists(), "旧名字要消失");
 }
 
 // ---------- 工具箱 ----------

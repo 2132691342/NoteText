@@ -2,21 +2,42 @@
 
 ## 定位
 
-`src-tauri/tests/chain_tests.rs`（单文件、按 section 分四组：文件 / 会话 / 批量 / 工具箱）
+`src-tauri/tests/chain_tests.rs`（单文件、按 section 分四组：文件与编码 / 会话 / 批量 / 工具箱）
 + `scripts/` 下两个脚本（唯一验证入口）。判据与条文见 [AGENTS.md §3](../AGENTS.md)，
 这一篇只解释「为什么这么组织」。
 
 ## 为什么单文件、一个测试一种坏法
 
-Rust 集成测试按「测试二进制」分文件，但 16 个测试收敛进一个文件，编译只链接一次 lib，
+Rust 集成测试按「测试二进制」分文件，但 13 个测试收敛进一个文件，编译只链接一次 lib，
 改代码不必等 4 个二进制各自编译。**测试函数名就是它守护的那件坏事**，失败时不需要
 拿行号去文件里找第几条断言。一个函数只讲一种坏法：能写成「A、B、C 都对」的函数，
 失败时报文说不清坏的是哪个。
 
 ```
 src-tauri/tests/
-└── chain_tests.rs   文件(5) / 会话(4) / 批量(4) / 工具箱(3) = 16 个测试
+└── chain_tests.rs   文件与编码(5) / 会话(3) / 批量(2) / 工具箱(3) = 13 个测试
 ```
+
+| 组 | 测试 | 坏法 |
+|---|---|---|
+| 文件与编码 | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
+| | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
+| | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
+| | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
+| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
+| 会话 | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
+| | `session_round_trip_restores_tabs_and_survives_close_all` | 重启后标签顺序与窗口尺寸丢失 |
+| | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
+| 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
+| | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
+| 工具箱 | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
+| | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
+| | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
+
+**同一条链路的两面合并成一条**：批量替换的「扫描不落盘」与「只改勾选」是
+同一个两阶段协议的两侧；批量重命名的「冲突拒绝」与「无冲突落地」是同一个
+预览-应用故事的两种结局。分开写会有两份重复的 setup，合并后一条测试
+就是一条完整的用户故事，失败消息仍能指认到段。
 
 ## 隔离：测试与生产共用同一条装配链
 
@@ -67,7 +88,7 @@ node scripts/i18n-audit.mjs     单独跑国际化审计
 
 | 选择 | 优势 | 代价 |
 |---|---|---|
-| 单文件收口 16 个测试 | 编译只链接一次 lib，改代码不必等 4 个二进制 | 跨域阅读顺序靠 section 注释补偿 |
-| 一个测试一种坏法 | 失败报文直接指出坏在哪 | 每个测试各自建一次临时目录与装配（亚秒级） |
-| 不引 mock 框架 | 测试与生产共用装配链，没有替身与生产不一致的空间 | 每个测试真的建一次库 |
+| 单文件收口 13 个测试 | 编译只链接一次 lib，改代码不必等 4 个二进制 | 跨域阅读顺序靠 section 注释补偿 |
+| 一个测试一种坏法（同链路两面可合并） | 失败报文直接指出坏在哪，又不留重复 setup | 合并的测试要靠断言消息区分段 |
+| 不引 mock 框架 | 测试与生产共用装配链，没有替身与生产不一致的空间 | 每个测试真的建一次库（亚秒级） |
 | 断言写人话失败原因 | 失败报文直接指到哪条规则被破坏 | 断言长了几个字 |

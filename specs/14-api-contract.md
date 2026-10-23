@@ -12,7 +12,7 @@
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
 | 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
-| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 `session_chain（空列表契约 / 会话往返）`） |
+| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `empty_lists_serialize_to_array_not_null`） |
 
 ## 文件
 

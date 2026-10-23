@@ -68,10 +68,10 @@ function update(patch: Partial<AppConfig>) {
 |---|---|---|---|
 | `font_size` | u32 | 13 | 编辑器正文字号（px） |
 | `font_family` | String | `Consolas` | 编辑器字体 |
-| `editor_theme` | String | `default` | 代码配色主题 |
+| `editor_theme` | String | `auto` | 代码配色主题（`auto` 跟随界面主题） |
 | `tab_size` | u32 | 4 | 缩进宽度 |
 | `insert_spaces` | bool | true | 软制表符 |
-| `word_wrap` | bool | true | 自动换行 |
+| `word_wrap` | bool | false | 自动换行 |
 | `line_numbers` | bool | true | 行号槽 |
 | `highlight_active_line` | bool | true | 高亮当前行 |
 | `bracket_matching` | bool | true | 括号配对着色 |
@@ -80,21 +80,21 @@ function update(patch: Partial<AppConfig>) {
 | `show_whitespace` | bool | false | 显示空白字符 |
 | `show_eol` | bool | false | 行尾标记 |
 | `fold_gutter` | bool | true | 折叠槽 |
-| `minimap` | bool | false | 小地图 |
+| `minimap` | bool | true | 小地图 |
 | `auto_save` | bool | false | 自动保存 |
-| `auto_save_interval` | u32 | 30 | 自动保存间隔（秒） |
+| `auto_save_interval` | u32 | 60 | 自动保存间隔（秒） |
 | `highlight_selection` | bool | true | 选中即高亮 |
 
 #### FileConfig（8 项）
 
 | 项 | 类型 | 默认 | 作用 |
 |---|---|---|---|
-| `default_encoding` | String | `utf-8` | 新建文件的编码 |
+| `default_encoding` | String | `auto` | 新建文件的编码（`auto` = 探测） |
 | `auto_detect_encoding` | bool | true | 打开时探测编码 |
-| `new_line_ending` | String | `crlf` | 新建文件的行尾 |
+| `new_line_ending` | String | `system` | 新建文件的行尾（跟随平台） |
 | `ensure_final_newline` | bool | false | 保存时补末尾换行 |
 | `trim_trailing_ws` | bool | false | 保存时去行尾空白 |
-| `ignore_patterns` | Vec<String> | 空 | 文件树忽略规则 |
+| `ignore_patterns` | Vec<String> | `node_modules` `.git` `target` `dist` | 文件树忽略规则 |
 | `remember_last_folder` | bool | true | 记住上次打开的文件夹 |
 | `last_folder` | String | 空 | 上次的文件夹（由上一项决定是否更新） |
 
@@ -107,12 +107,12 @@ function update(patch: Partial<AppConfig>) {
 | `show_status_bar` | bool | true | 状态栏显隐 |
 | `show_sidebar` | bool | true | 侧栏显隐 |
 | `sidebar_width` | u32 | 260 | 侧栏宽度（px，180–480） |
-| `toolbar_icon_size` | u32 | 16 | 工具栏图标尺寸 |
-| `zoom_level` | u32 | 100 | 界面缩放百分比（80–140） |
-| `close_to_tray` | bool | true | 关闭到托盘 |
+| `toolbar_icon_size` | u32 | 24 | 工具栏图标尺寸 |
+| `zoom_level` | u32 | 100 | 界面缩放百分比（50–200） |
+| `close_to_tray` | bool | false | 关闭到托盘 |
 | `restore_session` | bool | true | 启动恢复上次会话 |
 | `recent_limit` | u32 | 20 | 最近文件保留条数 |
-| `status_bar_items` | BTreeMap | 全开 | 状态栏各项显隐 |
+| `status_bar_items` | BTreeMap | 空 = 全显 | 状态栏各项显隐 |
 | `sidebar_tab` | String | `files` | 侧栏当前页签 |
 
 #### 顶层（6 项）

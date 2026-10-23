@@ -1,8 +1,6 @@
-// Markdown 三态：编辑 / 分屏 / 预览。
-// 正文由 CodeEditor 持有，预览只读正文渲染结果；两边宽度可拖。
-// 根类名不叫 .nt-md：content.css 的 .nt-md 是给帮助页渲染结果用的
-// （max-width + margin:auto），挂到面板上会把整块面板压窄居中。
-:<template>
+// Markdown 三态：编辑 / 分屏 / 预览。正文由 CodeEditor 持有，预览只读渲染结果。
+// 根类名不叫 .nt-md：content.css 的 .nt-md 是帮助页渲染结果的容器（压窄居中）。
+<template>
   <div class="nt-md-view">
     <div class="nt-md-head">
       <ElRadioGroup v-model="mode" size="small" class="nt-md-modes">

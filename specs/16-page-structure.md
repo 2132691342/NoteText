@@ -1,4 +1,4 @@
-# 页面与组件地图
+# 16 · 页面与组件地图
 
 NoteText 是单窗口应用，只有一个常驻视图（编辑器）+ 两个路由视图（设置 / 帮助）。
 所有工具箱都是挂在最外层的浮窗，不是路由。
@@ -67,7 +67,7 @@ App.vue
 | 视图 | 12 | 缩放、侧栏、状态栏、换行、小地图、分屏、主题、界面语言、全屏 |
 | 编码 | 6 | 当前编码、行尾、转 UTF-8（带 / 不带 BOM）、以指定编码重新打开、编码转换器 |
 | 语言 | 2 | 语法语言选择、按扩展名识别 |
-| 工具 | 16 | JSON / 哈希 / 正则 / 行编辑 / 格式转换 / 剪贴板 / Hex / 取色 / 日志 / 批量操作 / 宏 |
+| 工具 | 24 | JSON / 哈希 / 正则 / 行编辑 / 格式转换 / 剪贴板 / Hex / 取色 / 日志 / 批量操作 / 宏 / 一键快操作（格式化、压缩、转义、去转义、转 YAML/TOML/XML） |
 | 对比 | 3 | 文本对比、目录对比、与剪贴板对比 |
 
 `settings` 与 `help` 两组不进下拉：它们是路由目标，渲染成菜单条右侧的入口。
@@ -91,13 +91,13 @@ App.vue
 
 | 浮窗 | 组件 | 特色 |
 |---|---|---|
-| JSON | `dialogs/JsonToolDialog.vue` | 三种模式（格式化 / JSONPath / 转结构体）；结果可一键写回编辑器 |
+| JSON | `dialogs/JsonToolDialog.vue` | 三种模式（格式化 / JSONPath / 转结构体）；**打开即自动执行**，JSONPath 与目标语言是内联控件；pretty / minify 可切；「应用」写回打开时的选区 |
 | 对比 | `dialogs/DiffToolDialog.vue` | 左右可交换；行内 span 转义后包 `<span class="nt-span">` |
 | 哈希 | `dialogs/HashToolDialog.vue` | 默认算编辑器内容；大小写两份输出 |
 | 正则 | `dialogs/RegexToolDialog.vue` | 输入防抖 150ms 实时重算；捕获组表格 |
 | 编码 | `dialogs/EncodingToolDialog.vue` | 编码 + 行尾一起转；置信度低时警告 |
 | 行编辑 | `dialogs/LineOpToolDialog.vue` | 11 种操作可预览后应用 |
-| 查找 / 替换 | `dialogs/FindDialog.vue`（ReplaceDialog 是薄包装） | 本文件查找 + 命中计数 + 结果列表（带行号）；替换全部一次事务提交 |
+| 查找 / 替换 | `dialogs/FindDialog.vue`（ReplaceDialog 是薄包装） | 五个页签（查找 / 替换 / 在文件中 / 标记 / 结果）；预填上次查询词；不可搜视图给说明条；替换全部一次事务提交 |
 | 文件夹查找 | `dialogs/FindInFilesDialog.vue` | 并发上限 4；每 200 个文件让出一帧更新进度 |
 | 转到行 | `dialogs/GotoLineDialog.vue` | 上限取当前行数，超范围按钮置灰 |
 | 剪贴板历史 | `dialogs/ClipboardDialog.vue` | 编辑器内的复制 / 剪切攒 50 条，点击回插 |
@@ -105,7 +105,7 @@ App.vue
 | 批量查找替换 | `dialogs/BatchFindReplaceDialog.vue` | 先扫描预览再勾选应用，扫完才允许写盘 |
 | 批量重命名 | `dialogs/BatchRenameDialog.vue` | 三种模式；冲突项标红且不可选 |
 | 最近文件 | `dialogs/RecentFilesDialog.vue` | 可钉住、显示所在目录、右键移除 / 显位置 |
-| 格式转换 | `dialogs/ConvertDialog.vue` | JSON / YAML / TOML / XML 互转；源格式 / 目标格式 / 一键互换；可从当前标签载入 |
+| 格式转换 | `dialogs/ConvertDialog.vue` | JSON / YAML / TOML / XML 互转；**带选区进来即自动载入并转换**；「应用」写回选区（没选区写回全文）；一键互换 |
 | 目录对比 | `dialogs/DirDiffDialog.vue` | 递归比较两目录；四态分类；差异排前；点行用系统程序打开 |
 | 取色器 | `dialogs/ColorPickerDialog.vue` | EyeDropper 屏幕取色；HEX / RGB / HSL 三种表示分别可复制 |
 | 日志查看器 | `dialogs/LogViewerDialog.vue` | 读应用日志；按级别着色与过滤；只取末 2000 行 |
@@ -148,7 +148,7 @@ App.vue
 
 ```
 CodeEditor.vue
-├── compartments（每个关注点一份）
+├── compartments（每个关注点一份，切换只 reconfigure 不重建视图）
 │   ├── themeComp      useEditorTheme（引用 CSS 变量，不写死色值）
 │   ├── langComp       useEditorLanguage（静态包同步、大包动态）
 │   ├── editableComp   只读 / 可编辑
@@ -156,12 +156,16 @@ CodeEditor.vue
 │   ├── tabSizeComp    制表符宽度
 │   ├── lineNumComp    行号
 │   ├── foldComp       代码折叠
-│   └── historyComp    历史
+│   ├── bookmarkComp   书签 gutter
+│   ├── marksComp      5 色词标记装饰
+│   ├── guidesComp     缩进参考线 / 括号配色 / 行尾标记
+│   └── whitespaceComp 空白字符显示
 └── EditorView.updateListener
     ├── 脏标记按「与载入时快照不同」判
-    ├── editor-cursor-pos → 状态栏
-    ├── editor-stats      → 状态栏
-    └── editor-history    → 工具栏撤销可用性
+    ├── nt-cursor（带 tabId）→ 状态栏光标
+    ├── nt-stats  → 状态栏行数
+    ├── nt-history → 工具栏撤销可用性
+    └── 选区变化 → 选区浮条重定位（docChanged 分支也要刷，否则替换后浮条残留）
 ```
 
 **切换标签不销毁实例**：那样会丢撤销历史。组件按 `tab.id` 缓存，
@@ -188,6 +192,11 @@ CodeEditor.vue
 | `composables/useEditorMacro.ts` | 宏录制与回放 |
 | `composables/useEditorColumnMode.ts` | 列块编辑 |
 | `composables/useViewportScale.ts` | 按窗口宽写 `--nt-vw-scale` |
+| `composables/useMarkdown.ts` | Markdown 三态的渲染管线（HTML → Mermaid → KaTeX，递增 token 防旧图覆盖） |
+| `composables/useNavHistory.ts` | 光标跳转历史（Alt+左 / 右在位置间回退前进） |
+| `composables/useEditorGuides.ts` | 缩进参考线 / 括号配色 / 行尾标记三件视觉辅助 |
+| `composables/useLastQuery.ts` | 上次查找条件：F3 / Shift+F3 复用，浮窗预填 |
+| `composables/useQuickActions.ts` | 一键快操作：选中即用、结果原地替换（格式化 / 压缩 / 转义 / 格式互转） |
 | `composables/useShellIntent.ts` | 托盘 / 二次启动的文件打开意图 |
 | `composables/useClipboardHistory.ts` | 编辑器内复制文本的本地历史 |
 

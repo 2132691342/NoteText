@@ -94,7 +94,7 @@ set_pinned(path, pinned) / remove(path) / clear()
 - 五个数据源共用「列表 + 增删 + 备份」的形态，所以放一个 service 而不是五个：
   它们只是「某张表」的编排，不值得各自开目录（[AGENTS.md §2.1](../AGENTS.md) 的开包门槛）；
 - 出参里的切片构造时初始化：空列表必须序列化成 `[]` 而不是 `null`
-  （守护见 `session_chain（空列表契约 / 会话往返）`）；
+  （守护见 [12](12-testing.md) 的 `empty_lists_serialize_to_array_not_null`）；
 - 时间一律毫秒整数，`now_ms()` 在 `app::bootstrap` 里统一定义。
 
 ## 取舍

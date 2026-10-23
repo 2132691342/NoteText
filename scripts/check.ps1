@@ -42,10 +42,11 @@ function Invoke-Step {
 
 if ($List) {
     # 测试文件顶部的 `//!` 注释就是这份清单的说明，函数名就是它守护的那件坏事。
+    # 排除名单是测试文件里的 helper（boot / tab / roundtrip / batch_root）。
     Get-ChildItem 'src-tauri/tests' -Filter '*.rs' | Sort-Object Name | ForEach-Object {
         Write-Host $_.Name -ForegroundColor Cyan
         Get-Content $_.FullName | Select-String -Pattern '^\s*fn (\w+)\(' |
-            Where-Object { $_.Matches[0].Groups[1].Value -notin @('setup', 'tools', 'roundtrip') } |
+            Where-Object { $_.Matches[0].Groups[1].Value -notin @('boot', 'tab', 'roundtrip', 'batch_root') } |
             ForEach-Object { '  {0}' -f $_.Matches[0].Groups[1].Value }
     }
     exit 0

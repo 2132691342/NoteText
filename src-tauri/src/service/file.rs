@@ -165,8 +165,7 @@ impl FileService {
     }
 
     /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。
-    /// UTF-16 文本本身也满是 NUL，但带 BOM 的 UTF-16 是明确的文本证据，
-    /// 判成二进制会把用户的 .txt 送进十六进制视图。
+    /// 带 BOM 的 UTF-16 满是 NUL 但是明确的文本证据，不判二进制。
     fn sniff_binary(&self, path: &Path) -> bool {
         let Ok(meta) = fs::metadata(path) else {
             return false;
@@ -268,9 +267,8 @@ impl FileService {
                         });
                     }
                 }
-                // 两条路都解不动：有损解一次再返回。
-                // 文本编辑器的底线是「文件打得开」——几个替换符远好过一句
-                // 「解码失败」把文件挡在门外。truncated 让状态栏提示不确定。
+                // 两条路都解不动：有损解一次再返回——几个替换符远好过打不开，
+                // truncated 让状态栏提示不确定。
                 tracing::warn!(
                     path,
                     encoding = %encoding,

@@ -41,8 +41,8 @@ toggle_line_comment(language, text)
   └─ 空行不动（注释空行只会让 diff 多噪音）
 ```
 
-三个边界都有测试守护（`tools_chain::tools_chain`）：
-全注释块去掉、半注释块补齐、空行不动。
+三个边界都有测试守护（`toggle_comment_round_trips_and_fills_half_commented_blocks`，
+见 [12](12-testing.md)）：全注释块去掉、半注释块补齐、空行不动。
 **「未注释」的判定只看非空行**：空行没有注释可言，
 把它算进分母会让「注释掉一大半 + 夹一个空行」的块被判成已全注释，
 结果越点注释越多。
@@ -226,11 +226,30 @@ PDF / 表格 / 图片走它只会得到乱码或解码错误。非文本形态�
 **不引模态键位系统**：目标用户是 Windows 桌面用户，
  modal editing 的学习成本与收益不成比例。
 
-## 右键菜单与文本变换
+## 右键菜单、选区浮条与文本变换
 
-菜单项与命令是两份数据：菜单在 `CodeEditor.vue` 的 `menuItems` computed 里
-（每次打开按当前状态算：有选区 / 是否只读），命令在 `useCommands.ts` 注册表里
-（快捷键与菜单共用一份 label）。新增能力只改命令注册处，菜单自动长出来。
+菜单项与命令是两份数据：菜单在 `CodeEditor.vue` 的 `buildMenuItems()` 里
+（**每次右键现算快照**存进 `menuItems` ref），命令在 `useCommands.ts` 注册表里
+（快捷键与菜单共用一份 label）。不做 computed：选区存在 EditorView 里，
+不是响应式状态，computed 会缓存过期的 hasSel——表现为「选中了却不出快操作段」。
+菜单顺序就是使用频率：剪贴板 → 选中快操作 → 查找 → 注释与大小写 →
+行操作 → 书签行操作（低频，沉底）。
+
+**选区浮条**：选中即在选区上方浮出一步操作条（格式化 / 压缩 JSON、
+转 YAML、大小写、查找）。位置由 `coordsAtPos` 算（视口坐标，fixed 定位）；
+`docChanged` 分支也要刷新它——替换后选区变了，提前 return 的分支
+会让浮条残留。快操作替换后光标收在结果尾部，不选中新文本
+（保持选中会让浮条立刻再弹一次）。
+
+**一键快操作**（`useQuickActions`）：选中文本直接执行、结果原地替换，
+不经浮窗。JSON 格式化 / 压缩走后端（错误报行列），后端不可用时退回
+前端 `JSON.stringify`；转义 / 去转义纯前端（`JSON.stringify` 的转义规则
+就是各语言字符串字面量的公共子集）。键位：`Ctrl+Shift+J` 格式化、
+`Ctrl+Alt+J` 压缩、`Ctrl+Alt+E` 加转义、`Ctrl+Alt+U` 去转义。
+
+**种子选区不读 DOM 焦点**：右键菜单与浮窗按钮都握着焦点，
+`focusedTabId()` 此刻是 null——预填选中词一律从注册表视图读
+（`selectionSeed()`），否则「选中→右键→查找」预填为空。
 
 **行操作一律「算区间 → 一次 dispatch」**：先算选中行区间，再一次
 `changes` 提交。逐行 dispatch 会让一次「排序选中行」进 N 步撤销栈，

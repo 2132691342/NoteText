@@ -103,6 +103,11 @@ NoteText/
 - `pkg/` 依赖任何其他 backend 业务包（叶子工具包铁律）
 - 用字符串拼 SQL：参数绑定是唯一写法（`params![...]`）
 
+**新增一个能力的固定顺序**：
+`domain`（DO/REQ/VO）→ `repo`（若要落库）→ `service` → `commands`（+ `command_handlers!` 清单）→
+`frontend/src/api/index.ts` → `types/api.ts` → 组件 → 文档。
+漏掉清单注册的后果是前端 invoke 报 `command not found`，编译期发现不了。
+
 ### 2.2 依赖方向（强制）
 
 ```
@@ -264,7 +269,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 文档只回答三件事：**这个项目是什么、每个模块怎么设计实现、为什么这么选型**。
 
 - 根级：`README.md`（入口与能力全景）/ `AGENTS.md`（工程规范，唯一权威）/ `DESIGN.md`（视觉语言）
-- `specs/`：子系统规格，编号 01-13，一个子系统一个文件
+- `specs/`：架构与子系统规格，编号 00-17，一个主题一个文件
 - 每篇只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。**优势与代价必须写出来**
 - 表格与短段落优先；能用表就不用列表
 - **不写改动过程**：不建 CHANGELOG，不记录「本次改了什么」「之前坏在哪」，
@@ -440,7 +445,7 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），按 section 分「文件 / 会话 / 批量 / 工具箱」四组。
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），按 section 分「文件与编码 / 会话 / 批量 / 工具箱」四组。
   所有长链路集中一处，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
@@ -467,26 +472,25 @@ mod dialog_stub;
 
 单个文件 `src-tauri/tests/chain_tests.rs`，按四组排列；每个函数名就是它守护的那句坏事，
 失败时报文直接指出坏在哪，不必对着行号往回找。简单纯函数断言不入链；每一条都守护
-「用户文件没了 / 界面崩白屏」级别的事故。
+「用户文件没了 / 界面崩白屏」级别的事故。**同一条链路的两面合并成一条**
+（如批量替换的「扫描只读」与「只改勾选」），一条测试就是一条完整的用户故事。
 
 | 分组 | 测试 | 坏法 |
 |---|---|---|
-| 文件域 | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
+| 文件与编码 | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
 | | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
 | | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
 | | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
-| | `delete_accounts_for_each_path_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
+| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
 | 会话 | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
-| | `session_round_trip_keeps_order_active_index_and_window_size` | 重启后标签顺序与窗口尺寸丢失 |
-| | `closing_all_tabs_keeps_the_session_row_for_window_size` | 关光标签后下次启动变成默认窗口大小 |
+| | `session_round_trip_restores_tabs_and_survives_close_all` | 重启后标签顺序与窗口尺寸丢失 |
 | | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
-| 批量 | `scan_reports_without_touching_files` | 扫描阶段就落盘，绕过确认 |
-| | `apply_replaces_only_the_checked_files` | 改掉用户没勾选的文件 |
-| | `rename_conflict_is_flagged_and_cannot_be_applied` | 重命名覆盖已有文件 |
-| | `rename_without_conflict_actually_lands` | 该落地的没落地 |
+| 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
+| | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
 | 工具箱 | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
 | | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
 | | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
+
 **改这里 → 这样验**：
 
 | 改动位置 | 命令 |

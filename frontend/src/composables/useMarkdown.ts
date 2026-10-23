@@ -59,9 +59,8 @@ export function useMarkdown(): MarkdownRender {
         return ''
       },
     })
-    // 代码块外包一层：mermaid 块要能被 querySelector 找到，所以要带 class。
-    // 普通代码块再包一层标题栏：左边语言、右边复制——预览是只读的，
-    // 没有复制按钮用户只能划选，而划选常常连着行号或相邻段落。
+    // 代码块外包一层：mermaid 块要能被 querySelector 找到；普通代码块加标题栏
+    // （左语言、右复制）——预览是只读的，没有复制按钮用户只能划选。
     const defaultFence = instance.renderer.rules.fence!.bind(instance.renderer.rules)
     instance.renderer.rules.fence = (tokens, idx, options, _env, self) => {
       const token = tokens[idx]
