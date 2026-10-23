@@ -1,13 +1,14 @@
-//! 文件域：读写编码 / 行尾 / BOM / 原子写 + 文件树操作的安全护栏。
+//! 文件域长链路：读改写往返 + 文件树操作的安全护栏。
 //!
-//! 这里守护的都是「用户的文件没了」且没有撤销键的事故：GBK 文件打开乱码、
-//! CRLF 文件一保存行尾全变 LF、重命名悄悄覆盖同名文件、目录拖进自己子目录让树成环。
+//! 这里守护「用户的文件没了」且没有撤销键的事故：CRLF 文件一保存行尾全变 LF、
+//! 正文前多三个不可见字节、选了编码打开仍是乱码、重命名悄悄覆盖同名文件、
+//! 目录拖进自己子目录让文件树成环。
 
 use std::fs;
 use std::path::PathBuf;
 
 use notetext_lib::app::bootstrap::{self, AppState};
-use notetext_lib::domain::file::ReadMode;
+use notetext_lib::domain::file::{FileContentVO, ReadMode};
 use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
 use notetext_lib::service::encoding;
 
@@ -22,41 +23,36 @@ fn setup() -> (tempfile::TempDir, AppState, PathBuf) {
     (dir, state, paths.data_dir)
 }
 
-#[test]
-fn read_normalizes_crlf_but_remembers_original() {
-    let (dir, state, data) = setup();
-    let file = data.join("crlf.txt");
-    fs::write(&file, b"a\r\nb\r\n").expect("写测试文件失败");
-
-    let read = state
+/// 写一个文件并读回来：拿到服务返回的读结果与磁盘路径。
+fn roundtrip(state: &AppState, file: &PathBuf, bytes: &[u8]) -> FileContentVO {
+    fs::write(file, bytes).expect("写测试文件失败");
+    state
         .services
         .file
         .read(&file.to_string_lossy(), ReadMode::Full)
-        .expect("读失败");
-
-    // 编辑器按 LF 算行列；行尾样式单独记着，写回时还要用。
-    assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
-    assert_eq!(read.text, "a\nb\n", "读出来应归一成 LF");
-    drop(dir);
+        .expect("读失败")
 }
 
 #[test]
-fn write_keeps_original_line_ending_unless_switched() {
+fn read_write_roundtrip_preserves_line_ending_and_bom() {
     let (dir, state, data) = setup();
-    let file = data.join("crlf.txt");
-    let p = file.to_string_lossy().to_string();
-    fs::write(&file, b"a\r\nb\r\n").expect("写测试文件失败");
-    let _ = state.services.file.read(&p, ReadMode::Full);
 
-    // 不指定行尾：按文件原本的 CRLF 写回。没有这一步，一次保存就把整个文件的
-    // 行尾全变成 LF，diff 里满屏都是改动。
+    // ---- CRLF：读时归一成 LF 供编辑器算行列，写回时还原 ----
+    let crlf = data.join("crlf.txt");
+    let p = crlf.to_string_lossy().to_string();
+    let read = roundtrip(&state, &crlf, b"a\r\nb\r\n");
+    assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
+    assert_eq!(read.text, "a\nb\n", "读出来应归一成 LF");
+
+    // 不指定行尾：按文件原本的 CRLF 写回。没有这一步，一次保存就把整个
+    // 文件的行尾全变成 LF，diff 里满屏都是改动。
     state
         .services
         .file
         .write(&p, "a\nb\n", None, None, None)
         .expect("写失败");
     assert_eq!(
-        fs::read(&file).expect("回读失败"),
+        fs::read(&crlf).expect("回读失败"),
         b"a\r\nb\r\n",
         "不指定行尾应原样写回 CRLF"
     );
@@ -68,10 +64,63 @@ fn write_keeps_original_line_ending_unless_switched() {
         .write(&p, "a\nb\n", None, Some("lf"), None)
         .expect("写失败");
     assert_eq!(
-        fs::read(&file).expect("回读失败"),
+        fs::read(&crlf).expect("回读失败"),
         b"a\nb\n",
         "显式 lf 应写成 LF"
     );
+
+    // ---- BOM：剥不干净会让光标列号全偏，补不回去会让下游编码判定翻车 ----
+    let bom = data.join("bom.txt");
+    let (has, body) = encoding::strip_bom(&[0xEF, 0xBB, 0xBF, 0x61, 0x62], "utf-8-bom");
+    assert!(has, "应检出 BOM");
+    assert_eq!(body, b"ab", "剥掉 BOM 后只剩正文");
+    assert_eq!(
+        encoding::bom_bytes("utf-8-bom"),
+        &[0xEF, 0xBB, 0xBF],
+        "BOM 字节要能补回"
+    );
+
+    // 带 BOM 的文件走完整读写链：读进来没有 BOM，写回去 BOM 还在。
+    let read_bom = roundtrip(&state, &bom, b"\xEF\xBB\xBFhello");
+    assert_eq!(read_bom.text, "hello", "读进来应剥掉 BOM");
+    let bp = bom.to_string_lossy().to_string();
+    state
+        .services
+        .file
+        .write(&bp, "hello", Some("utf-8-bom"), None, Some(true))
+        .expect("写失败");
+    assert_eq!(
+        fs::read(&bom).expect("回读失败"),
+        b"\xEF\xBB\xBFhello",
+        "写回去应补回 BOM"
+    );
+    drop(dir);
+}
+
+#[test]
+fn forced_encoding_read_decodes_and_falls_back_when_unsupported() {
+    let (dir, state, data) = setup();
+    let gbk = data.join("gbk.txt");
+    // 用码表里有的全角符号（0xA1A1 起）而不是汉字：内置表是常用子集，汉字不在内。
+    let p = gbk.to_string_lossy().to_string();
+    roundtrip(&state, &gbk, &[0xA1u8, 0xA1, 0xA1, 0xA2]);
+
+    // 用户按「以指定编码重新打开」选了编码，打开的必须不再是乱码。
+    let forced = state
+        .services
+        .file
+        .read_as(&p, ReadMode::Full, Some("gb18030"))
+        .expect("按 GBK 读失败");
+    assert_eq!(forced.text, "、。", "指定 gb18030 应解出表内符号");
+    assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
+
+    // 选了个不认识的编码：退回探测编码，而不是整个文件打不开。
+    let fallback = state
+        .services
+        .file
+        .read_as(&p, ReadMode::Full, Some("klingon"))
+        .expect("选错编码也不该打不开");
+    assert_eq!(fallback.text, "、。", "不支持应退回探测编码");
     drop(dir);
 }
 
@@ -119,58 +168,16 @@ fn atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs() {
 }
 
 #[test]
-fn bom_is_stripped_on_read_and_restored_on_write() {
-    let (_dir, _state, _data) = setup();
-
-    // 剥不干净：正文前面多三个不可见字节，光标位置与列号全偏。
-    let (has, body) = encoding::strip_bom(&[0xEF, 0xBB, 0xBF, 0x61, 0x62], "utf-8-bom");
-    assert!(has, "应检出 BOM");
-    assert_eq!(body, b"ab", "剥掉 BOM 后只剩正文");
-
-    // 补不回去：文件从「带 BOM」变成「不带」，下游工具判定编码会翻车。
-    assert_eq!(
-        encoding::bom_bytes("utf-8-bom"),
-        &[0xEF, 0xBB, 0xBF],
-        "BOM 字节要能补回"
-    );
-}
-
-#[test]
-fn forced_encoding_read_decodes_and_falls_back_when_unsupported() {
-    let (dir, state, data) = setup();
-    let gbk = data.join("gbk.txt");
-    // 用码表里有的全角符号（0xA1A1 起）而不是汉字：内置表是常用子集，汉字不在内。
-    fs::write(&gbk, [0xA1u8, 0xA1, 0xA1, 0xA2]).expect("写 GBK 文件失败");
-    let p = gbk.to_string_lossy().to_string();
-
-    // 用户按「以指定编码重新打开」选了编码，打开的必须不再是乱码。
-    let forced = state
-        .services
-        .file
-        .read_as(&p, ReadMode::Full, Some("gb18030"))
-        .expect("按 GBK 读失败");
-    assert_eq!(forced.text, "、。", "指定 gb18030 应解出表内符号");
-    assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
-
-    // 选了个不认识的编码：退回探测编码，而不是整个文件打不开。
-    let fallback = state
-        .services
-        .file
-        .read_as(&p, ReadMode::Full, Some("klingon"))
-        .expect("选错编码也不该打不开");
-    assert_eq!(fallback.text, "、。", "不支持应退回探测编码");
-    drop(dir);
-}
-
-#[test]
-fn rename_never_overwrites_an_existing_file() {
+fn rename_rejects_overwrite_cycles_and_escapes() {
     let (dir, state, _data) = setup();
     let svc = &state.services.file_ops;
     let root = dir.path().join("ops");
-    fs::create_dir_all(&root).expect("建目录失败");
+    let sub = root.join("sub");
+    fs::create_dir_all(&sub).expect("建目录失败");
     let a = root.join("a.txt");
     fs::write(&a, "content\n").expect("写文件失败");
 
+    // ---- 覆盖：整体拒绝，覆盖等于无声销毁别人的文件 ----
     let b = root.join("b.txt");
     svc.rename(&RenameReq {
         from: a.to_string_lossy().to_string(),
@@ -179,7 +186,6 @@ fn rename_never_overwrites_an_existing_file() {
     .expect("重命名失败");
     assert!(!a.exists(), "原路径该消失");
 
-    // 目标已存在：整体拒绝。覆盖等于无声销毁别人的文件。
     let c = root.join("c.txt");
     fs::write(&c, "keep me\n").expect("写 c 失败");
     let err = svc
@@ -194,17 +200,8 @@ fn rename_never_overwrites_an_existing_file() {
         "keep me",
         "拒绝后已有文件不能被覆盖"
     );
-}
 
-#[test]
-fn rename_rejects_relative_paths_and_directory_cycles() {
-    let (dir, state, _data) = setup();
-    let svc = &state.services.file_ops;
-    let root = dir.path().join("ops");
-    let sub = root.join("sub");
-    fs::create_dir_all(&sub).expect("建目录失败");
-
-    // 移进自己的子目录：拒绝，否则文件树成环、递归遍历直接挂死。
+    // ---- 成环：移进自己的子目录会让文件树递归遍历挂死 ----
     let err = svc
         .rename(&RenameReq {
             from: root.to_string_lossy().to_string(),
@@ -213,7 +210,7 @@ fn rename_rejects_relative_paths_and_directory_cycles() {
         .expect_err("目录移进自己子目录必须拒绝");
     assert_eq!(err.code, "1003", "成环必须拒绝");
 
-    // 相对路径依赖隐式工作目录，`..` 会逃出操作范围。
+    // ---- 逃逸：相对路径依赖隐式工作目录，`..` 会逃出操作范围 ----
     assert!(
         svc.rename(&RenameReq {
             from: "a.txt".into(),

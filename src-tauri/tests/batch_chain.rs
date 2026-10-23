@@ -133,6 +133,7 @@ fn rename_without_conflict_actually_lands() {
     let c = root.join("c.txt");
     fs::write(&c, "x").expect("写 c 失败");
 
+    // 没冲突的计划要能真落地：只标冲突不落地，用户点了「应用」什么都没发生。
     let ok = state
         .services
         .batch

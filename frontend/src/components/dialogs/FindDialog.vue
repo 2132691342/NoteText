@@ -26,7 +26,6 @@
             ref="findInput"
             v-model="query"
             size="small"
-            :placeholder="t('dialog.find')"
             spellcheck="false"
             @keydown.enter.prevent="onEnter($event)"
             @keydown.esc.prevent="emit('close')"
@@ -57,12 +56,13 @@
 
       <!-- ============ 替换 ============ -->
       <template v-else-if="tab === 'replace'">
+        <!-- 标签已说明这是什么字段，placeholder 不再重复同一句话。
+             重复的后果是同一行出现两遍「查找」，用户会以为有两个不同的东西。 -->
         <div class="nt-field">
           <span class="nt-label">{{ t('dialog.find') }}</span>
           <ElInput
             v-model="query"
             size="small"
-            :placeholder="t('dialog.find')"
             spellcheck="false"
             @keydown.enter.prevent="replaceOne"
             @keydown.esc.prevent="emit('close')"
@@ -74,7 +74,6 @@
           <ElInput
             v-model="replacement"
             size="small"
-            :placeholder="t('dialog.replaceWith')"
             spellcheck="false"
             @keydown.enter.prevent="replaceOne"
           />
@@ -118,7 +117,6 @@
             v-model="query"
             size="small"
             spellcheck="false"
-            :placeholder="t('dialog.find')"
             @keydown.enter.prevent="runDir"
           />
         </div>
@@ -153,7 +151,6 @@
             v-model="query"
             size="small"
             spellcheck="false"
-            :placeholder="t('dialog.find')"
             @keydown.enter.prevent="markAll"
           />
           <span class="nt-readout nt-find-count nt-field-fixed">{{ countLabel }}</span>

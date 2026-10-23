@@ -454,16 +454,12 @@ mod dialog_stub;
 | `pwsh scripts/check.ps1` | rustfmt → cargo check → 全量测试 | 日常快门 |
 | `pwsh scripts/check.ps1 -Full` | + i18n 审计 + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
 | `pwsh scripts/check.ps1 -List` | 列出全部测试名 | 不知道入口叫什么时 |
-| `pwsh scripts/check.ps1 -Detail` | 打印每个测试的名字与结果 | 想看断言清单时 |
 
 - **默认安静**：失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
-- 只有 23 个测试且全量 < 1 秒，**不设「只跑一条链」的开关**——
-  加了省不了多少时间，却要多记一个参数
+- 全量测试 < 1 秒，**不设「只跑一条链」的开关**——加了省不了多少时间，却要多记一个参数
 - `scripts/i18n-audit.mjs` 可以单独跑：`node scripts/i18n-audit.mjs`
   它查四件事——key 引用是否都有定义、zh/en 是否对齐、模板里有没有裸中文、
   后端错误码是否两边都有文案。四类问题都是编译期抓不到的
-
-实测耗时（本机）：快门约 15s、`-Full` 约 60s。
 
 ### 3.4 测试索引
 
@@ -477,27 +473,19 @@ mod dialog_stub;
 | `session_chain.rs` | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
 | | `session_round_trip_keeps_order_active_index_and_window_size` | 重启后标签顺序与窗口尺寸丢失 |
 | | `closing_all_tabs_keeps_the_session_row_for_window_size` | 关光标签后下次启动变成默认窗口大小 |
-| | `bookmark_add_dedupes_and_toggle_removes` | F2 按两下加出两条书签 |
 | | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
-| `file_chain.rs` | `read_normalizes_crlf_but_remembers_original` | 行尾样式没记住 |
-| | `write_keeps_original_line_ending_unless_switched` | 一次保存把整个文件行尾改成 LF |
-| | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
-| | `bom_is_stripped_on_read_and_restored_on_write` | 正文前多三个不可见字节 / BOM 丢失 |
+| `file_chain.rs` | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
 | | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
-| | `rename_never_overwrites_an_existing_file` | 重命名无声销毁别人的文件 |
-| | `rename_rejects_relative_paths_and_directory_cycles` | 文件树成环、递归遍历挂死 |
+| | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
+| | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
 | | `delete_accounts_for_each_path_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
 | `tools_chain.rs` | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
-| | `diff_counts_added_and_removed_lines` | 增删计数错，用户照错结果改 |
-| | `regex_reports_capture_groups_for_every_match` | 空匹配不推进挂死界面 |
 | | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
 | | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
-| | `toggle_comment_rejects_languages_without_line_comments` | 静默返回原文让用户以为生效 |
 | `batch_chain.rs` | `scan_reports_without_touching_files` | 扫描阶段就落盘，绕过确认 |
 | | `apply_replaces_only_the_checked_files` | 改掉用户没勾选的文件 |
 | | `rename_conflict_is_flagged_and_cannot_be_applied` | 重命名覆盖已有文件 |
 | | `rename_without_conflict_actually_lands` | 该落地的没落地 |
-
 **改这里 → 这样验**：
 
 | 改动位置 | 命令 |

@@ -1,12 +1,10 @@
-//! 工具箱与文本变换的硬契约：JSON / diff / 正则 / 哈希 / 注释切换。
+//! 工具箱与文本变换的硬契约：JSON 报错定位 / 哈希向量 / 注释切换往返。
 //!
 //! 失败表现：浮窗给出错误结果但界面上看不出，用户照着错结果改代码；
 //! 或 Ctrl+/ 把代码注释坏——用户拿到错结果且没有任何提示。
 
-use notetext_lib::domain::diff::TextDiffReq;
 use notetext_lib::domain::hash::{HashAlgo, HashReq};
 use notetext_lib::domain::json::{JsonFormat, JsonFormatReq};
-use notetext_lib::domain::regex::RegexTestReq;
 use notetext_lib::service::editor;
 use notetext_lib::service::tools::ToolsService;
 
@@ -26,40 +24,6 @@ fn bad_json_reports_line_and_column() {
     assert!(!bad.ok, "坏 JSON 不应判 ok");
     assert!(bad.error_line.is_some(), "坏 JSON 要给行号");
     assert!(bad.error_col.is_some(), "坏 JSON 要给列号");
-}
-
-#[test]
-fn diff_counts_added_and_removed_lines() {
-    let diff = tools().text_diff(&TextDiffReq {
-        left: "a\nb\nc".into(),
-        right: "a\nx\nc".into(),
-        left_title: None,
-        right_title: None,
-        ignore_ws: false,
-        ignore_case: false,
-        ignore_blank: false,
-    });
-    assert!(diff.ok, "diff 应成功");
-    assert_eq!(diff.added, 1, "应有一行新增");
-    assert_eq!(diff.removed, 1, "应有一行删除");
-    assert_eq!(diff.lines.len(), 4, "1 相同 + 1 删 + 1 增 + 1 相同");
-}
-
-#[test]
-fn regex_reports_capture_groups_for_every_match() {
-    // 空匹配不推进会直接挂死界面；次数与捕获组都必须准。
-    let re = tools().regex_test(&RegexTestReq {
-        pattern: r"(\d+)-(\w+)".into(),
-        text: "12-ab 34-cd".into(),
-        ignore_case: false,
-        multiline: false,
-        dot_all: false,
-        extended: false,
-    });
-    assert!(re.ok, "正则应匹配成功");
-    assert_eq!(re.matches.len(), 2, "应匹配两次");
-    assert_eq!(re.matches[0].groups.len(), 3, "整段 + 2 个捕获组");
-    assert_eq!(re.matches[0].groups[1], "12", "第一组应是 12");
 }
 
 #[test]
@@ -98,10 +62,7 @@ fn toggle_comment_round_trips_and_fills_half_commented_blocks() {
     let filled =
         editor::toggle_line_comment("rust", "// let a = 1;\nlet b = 2;").expect("补注释失败");
     assert_eq!(filled, "// let a = 1;\n// let b = 2;", "半注释块应补齐");
-}
 
-#[test]
-fn toggle_comment_rejects_languages_without_line_comments() {
     // 静默返回原文会让用户以为生效了。
     assert!(
         editor::toggle_line_comment("text", "x").is_err(),

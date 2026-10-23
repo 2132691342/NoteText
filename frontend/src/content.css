@@ -226,11 +226,14 @@
   gap: var(--nt-sp-3);
 }
 
-/* 标签列：固定列宽，跟随字号缩放。四档里最长的是「替换为」这类五字文案，
-   按 5.5em 定，短文案留白而不是让控件参差。 */
+/* 标签列：固定列宽 + 右对齐。
+   右对齐是刻意的：标签长短不一时（"查找" vs "替换为"），左对齐会让
+   控件起点参差，看起来像没排版；右对齐把文字都抵到控件边缘，
+   控件列本身由 flex 保证等宽，两行的输入框就一定同宽同起点。 */
 .nt-label {
   flex: none;
   width: calc(5.5em * var(--nt-fs-scale));
+  text-align: right;
   font-size: var(--nt-fs-label);
   font-weight: 600;
   color: var(--nt-ink-2);
@@ -251,16 +254,30 @@
 }
 
 /* 行内控件撑满标签剩下的宽度，并与密集界面的高度刻度对齐。
-   用 :where 保持 0 特异性：浮窗里要给某个控件定宽（如取色器的色板）
-   时，本地规则能直接盖过去，不必写 !important。 */
-.nt-field > :where(.el-input, .el-select, .el-input-number, .nt-field-control) {
-  flex: 1;
+   必须用 .nt-field.el-input 这种复合选择器把特异性抬到 0,2,0：
+   Element Plus 的 `.el-input { width:100% }` 是 0,1,0，且它的样式在
+   异步 chunk 里、加载顺序不固定。写成 :where()（记 0）时两边平级，
+   谁后加载谁赢——同一份 CSS 在不同页面会得出不同的输入框宽度。 */
+.nt-field > .el-input,
+.nt-field > .el-select,
+.nt-field > .el-input-number,
+.nt-field > .nt-field-control {
+  flex: 1 1 0%;
+  /* flex-basis 归零：默认 auto 会让宽输入框按内容撑开，
+     两个字段一个长一个短就从这里来。 */
   min-width: 0;
+  width: auto;
 }
 
 .nt-field :where(.el-input__wrapper, .el-select__wrapper) {
   min-height: var(--nt-ctl-h);
   padding: 0 var(--nt-sp-2);
+}
+
+/* 控件里的 input 本体也要能吃满：EP 给 .el-input__inner 的是 width:100%,
+   但它外面还套了一层 inline-flex 的 wrapper，层与层之间会各留一份余量。 */
+.nt-field :where(.el-input__wrapper, .el-select__wrapper) {
+  width: 100%;
 }
 
 /* ============================================================
@@ -1011,8 +1028,9 @@
    Markdown 预览
    ============================================================
    由 markdown-it 生成的 HTML，类名以 nt-md- 开头。
-   配色一律取 --nt-* 令牌：预览区与编辑器表面同底，
-   读起来是「同一份文档的两种看法」，不是两个应用。 */
+   排版口径：一条 44em 的阅读栏（容器 flex 居中，见 MarkdownEditor.vue），
+   层级靠「字号 + 字重 + 间距」三件套区分，不靠色块——
+   深色下给每个标题糊一层底，读起来是卡片墙不是文档。 */
 .nt-md-preview > :first-child {
   margin-top: 0;
 }
@@ -1021,21 +1039,27 @@
 .nt-md-preview h2,
 .nt-md-preview h3,
 .nt-md-preview h4 {
-  margin: var(--nt-sp-6) 0 var(--nt-sp-3);
+  margin: var(--nt-sp-8) 0 var(--nt-sp-4);
   font-weight: 600;
   line-height: var(--nt-lh-tight);
   color: var(--nt-ink);
+  /* 标题是「换挡」信号：与上文拉开，与下文收紧。
+     上下同距会让标题浮在段中间，读不出它管着哪一段。 */
+  text-wrap: balance;
 }
 
+/* 文档题名：整篇只该有一个，给足存在感。 */
 .nt-md-preview h1 {
   font-size: var(--nt-fs-2xl);
-  padding-bottom: var(--nt-sp-2);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding-bottom: var(--nt-sp-3);
   border-bottom: 1px solid var(--nt-border);
 }
 
 .nt-md-preview h2 {
   font-size: var(--nt-fs-xl);
-  padding-bottom: var(--nt-sp-1);
+  padding-bottom: var(--nt-sp-2);
   border-bottom: 1px solid var(--nt-border);
 }
 
@@ -1043,15 +1067,20 @@
   font-size: var(--nt-fs-lg);
 }
 
-.nt-md-preview p {
-  margin: 0 0 var(--nt-sp-3);
+.nt-md-preview h4 {
+  font-size: var(--nt-fs-md);
+  color: var(--nt-ink-2);
 }
 
-/* 代码块：编辑器表面同色，靠 1px 描边分界（不另起灰底） */
+.nt-md-preview p {
+  margin: 0 0 var(--nt-sp-4);
+}
+
+/* 代码块：比正文面低一级的底 + 1px 描边，深色下不至于糊进背景。 */
 .nt-md-pre,
 .nt-md-preview pre {
-  margin: 0 0 var(--nt-sp-4);
-  padding: var(--nt-sp-3);
+  margin: var(--nt-sp-5) 0;
+  padding: var(--nt-sp-3) var(--nt-sp-4);
   overflow: auto;
   font-family: var(--font-mono);
   font-size: var(--nt-fs-sm);
@@ -1059,6 +1088,29 @@
   background: var(--nt-elev-surface);
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-sm);
+  /* 代码块里的换行由用户写死：禁掉 balance 一类的排版干预。 */
+  text-wrap: wrap;
+}
+
+/* 语言角标：右上角一个半透明小字，不占版面又能说明这段是什么语言。 */
+.nt-md-pre {
+  position: relative;
+}
+
+.nt-md-pre::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px var(--nt-sp-2);
+  font-family: var(--font-sans);
+  font-size: var(--nt-fs-2xs);
+  color: var(--nt-ink-muted);
+  background: var(--nt-elev-surface);
+  border-bottom-left-radius: var(--nt-radius-xs);
+  border-left: 1px solid var(--nt-border);
+  border-bottom: 1px solid var(--nt-border);
+  pointer-events: none;
 }
 
 .nt-md-preview pre code {
@@ -1067,61 +1119,96 @@
   font-size: inherit;
 }
 
+/* 行内 code：靠底色 + 描边认出来，不用斜体——中文斜体是假斜体，发虚。 */
 .nt-md-preview :not(pre) > code {
   padding: 1px 5px;
   font-family: var(--font-mono);
   font-size: 0.92em;
+  color: var(--nt-ink);
   background: var(--nt-elev-selected);
+  border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-xs);
 }
 
+/* 引用块：左侧一条主色竖线 + 次级墨色，不用整块底色。 */
 .nt-md-preview blockquote {
-  margin: 0 0 var(--nt-sp-4);
-  padding: var(--nt-sp-1) var(--nt-sp-4);
+  margin: var(--nt-sp-5) 0;
+  padding: var(--nt-sp-2) var(--nt-sp-4);
   color: var(--nt-ink-2);
-  border-left: 3px solid var(--nt-border-strong);
+  border-left: 3px solid var(--nt-primary);
 }
 
+.nt-md-preview blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* 列表：项目符号与文字之间必须留空隙，否则 "•主线版本" 糊成一团。 */
 .nt-md-preview ul,
 .nt-md-preview ol {
-  margin: 0 0 var(--nt-sp-4);
+  margin: var(--nt-sp-4) 0;
   padding-left: var(--nt-sp-6);
 }
 
 .nt-md-preview li {
-  margin-bottom: var(--nt-sp-1);
+  margin-bottom: var(--nt-sp-2);
+  padding-left: var(--nt-sp-1);
+}
+
+.nt-md-preview li > ul,
+.nt-md-preview li > ol {
+  margin: var(--nt-sp-2) 0 0;
+}
+
+.nt-md-preview li > :last-child {
+  margin-bottom: 0;
+}
+
+/* 列表符号用主色：一条竖线串起同一层级的项，扫读时层级更清楚。 */
+.nt-md-preview li::marker {
+  color: var(--nt-ink-3);
 }
 
 .nt-md-preview a {
   color: var(--nt-primary);
   text-decoration: none;
+  border-bottom: 1px solid var(--nt-primary-soft);
+  transition: border-color var(--nt-dur-fast) var(--nt-ease);
 }
 
 .nt-md-preview a:hover {
-  text-decoration: underline;
+  border-bottom-color: var(--nt-primary);
 }
 
+/* 表格：斑马纹按行走，比全框线安静，也更容易横向扫。 */
 .nt-md-preview table {
-  margin: 0 0 var(--nt-sp-4);
+  margin: var(--nt-sp-5) 0;
   border-collapse: collapse;
   font-size: var(--nt-fs-sm);
+  width: 100%;
 }
 
 .nt-md-preview th,
 .nt-md-preview td {
-  padding: var(--nt-sp-1) var(--nt-sp-3);
-  border: 1px solid var(--nt-border);
-}
-
-.nt-md-preview th {
-  background: var(--nt-elev-surface);
-  font-weight: 600;
+  padding: var(--nt-sp-2) var(--nt-sp-3);
+  border-bottom: 1px solid var(--nt-border);
   text-align: left;
 }
 
+.nt-md-preview th {
+  font-weight: 600;
+  color: var(--nt-ink);
+  background: var(--nt-elev-surface);
+  border-bottom: 1px solid var(--nt-border-strong);
+}
+
+.nt-md-preview tbody tr:nth-child(even) {
+  background: var(--nt-elev-surface);
+}
+
+/* 分割线：比 hr 元素本身更透气，用来给长文档分段。 */
 .nt-md-preview hr {
   height: 1px;
-  margin: var(--nt-sp-6) 0;
+  margin: var(--nt-sp-8) 0;
   background: var(--nt-border);
   border: none;
 }
@@ -1130,6 +1217,15 @@
   max-width: 100%;
   border-radius: var(--nt-radius-sm);
 }
+
+/* 图片说明：Figure/figcaption 由外部工具插入，这里给一个统一样式。 */
+.nt-md-preview figcaption {
+  margin-top: var(--nt-sp-2);
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-muted);
+  text-align: center;
+}
+
 
 /* 代码块高亮：hljs 只产出 .hljs-* class，配色自己给。
    不引 hljs 自带主题：那些写死色值，深浅两套要维护两份。

@@ -224,16 +224,29 @@ ${body}
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: var(--nt-sp-5) var(--nt-sp-6);
+  padding: var(--nt-sp-6) var(--nt-sp-5) var(--nt-sp-10);
   background: var(--nt-editor-bg);
   font-size: var(--nt-fs-md);
-  line-height: var(--nt-lh-base);
+  line-height: var(--nt-lh-loose);
   user-select: text;
 }
 
-/* 正文栏宽封顶：满屏宽的行长读起来眼睛要横扫，预览按 72~80 字符排。 */
+/* 正文窄栏：左对齐 + 44em 封顶。
+   不用 flex 居中：分屏时右半边常比 44em 宽得多，居中会让内容浮在
+   屏幕中间、左右各一片空白，找行首都困难。左对齐时内容贴着编辑器中缝，
+   两边的文本起点在同一垂直线上，扫读时眼睛不用重新定位。
+   ch 对比例字体 + 中文不可靠（"0" 与汉字宽度比约 1:2），改用 em：
+   1em = 当前字号，中文一字约 1em，44em ≈ 44 个汉字一行，落在舒适区间。 */
 .nt-md-preview > * {
-  max-width: 76ch;
+  width: 100%;
+  max-width: 44em;
+}
+
+/* 空态提示居中，不顶在左边。 */
+.nt-md-preview > .nt-md-empty {
+  text-align: center;
+  color: var(--nt-ink-muted);
+  padding: var(--nt-sp-8) 0;
 }
 
 .nt-md-empty {

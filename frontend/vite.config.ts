@@ -60,19 +60,8 @@ export default defineConfig({
     target: 'es2022',
     // WebView2 支持 es2022；不引 legacy 转换（省体积，也避免 polyfill 掩盖真实不兼容）
     //
-    // 这里**故意不写 manualChunks**。曾经有一份按包名归类的分块表
-    // （xlsx / docx-preview / pdfjs -> vendor-doc，vue / pinia / i18n -> vendor），
-    // 注释还写着「必须这样分才能避免白屏」。事实相反：那正是白屏的原因。
-    //
-    // 机制：这些包内嵌 CJS/UMD 产物，Vite 转 ESM 时会生成 `require$$0` 包装，
-    // 并要求一个 Vue 实例（vue-pdf-embed 之类）。手工把「被 vue 依赖」和
-    // 「依赖 vue」的模块劈成两个 chunk，就得到 vendor <-> vendor-doc 的双向环；
-    // ESM 循环里顶层求值命中 TDZ —— `Cannot access 'require$$0' before initialization`，
-    // 入口模块整个作废、`#app` 永不挂载，用户看到一个纯白窗口。
-    //
-    // 分包交给 Rollup 默认策略：它只在动态 import 的真实边界上切，环不可能出现。
-    // 重库（xlsx / docx-preview / vue-pdf-embed / mermaid）本来就写在
-    // DocPreview.vue、useMarkdown.ts 的动态 import 里，按需自然落到异步 chunk，
-    // 既省了首屏 preload，也不需要任何人再维护一张会过期的包名清单。
+    // 不写 manualChunks：重库（xlsx / docx-preview / vue-pdf-embed / mermaid）
+    // 都写在动态 import 里，Rollup 默认策略只在真实边界切块，
+    // 按需落到异步 chunk，既省首屏 preload 也不需要维护包名清单。
   },
 })

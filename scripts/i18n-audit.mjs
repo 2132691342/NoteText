@@ -117,6 +117,8 @@ for (const f of walk(SRC, /\.(ts|vue)$/)) {
 }
 
 let bad = 0
+
+/** 打一小节：空节打「(无)」，有内容逐行列出并计入问题数。 */
 function section(title, items) {
   console.log('\n=== ' + title + ' (' + items.length + ') ===')
   if (!items.length) {

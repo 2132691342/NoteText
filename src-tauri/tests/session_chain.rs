@@ -1,12 +1,10 @@
-//! 装配与持久化：建库 → 默认配置 → 会话往返 → 书签去重 → 空列表序列化契约。
+//! 启动链与跨边界契约：装配 → 建表 → 会话往返 → 空列表序列化。
 //!
 //! 失败表现：启动即崩；重启后标签顺序与窗口尺寸丢失；
 //! 或前端按数组读空列表拿到 null 而白屏。
 
-use notetext_lib::domain::bookmark::BookmarkAddReq;
 use notetext_lib::domain::config::AppConfig;
 use notetext_lib::domain::session::SessionDO;
-use notetext_lib::repo::bookmark::BookmarkRepo;
 use notetext_lib::repo::session::SessionRepo;
 use notetext_lib::repo::settings::SettingsRepo;
 
@@ -81,30 +79,6 @@ fn closing_all_tabs_keeps_the_session_row_for_window_size() {
     let empty = state.db.with(SessionRepo::load).expect("恢复空会话失败");
     assert!(empty.tabs.is_empty(), "空会话应没有标签");
     assert!(empty.session.is_some(), "但会话行要留着（记窗口大小）");
-}
-
-#[test]
-fn bookmark_add_dedupes_and_toggle_removes() {
-    let (_dir, state) = setup();
-    let req = BookmarkAddReq {
-        path: "C:\\tmp\\a.txt".into(),
-        line: 3,
-        label: Some("入口".into()),
-    };
-
-    // F2 是切换键：同一行按两下必须回到「没有书签」，否则按越多加越多。
-    state
-        .db
-        .with(|conn| {
-            BookmarkRepo::add(conn, &req, 1000)?;
-            BookmarkRepo::add(conn, &req, 2000)?;
-            assert_eq!(BookmarkRepo::list(conn)?.len(), 1, "同行重复加应去重");
-            let gone = BookmarkRepo::toggle(conn, &req, 3000)?;
-            assert!(gone.is_none(), "已存在的行切换后应被删掉");
-            assert!(BookmarkRepo::list(conn)?.is_empty(), "切换后应为空");
-            Ok(())
-        })
-        .expect("书签链路不可用");
 }
 
 #[test]

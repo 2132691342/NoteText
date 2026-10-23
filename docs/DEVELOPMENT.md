@@ -16,7 +16,6 @@
 ```powershell
 pwsh scripts/check.ps1              # 日常快门（rustfmt → check → 测试）
 pwsh scripts/check.ps1 -List        # 列出全部测试名
-pwsh scripts/check.ps1 -Detail      # 打印每个测试的名字与结果
 pwsh scripts/check.ps1 -Full        # + i18n 审计 + clippy -D warnings + 前端构建
 
 npm --prefix frontend install       # 首次
