@@ -20,6 +20,9 @@
 
       <!-- ============ 查找 ============ -->
       <template v-if="tab === 'find'">
+        <!-- 不可搜的视图（预览 / 十六进制 / 挂载失败）要说明白：
+             静默灰按钮的用户报告就是「按钮没法按」。 -->
+        <div v-if="!searchable" class="nt-find-unavailable">{{ t('dialog.findUnavailable') }}</div>
         <div class="nt-field">
           <span class="nt-label">{{ t('dialog.find') }}</span>
           <ElInput
@@ -27,6 +30,7 @@
             v-model="query"
             size="small"
             spellcheck="false"
+            :disabled="!searchable"
             @keydown.enter.prevent="onEnter($event)"
             @keydown.esc.prevent="emit('close')"
           >
@@ -59,6 +63,7 @@
 
       <!-- ============ 替换 ============ -->
       <template v-else-if="tab === 'replace'">
+        <div v-if="!searchable" class="nt-find-unavailable">{{ t('dialog.findUnavailable') }}</div>
         <!-- 标签已说明这是什么字段，placeholder 不再重复同一句话。
              重复的后果是同一行出现两遍「查找」，用户会以为有两个不同的东西。 -->
         <div class="nt-field">
@@ -67,6 +72,7 @@
             v-model="query"
             size="small"
             spellcheck="false"
+            :disabled="!searchable"
             @keydown.enter.prevent="replaceOne"
             @keydown.esc.prevent="emit('close')"
           >
@@ -81,6 +87,7 @@
             v-model="replacement"
             size="small"
             spellcheck="false"
+            :disabled="!searchable"
             @keydown.enter.prevent="replaceOne"
           />
         </div>
@@ -242,7 +249,7 @@ import { getText, get } from '@/composables/useEditorRegistry'
 import { doApplyChanges, doSelectRange, doMarkSelection, doClearMarks } from '@/composables/useEditorActions'
 import { globMatch } from '@/utils'
 import { api } from '@/api'
-import { rememberQuery } from '@/composables/useLastQuery'
+import { rememberQuery, lastQueryState } from '@/composables/useLastQuery'
 import { useFindResultsStore } from '@/stores/findResults'
 import type { BatchFileHits } from '@/types/api'
 import type { MarkColor } from '@/composables/useEditorActions'
@@ -290,11 +297,16 @@ function openPanel() {
 }
 
 const findInput = ref<InstanceType<typeof ElInput> | null>(null)
-const query = ref(dialogs.seedText)
+// seedText 是命令层塞进来的选中文本；没有选中时接着上次的查询词——
+// 「改完再按 Ctrl+F」要的是同一个词，不是空框。
+const query = ref(dialogs.seedText || lastQueryState().query)
 const replacement = ref('')
-const matchCase = ref(false)
-const wholeWord = ref(false)
-const regex = ref(false)
+// 无选中时连选项一起恢复：上次勾了「全字匹配」，这次不该静默丢掉。
+const prevQuery = lastQueryState()
+const seeded = !!dialogs.seedText
+const matchCase = ref(seeded ? false : prevQuery.matchCase)
+const wholeWord = ref(seeded ? false : prevQuery.wholeWord)
+const regex = ref(seeded ? false : prevQuery.regex)
 const extended = ref(false)
 const inSelection = ref(false)
 const backward = ref(false)
@@ -321,6 +333,12 @@ const hits = ref<Hit[]>([])
 const index = ref(0)
 const hasMatches = computed(() => hits.value.length > 0)
 const regexError = ref('')
+
+/** 当前标签有没有可搜的编辑器实例（预览 / Hex / 挂载失败都没有）。 */
+const searchable = computed(() => {
+  const id = editor.activeId
+  return id != null && !!get(id)
+})
 
 const countLabel = computed(() => {
   if (!query.value) return ''
@@ -384,7 +402,7 @@ function buildRegex(): RegExp | null {
 /** 扫一遍当前标签：算出全部命中偏移。 */
 function scan() {
   const tab0 = editor.active
-  if (!tab0 || !query.value) {
+  if (!tab0 || !query.value || !searchable.value) {
     hits.value = []
     index.value = 0
     return
@@ -751,6 +769,15 @@ function highlight(r: Hit): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 不可搜视图的说明条：比灰按钮多一句「为什么」 */
+.nt-find-unavailable {
+  padding: var(--nt-sp-2) var(--nt-sp-3);
+  border-radius: var(--nt-radius-sm);
+  background: var(--nt-surface-2);
+  font-size: var(--nt-fs-label);
+  color: var(--nt-ink-muted);
 }
 
 .nt-find-mark-hint {

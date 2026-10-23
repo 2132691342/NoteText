@@ -101,8 +101,9 @@ export function useGlobalKeys() {
   const settings = useSettingsStore()
 
   function resolveId(accel: string): string | undefined {
-    // 1) 用户自定义优先。
-    const overrides = settings.config.keybindings
+    // 1) 用户自定义优先。空对象兜底：配置里缺这个字段时 Object.keys(undefined)
+    //    会抛 TypeError，整个按键分发随之失灵——表现为「所有快捷键都没反应」。
+    const overrides = settings.config.keybindings ?? {}
     const custom = Object.keys(overrides).find((k) => overrides[k] === accel)
     if (custom) return custom
 

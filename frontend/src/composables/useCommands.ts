@@ -44,6 +44,13 @@ import {
   playSteps,
 } from '@/composables/useEditorMacro'
 import {
+  quickJsonFormat,
+  quickJsonMinify,
+  quickEscape,
+  quickUnescape,
+  quickConvert,
+} from '@/composables/useQuickActions'
+import {
   columnMode,
   setColumnMode,
   insertAtColumn,
@@ -101,6 +108,15 @@ export function registerCommands() {
 
   /** 命令的作用对象：用户正在编辑的那个标签，退化为活跃标签。 */
   const targetId = () => focusedTabId() ?? editor.activeId
+
+  /**
+   * 浮窗的选区种子：预填「用户选中的文本」。
+   *
+   * 从注册表视图直接读选区而不是看 DOM 焦点——右键菜单的点击会把焦点
+   * 抢到菜单按钮上，focusedTabId() 随即变 null，选中词就丢了
+   * （表现为「选中→右键→查找」预填为空）。
+   */
+  const selectionSeed = () => getSelection(targetId() ?? -1)
 
   /** 命令层用的薄封装：真正的实现在 useCloseTab（标签栏共用同一条链路）。 */
   const saveTab = saveTabById
@@ -524,14 +540,14 @@ export function registerCommands() {
       group: 'search',
       labelKey: 'menu.find',
       key: 'Control+F',
-      run: () => dialogs.open('find', getSelection(focusedTabId() ?? -1)),
+      run: () => dialogs.open('find', selectionSeed()),
     },
     {
       id: 'edit.replace',
       group: 'search',
       labelKey: 'menu.replace',
       key: 'Control+H',
-      run: () => dialogs.open('replace', getSelection(focusedTabId() ?? -1)),
+      run: () => dialogs.open('replace', selectionSeed()),
     },
     // F3 / Shift+F3：沿用上次的查询词直接跳下一个 / 上一个命中。
     // 关掉查找浮窗后照样能用——这是主流编辑器里最常按的两个键。
@@ -919,8 +935,70 @@ export function registerCommands() {
       id: 'tools.json',
       group: 'tools',
       labelKey: 'tool.json',
+      run: () => dialogs.open('json', selectionSeed()),
+    },
+    // 一键快操作：选中即用，结果原地替换，不经浮窗。
+    // Ctrl+Shift+J 给最高频的「格式化」，浮窗（JSONPath / 转结构体）从菜单进。
+    {
+      id: 'quick.jsonFormat',
+      group: 'tools',
+      labelKey: 'quick.jsonFormat',
       key: 'Control+Shift+J',
-      run: () => dialogs.open('json', getSelection(focusedTabId() ?? -1)),
+      enabled: () => hasTab(),
+      run: () => void quickJsonFormat(targetId()),
+    },
+    {
+      id: 'quick.jsonMinify',
+      group: 'tools',
+      labelKey: 'quick.jsonMinify',
+      key: 'Control+Alt+J',
+      enabled: () => hasTab(),
+      run: () => void quickJsonMinify(targetId()),
+    },
+    {
+      id: 'quick.escape',
+      group: 'tools',
+      labelKey: 'quick.escape',
+      key: 'Control+Alt+E',
+      enabled: () => hasTab(),
+      run: () => quickEscape(targetId()),
+    },
+    {
+      id: 'quick.unescape',
+      group: 'tools',
+      labelKey: 'quick.unescape',
+      key: 'Control+Alt+U',
+      enabled: () => hasTab(),
+      run: () => quickUnescape(targetId()),
+    },
+    // 转换矩阵不占默认键位：右键菜单与选区浮条是一等入口。
+    {
+      id: 'quick.jsonToYaml',
+      group: 'tools',
+      labelKey: 'quick.jsonToYaml',
+      enabled: () => hasTab(),
+      run: () => void quickConvert(targetId(), 'json', 'yaml'),
+    },
+    {
+      id: 'quick.jsonToToml',
+      group: 'tools',
+      labelKey: 'quick.jsonToToml',
+      enabled: () => hasTab(),
+      run: () => void quickConvert(targetId(), 'json', 'toml'),
+    },
+    {
+      id: 'quick.jsonToXml',
+      group: 'tools',
+      labelKey: 'quick.jsonToXml',
+      enabled: () => hasTab(),
+      run: () => void quickConvert(targetId(), 'json', 'xml'),
+    },
+    {
+      id: 'quick.toConvert',
+      group: 'tools',
+      labelKey: 'quick.toConvert',
+      enabled: () => hasTab(),
+      run: () => dialogs.open('convert', selectionSeed()),
     },
     {
       id: 'tools.diff',
@@ -1016,7 +1094,7 @@ export function registerCommands() {
       run: () => {
         const next = !columnMode.value
         setColumnMode(next)
-        const id = focusedTabId()
+        const id = targetId()
         const v = id != null ? get(id) : undefined
         // 开列模式时把当前选区转成逐行选区，后续输入才会落在每行同列。
         if (next && v) selectLinesAsColumns(v)
@@ -1029,7 +1107,7 @@ export function registerCommands() {
       labelKey: 'menu.columnInsert',
       enabled: () => hasTab() && columnMode.value,
       run: () => {
-        const id = focusedTabId()
+        const id = targetId()
         const v = id != null ? get(id) : undefined
         if (!v) return
         const text = getSelection(id ?? -1)

@@ -4,6 +4,7 @@
 import { ref } from 'vue'
 import { doSelectRange } from '@/composables/useEditorActions'
 import { focusedTabId, get } from '@/composables/useEditorRegistry'
+import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
 import { tr } from '@/i18n'
 
@@ -25,6 +26,16 @@ export function rememberQuery(q: {
   }
 }
 
+/** 读上次查询条件（查找浮窗打开时预填用）。 */
+export function lastQueryState(): {
+  query: string
+  matchCase: boolean
+  wholeWord: boolean
+  regex: boolean
+} {
+  return { ...last.value }
+}
+
 /**
  * 按方向跳一个命中。
  *
@@ -38,7 +49,8 @@ export function stepLastQuery(dir: 1 | -1) {
     useToastStore().warn(tr('toast.noLastQuery'))
     return
   }
-  const tabId = focusedTabId()
+  // 焦点兜底：F3 按下时焦点可能在浮窗上，退回活跃标签。
+  const tabId = focusedTabId() ?? useEditorStore().activeId
   const view = tabId != null ? get(tabId) : undefined
   if (!view) return
 

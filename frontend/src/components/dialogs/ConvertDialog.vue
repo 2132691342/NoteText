@@ -38,7 +38,14 @@
         <div class="nt-conv-col">
           <div class="nt-tool-col-head">
             <span>{{ t('convert.output') }}</span>
-            <button class="nt-text-btn" @click="copyOut">{{ t('convert.copyResult') }}</button>
+            <div class="nt-conv-out-actions">
+              <button class="nt-text-btn" @click="copyOut">{{ t('convert.copyResult') }}</button>
+              <!-- 应用：有选区替换选区，没选区替换全文。转完还要手动
+                   复制粘贴回去，那是把「一步的事」拆成三步。 -->
+              <button v-if="output" class="nt-text-btn" @click="applyToEditor">
+                {{ t('common.apply') }}
+              </button>
+            </div>
           </div>
           <pre class="nt-tool-io nt-conv-out">{{ output }}</pre>
         </div>
@@ -48,43 +55,71 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton, ElOption, ElSelect } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import { useDialogStore } from '@/stores/dialogs'
+import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
-import { getText, focusedTabId } from '@/composables/useEditorRegistry'
+import { getText, get } from '@/composables/useEditorRegistry'
+import { doReplaceRange } from '@/composables/useEditorActions'
+import { convertText, type ConvertFormat } from '@/utils/formatConvert'
 import { copyText } from '@/utils'
 
 const { t } = useI18n()
 const dialogs = useDialogStore()
+const editor = useEditorStore()
 const toast = useToastStore()
 
-type Format = 'json' | 'yaml' | 'toml' | 'xml'
-
 const FORMATS = computed(() => [
-  { id: 'json' as Format, label: t('convert.json') },
-  { id: 'yaml' as Format, label: t('convert.yaml') },
-  { id: 'toml' as Format, label: t('convert.toml') },
-  { id: 'xml' as Format, label: t('convert.xml') },
+  { id: 'json' as ConvertFormat, label: t('convert.json') },
+  { id: 'yaml' as ConvertFormat, label: t('convert.yaml') },
+  { id: 'toml' as ConvertFormat, label: t('convert.toml') },
+  { id: 'xml' as ConvertFormat, label: t('convert.xml') },
 ])
 
-const from = ref<Format>('json')
-const to = ref<Format>('yaml')
-const input = ref('')
+const from = ref<ConvertFormat>('json')
+const to = ref<ConvertFormat>('yaml')
+const input = ref(dialogs.seedText)
 const output = ref('')
 const loading = ref(false)
 
+/** 应用目标：打开浮窗时的选区（右键「更多转换…」带着选中文本进来）。 */
+const targetRange = ref<{ from: number; to: number } | null>(null)
+
+onMounted(() => {
+  // 右键 / 快操作带选中文本进来：直接载入并转一次，进来就是结果。
+  if (input.value) {
+    void run()
+    return
+  }
+  const id = editor.activeId
+  if (id == null) return
+  const v = get(id)
+  if (v && getText(id).length > 0) {
+    const { from: f, to } = v.state.selection.main
+    if (f < to) targetRange.value = { from: f, to }
+    input.value = getText(id)
+    void run()
+  }
+})
+
 /** 从当前标签载入正文：转配置文件的场景里「正在编辑的那个」最常见。 */
 function loadFromEditor() {
-  const id = focusedTabId()
+  const id = editor.activeId
   const text = id != null ? getText(id) : ''
   if (!text) {
     toast.warn(t('convert.emptyInput'))
     return
   }
+  const v = id != null ? get(id) : undefined
+  if (v) {
+    const { from, to } = v.state.selection.main
+    targetRange.value = from < to ? { from, to } : null
+  }
   input.value = text
+  void run()
 }
 
 function swap() {
@@ -95,13 +130,14 @@ function swap() {
   if (output.value) {
     input.value = output.value
     output.value = ''
+    targetRange.value = null
   }
 }
 
 async function copyOut() {
   if (!output.value) return
   await copyText(output.value)
-  toast.ok(t('tool.cleared'))
+  toast.ok(t('common.copied'))
 }
 
 async function run() {
@@ -111,8 +147,7 @@ async function run() {
   }
   loading.value = true
   try {
-    const data = await parse(input.value, from.value)
-    output.value = await stringify(data, to.value)
+    output.value = await convertText(input.value, from.value, to.value)
   } catch (e) {
     output.value = ''
     toast.bad(t('convert.parseFailed', { reason: (e as Error).message }))
@@ -121,49 +156,20 @@ async function run() {
   }
 }
 
-// ---- 四种格式的解析 / 序列化 ----
-
-/** 解析成普通 JS 对象：XML 的标签名即键，属性以 @ 前缀挂在节点上。 */
-async function parse(text: string, fmt: Format): Promise<unknown> {
-  if (fmt === 'json') return JSON.parse(text)
-  if (fmt === 'yaml') {
-    const { load } = await import('js-yaml')
-    return load(text)
+/** 把结果写回编辑器：有选区替换选区，没选区替换全文。
+ *  用活跃标签而不是「聚焦的」——浮窗按钮正握着焦点。 */
+function applyToEditor() {
+  const id = editor.activeId
+  if (id == null || !output.value) return
+  const v = get(id)
+  const range = targetRange.value
+  if (range && v) {
+    const len = v.state.doc.length
+    doReplaceRange(id, Math.min(range.from, len), Math.min(range.to, len), output.value)
+  } else if (v) {
+    doReplaceRange(id, 0, v.state.doc.length, output.value)
   }
-  if (fmt === 'toml') {
-    const TOML = await import('@iarna/toml')
-    return TOML.parse(text)
-  }
-  const { XMLParser } = await import('fast-xml-parser')
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    // 数字 / 布尔自动转型：配置里 <port>8080</port> 该是数字不是字符串。
-    parseTagValue: true,
-    parseAttributeValue: true,
-    trimValues: true,
-  })
-  return parser.parse(text)
-}
-
-/** 序列化：统一 2 空格缩进，便于 diff。 */
-async function stringify(data: unknown, fmt: Format): Promise<string> {
-  if (fmt === 'json') return JSON.stringify(data, null, 2)
-  if (fmt === 'yaml') {
-    const { dump } = await import('js-yaml')
-    return dump(data, { indent: 2, lineWidth: 120, noRefs: true })
-  }
-  if (fmt === 'toml') {
-    const TOML = await import('@iarna/toml')
-    return TOML.stringify(data as never)
-  }
-  const { XMLBuilder } = await import('fast-xml-parser')
-  return new XMLBuilder({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    format: true,
-    indentBy: '  ',
-  }).build(data as never)
+  dialogs.close()
 }
 </script>
 
@@ -211,6 +217,17 @@ async function stringify(data: unknown, fmt: Format): Promise<string> {
 }
 
 .nt-conv-load {
+  height: auto;
+  font-size: var(--nt-fs-hint);
+}
+
+.nt-conv-out-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-2);
+}
+
+.nt-conv-out-actions .nt-text-btn {
   height: auto;
   font-size: var(--nt-fs-hint);
 }

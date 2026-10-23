@@ -1,7 +1,23 @@
 // CodeMirror 容器：一个标签一个实例，切换标签不销毁。
 // 各关注点一个 compartment，运行时切换走 reconfigure；脏标记按
 <template>
-  <div ref="host" class="nt-code-editor" @contextmenu="onContextMenu" />
+  <div ref="host" class="nt-code-editor" @contextmenu="onContextMenu">
+    <div v-if="mountError" class="nt-mount-error">
+      <span class="nt-mount-error-title">{{ tr('editor.openFailedTitle') }}</span>
+      <span class="nt-mount-error-detail">{{ mountError }}</span>
+    </div>
+  </div>
+  <!-- 选区浮条：fixed 定位贴选区起点上方（coordsAtPos 给的是视口坐标） -->
+  <div
+    v-if="selBar"
+    class="nt-sel-bar"
+    :style="{ left: `${Math.max(selBar.x, 8)}px`, top: `${Math.max(selBar.y, 8)}px` }"
+    @mousedown.prevent
+  >
+    <button v-for="it in selBarItems" :key="it.label" class="nt-sel-bar-btn" @click="it.run()">
+      {{ it.label }}
+    </button>
+  </div>
   <ContextMenu
     v-if="menu"
     :x="menu.x"
@@ -76,7 +92,6 @@ import {
   doDeleteLine,
   doDuplicateLine,
   doMoveLine,
-  doIndent,
   doSelectLine,
   doDeleteSelection,
   doCaseTransform,
@@ -106,6 +121,14 @@ import { guideExtensions } from '@/composables/useEditorGuides'
 import { recordJump } from '@/composables/useNavHistory'
 import { recordDocChange } from '@/composables/useEditorMacro'
 import { pushClip } from '@/composables/useClipboardHistory'
+import {
+  quickJsonFormat,
+  quickJsonMinify,
+  quickEscape,
+  quickUnescape,
+  quickConvert,
+  quickCase,
+} from '@/composables/useQuickActions'
 
 const props = defineProps<{ tab: Tab; viewId?: 'main' | 'second'; readonly?: boolean }>()
 
@@ -182,6 +205,9 @@ const tr = (k: string, n: Record<string, unknown> = {}) => i18n.global.t(k, n)
 
 /** 右键菜单位置：null = 不显示。 */
 const menu = ref<{ x: number; y: number } | null>(null)
+/** 打开菜单那一刻的条目快照：选区不是响应式状态，computed 会缓存
+ *  过期的 hasSel（表现为「选中了却不出快操作段」），必须现算现用。 */
+const menuItems = ref<MenuItem[]>([])
 
 const host = ref<HTMLElement | null>(null)
 
@@ -206,6 +232,40 @@ const bookmarkComp = new Compartment()
 const marksComp = new Compartment()
 
 let view: EditorView | null = null
+
+/** 挂载失败的原因（文件读不了 / 会话恢复了已被删除的文件）。
+ *  非空时这个标签没有编辑器实例——查找、保存等命令会全部静默失效，
+ *  必须把「为什么是空的」画在界面上，而不是留一张空白标签。 */
+const mountError = ref('')
+
+/** 选区浮条：选中即出现，常用操作一步执行。 */
+const selBar = ref<{ x: number; y: number } | null>(null)
+
+/** 按当前选区更新浮条位置；空选区收起。 */
+function refreshSelBar(v: EditorView) {
+  const { from, to } = v.state.selection.main
+  if (from >= to || props.readonly) {
+    selBar.value = null
+    return
+  }
+  // 长选区贴起点上方：终点可能在视口外，贴终点会「浮条满屏跳」。
+  const head = v.coordsAtPos(from)
+  if (!head) {
+    selBar.value = null
+    return
+  }
+  selBar.value = { x: head.left, y: head.top - 34 }
+}
+
+/** 浮条按钮组：只放一步就能完成的动作，多步的走「更多」浮窗。 */
+const selBarItems = computed(() => [
+  { label: tr('quick.jsonFormat'), run: () => void quickJsonFormat(props.tab.id) },
+  { label: tr('quick.jsonMinify'), run: () => void quickJsonMinify(props.tab.id) },
+  { label: tr('quick.jsonToYaml'), run: () => void quickConvert(props.tab.id, 'json', 'yaml') },
+  { label: tr('menu.caseUpper'), run: () => quickCase(props.tab.id, 'upper') },
+  { label: tr('menu.caseLower'), run: () => quickCase(props.tab.id, 'lower') },
+  { label: tr('menu.find'), run: () => commands.run('edit.find') },
+])
 
 const cfg = () => settings.config.editor
 
@@ -279,7 +339,9 @@ onMounted(async () => {
       props.tab.has_bom = c.has_bom
       props.tab.encoding_uncertain = c.truncated && c.encoding !== 'utf-8'
     } catch (e) {
-      toast.bad(tr('toast.openFailed', { reason: normalizeErr(e) }))
+      // 读不了（文件被删 / 被独占）：画出错误面，不建编辑器。
+      // 静默留一张空白标签的后果是查找、保存全部「按了没反应」。
+      mountError.value = normalizeErr(e)
       return
     }
   }
@@ -350,6 +412,9 @@ onBeforeUnmount(() => {
 /** 一次文档变更：脏标记、光标、撤销可用性、宏录制。 */
 function onUpdate(vu: ViewUpdate) {
   if (vu.docChanged) {
+    // 正文变了选区一定也变了：浮条位置要跟着正文重算，
+    // 而下面 docChanged 分支会提前 return，所以这里先刷新。
+    refreshSelBar(vu.view)
     // 正文版本号：让「跟着正文走」的消费方（Markdown 预览）能感知变化。
     bumpDocVersion(props.tab.id)
     // 宏录制：把插入的文本收成一步。
@@ -368,6 +433,7 @@ function onUpdate(vu: ViewUpdate) {
   }
   if (vu.selectionSet) {
     emitCursor(vu.state)
+    refreshSelBar(vu.view)
     // 跳转历史：位移超阈值才记，否则打字与方向键微调会把栈撑爆。
     // 只在主视图记：分屏第二视图是只读的，用户不会在它里面跳转。
     if (props.viewId !== 'second') {
@@ -613,11 +679,14 @@ function onKeyFallback(e: KeyboardEvent) {
  */
 function onContextMenu(e: MouseEvent) {
   e.preventDefault()
+  menuItems.value = buildMenuItems()
   menu.value = { x: e.clientX, y: e.clientY }
 }
 
-/** 菜单项：每次打开时按当前状态算（有选区 / 是否只读）。 */
-const menuItems = computed<MenuItem[]>(() => {
+/** 菜单条目：每次打开时现算（有选区 / 是否只读）。
+ *  顺序就是使用频率：剪贴板 → 选中快操作 → 查找 → 注释与大小写 →
+ *  行操作 → 书签行操作（低频，沉底）。 */
+function buildMenuItems(): MenuItem[] {
   const v = viewOf(props.tab.id)
   const hasSel = v ? !v.state.selection.main.empty : false
   const ro = props.readonly || props.tab.read_only
@@ -673,15 +742,109 @@ const menuItems = computed<MenuItem[]>(() => {
         commands.run('edit.paste')
       },
     },
-    { sep: true },
     {
       label: tr('menu.selectAll'),
       hint: 'Ctrl+A',
       run: () => doSelectAll(id),
     },
+    { sep: true },
+    // 选中快操作：一步完成，结果原地替换选区。
+    ...(hasSel
+      ? ([
+          {
+            label: tr('quick.jsonFormat'),
+            hint: 'Ctrl+Shift+J',
+            disabled: ro,
+            run: () => void quickJsonFormat(id),
+          },
+          {
+            label: tr('quick.jsonMinify'),
+            hint: 'Ctrl+Alt+J',
+            disabled: ro,
+            run: () => void quickJsonMinify(id),
+          },
+          {
+            label: tr('quick.escape'),
+            hint: 'Ctrl+Alt+E',
+            disabled: ro,
+            run: () => quickEscape(id),
+          },
+          {
+            label: tr('quick.unescape'),
+            hint: 'Ctrl+Alt+U',
+            disabled: ro,
+            run: () => quickUnescape(id),
+          },
+          {
+            label: tr('quick.jsonToYaml'),
+            disabled: ro,
+            run: () => void quickConvert(id, 'json', 'yaml'),
+          },
+          {
+            label: tr('quick.jsonToToml'),
+            disabled: ro,
+            run: () => void quickConvert(id, 'json', 'toml'),
+          },
+          {
+            label: tr('quick.jsonToXml'),
+            disabled: ro,
+            run: () => void quickConvert(id, 'json', 'xml'),
+          },
+          {
+            label: tr('quick.toConvert'),
+            disabled: ro,
+            run: () => commands.run('quick.toConvert'),
+          },
+          { sep: true },
+        ] as MenuItem[])
+      : []),
     {
-      label: tr('menu.selectLine'),
-      run: () => doSelectLine(id),
+      label: tr('menu.find'),
+      hint: 'Ctrl+F',
+      run: () => commands.run('edit.find'),
+    },
+    {
+      label: tr('menu.replace'),
+      hint: 'Ctrl+H',
+      run: () => commands.run('edit.replace'),
+    },
+    {
+      label: tr('menu.gotoLine'),
+      hint: 'Ctrl+G',
+      run: () => dialogs.open('gotoLine'),
+    },
+    { sep: true },
+    {
+      label: tr('menu.toggleComment'),
+      hint: 'Ctrl+/',
+      disabled: ro,
+      run: () => commands.run('edit.toggleComment'),
+    },
+    {
+      label: tr('menu.caseUpper'),
+      hint: 'Ctrl+Shift+U',
+      disabled: ro,
+      run: () => {
+        doCaseTransform(id, 'upper')
+        toast.ok(tr('toast.caseDone'))
+      },
+    },
+    {
+      label: tr('menu.caseLower'),
+      hint: 'Ctrl+Shift+G',
+      disabled: ro,
+      run: () => {
+        doCaseTransform(id, 'lower')
+        toast.ok(tr('toast.caseDone'))
+      },
+    },
+    {
+      label: tr('menu.caseTitle'),
+      disabled: ro,
+      run: () => {
+        doCaseTransform(id, 'title')
+        toast.ok(tr('toast.caseDone'))
+      },
     },
     { sep: true },
     {
@@ -708,68 +871,16 @@ const menuItems = computed<MenuItem[]>(() => {
       disabled: ro,
       run: () => doMoveLine(id, 'down'),
     },
-    { sep: true },
     {
-      label: tr('menu.indent'),
-      hint: 'Ctrl+]',
-      disabled: ro,
-      run: () => doIndent(id, false),
-    },
-    {
-      label: tr('menu.outdent'),
-      hint: 'Ctrl+[',
-      disabled: ro,
-      run: () => doIndent(id, true),
-    },
-    {
-      label: tr('menu.toggleComment'),
-      hint: 'Ctrl+/',
-      disabled: ro,
-      run: () => commands.run('edit.toggleComment'),
+      label: tr('menu.selectLine'),
+      run: () => doSelectLine(id),
     },
     { sep: true },
-    {
-      label: tr('menu.find'),
-      hint: 'Ctrl+F',
-      run: () => commands.run('edit.find'),
-    },
-    {
-      label: tr('menu.gotoLine'),
-      hint: 'Ctrl+G',
-      run: () => dialogs.open('gotoLine'),
-    },
     {
       label: tr('menu.toggleBookmark'),
       hint: 'F2',
       disabled: !props.tab.path,
       run: () => commands.run('bookmark.toggle'),
-    },
-    { sep: true },
-    {
-      label: tr('menu.caseUpper'),
-      hint: 'Ctrl+Shift+U',
-      disabled: ro,
-      run: () => {
-        doCaseTransform(id, 'upper')
-        toast.ok(tr('toast.caseDone'))
-      },
-    },
-    {
-      label: tr('menu.caseLower'),
-      hint: 'Ctrl+Shift+L',
-      disabled: ro,
-      run: () => {
-        doCaseTransform(id, 'lower')
-        toast.ok(tr('toast.caseDone'))
-      },
-    },
-    {
-      label: tr('menu.caseTitle'),
-      disabled: ro,
-      run: () => {
-        doCaseTransform(id, 'title')
-        toast.ok(tr('toast.caseDone'))
-      },
     },
     { sep: true },
     {
@@ -797,7 +908,6 @@ const menuItems = computed<MenuItem[]>(() => {
       disabled: ro,
       run: () => doTrimTrailing(id),
     },
-    { sep: true },
     {
       label: tr('menu.tabToSpaces'),
       disabled: ro,
@@ -845,7 +955,7 @@ const menuItems = computed<MenuItem[]>(() => {
       run: () => doClearMarks(),
     },
   ]
-})
+}
 
 /** 当前标记颜色档：右键「标记」用它，5 色轮换。 */
 const currentMarkColor = ref<MarkColor>(1)
@@ -964,5 +1074,75 @@ if (marksRendererMine.value) {
 /* 只读视图：光标不闪，但保留选中 */
 .nt-code-editor :deep(.cm-readOnly .cm-cursor) {
   display: none;
+}
+
+/* 挂载失败：标签还在，但要画清「为什么是空的」 */
+.nt-mount-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nt-sp-2);
+  height: 100%;
+  padding: var(--nt-sp-6);
+}
+
+.nt-mount-error-title {
+  font-size: var(--nt-fs-md);
+  font-weight: 600;
+  color: var(--nt-ink-2);
+}
+
+.nt-mount-error-detail {
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink-muted);
+  max-width: 480px;
+  text-align: center;
+  word-break: break-all;
+}
+
+/* 选区浮条：贴选区上方的一步操作条。出现 / 收起都要有过渡，
+   突然弹出会打断选词的视线。 */
+.nt-sel-bar {
+  position: fixed;
+  z-index: var(--nt-z-pop);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--nt-elev-raised);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-sm);
+  box-shadow: var(--nt-card-shadow);
+  animation: nt-sel-bar-in var(--nt-dur-fast) var(--nt-ease);
+}
+
+@keyframes nt-sel-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.nt-sel-bar-btn {
+  height: var(--nt-ctl-h-sm);
+  padding: 0 var(--nt-sp-2);
+  border-radius: var(--nt-radius-xs);
+  font-size: var(--nt-fs-label);
+  color: var(--nt-ink-2);
+  white-space: nowrap;
+  transition:
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    color var(--nt-dur-fast) var(--nt-ease),
+    transform var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-sel-bar-btn:hover {
+  color: var(--nt-ink);
+  background: var(--nt-surface-hover);
+  transform: scale(1.06);
+}
+
+.nt-sel-bar-btn:active {
+  transform: scale(0.92);
 }
 </style>
