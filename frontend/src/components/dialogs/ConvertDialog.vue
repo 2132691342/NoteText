@@ -1,15 +1,10 @@
 // 格式转换浮窗：JSON / YAML / TOML / XML 互转。
-//
 // 为什么在前端做而不是后端：这四种格式在配置文件场景里都是小文档
-// （几 KB 到几十 KB），走一趟 IPC 反而慢；而且转换失败时要立刻在
-// 输入框旁边给行列号，前端算完直接定位，不用等往返。
-//
-// 解析库全部动态 import：只转 JSON 的人不该付 YAML/TOML/XML 的加载代价。
 
 <template>
   <NtModal :title="t('convert.title')" width="720" @close="dialogs.close()">
     <div class="nt-conv">
-      <div class="nt-conv-bar">
+      <div class="nt-field nt-conv-bar">
         <span class="nt-label">{{ t('convert.from') }}</span>
         <ElSelect v-model="from" size="small" class="nt-conv-sel">
           <ElOption v-for="f in FORMATS" :key="f.id" :value="f.id" :label="f.label" />

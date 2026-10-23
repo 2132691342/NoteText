@@ -1,5 +1,4 @@
 //! 统一错误类型：所有跨 invoke 边界的错误都由它承载。
-//!
 //! 码值是数字字符串而非 int；段位见 docs/ERROR-CODES.md。
 
 use serde::{Deserialize, Serialize};

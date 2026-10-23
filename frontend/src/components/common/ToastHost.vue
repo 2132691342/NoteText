@@ -1,5 +1,4 @@
 // 轻提示宿主：右下角堆叠，可选中复制，悬停不计时。
-//
 // 与 ElMessage 的分工见 stores/toast.ts：这里只负责渲染与交互。
 <template>
   <Teleport to="body">

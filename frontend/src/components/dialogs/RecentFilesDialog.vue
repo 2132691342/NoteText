@@ -1,7 +1,5 @@
 // 最近文件浮窗：后端一直有记录，之前没有入口。
-//
 // 只做三件事：列出来、点开、钉住。删除与清空放在行内右键——
-// 最近文件是「顺手的入口」，不该让用户为它学一套编辑操作。
 <template>
   <NtModal :title="t('menu.recentFiles')" width="640" @close="emit('close')">
     <div v-if="loading" class="nt-empty">

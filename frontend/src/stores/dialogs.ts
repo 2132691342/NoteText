@@ -1,7 +1,5 @@
 // 工具箱与浮窗的状态：当前打开的是哪个、传给它的初始文本。
-//
 // 为什么用 store 而不是各处 ref：工具栏、菜单、快捷键、右键菜单都要能开浮窗，
-// 而浮窗本体挂在 EditorView 的最外层。中间隔了编辑器滚动容器，
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -27,6 +25,7 @@ export type DialogKind =
   | 'dirDiff'
   | 'colorPicker'
   | 'logViewer'
+  | 'drafts'
 
 export const useDialogStore = defineStore('dialogs', () => {
   const active = ref<DialogKind | null>(null)

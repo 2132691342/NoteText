@@ -1,7 +1,5 @@
 // 设置面板：关于（版本 / 数据目录 / 备份导入导出）。
-//
 // 备份包含书签 / 片段 / 宏 / 草稿 / 最近文件——用户自己攒的资产。
-// 不含 settings：那是本机偏好，换机器不一定要带。
 <template>
   <div class="nt-set">
     <section class="nt-set-section">

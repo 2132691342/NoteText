@@ -45,9 +45,10 @@ function Invoke-Step {
 }
 
 if ($List) {
-    Get-ChildItem -Path 'src-tauri/tests' -Filter '*_chain.rs' | Sort-Object Name | ForEach-Object {
+    Get-ChildItem -Path 'src-tauri/tests' -Filter '*.rs' | Sort-Object Name | ForEach-Object {
         Write-Host $_.Name -ForegroundColor Cyan
-        Get-Content $_.FullName | Select-String -Pattern '^fn (test_\w+)\(' |
+        Get-Content $_.FullName | Select-String -Pattern '^fn (\w+)\(' |
+            Where-Object { $_.Matches[0].Groups[1].Value -notin @('setup', 'tools') } |
             ForEach-Object { '  {0}' -f $_.Matches[0].Groups[1].Value }
     }
     exit 0
@@ -59,6 +60,10 @@ if ($Full) {
             Push-Location frontend
             try { npm ci } finally { Pop-Location }
         }
+    }
+    # i18n 审计放在构建之前：缺 key 与裸中文都是编译期抓不到的
+    Invoke-Step 'i18n audit' {
+        node scripts/i18n-audit.mjs
     }
     Invoke-Step 'frontend build' {
         Push-Location frontend

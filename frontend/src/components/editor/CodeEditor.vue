@@ -1,7 +1,5 @@
 // CodeMirror 容器：一个标签一个实例，切换标签不销毁。
-//
 // 各关注点一个 compartment，运行时切换走 reconfigure；脏标记按
-// 「与载入时的快照不同」判——用户改了又改回来，标签该是干净的。
 <template>
   <div ref="host" class="nt-code-editor" @contextmenu="onContextMenu" />
   <ContextMenu
@@ -68,7 +66,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
 import { api } from '@/api'
 import { useToastStore } from '@/stores/toast'
-import { register, unregister, isDirty, getSelection } from '@/composables/useEditorRegistry'
+import { register, unregister, isDirty, getSelection, bumpDocVersion } from '@/composables/useEditorRegistry'
 import ContextMenu from '@/components/common/ContextMenu.vue'
 import type { MenuItem } from '@/components/common/contextMenu'
 import {
@@ -104,6 +102,8 @@ import { copyText, readClipboard } from '@/utils'
 import { i18n } from '@/i18n'
 import { useEditorTheme } from '@/composables/useEditorTheme'
 import { useEditorLanguage } from '@/composables/useEditorLanguage'
+import { guideExtensions } from '@/composables/useEditorGuides'
+import { recordJump } from '@/composables/useNavHistory'
 import { recordDocChange } from '@/composables/useEditorMacro'
 import { pushClip } from '@/composables/useClipboardHistory'
 
@@ -196,7 +196,9 @@ const foldComp = new Compartment()
 const activeLineComp = new Compartment()
 const bracketComp = new Compartment()
 const whitespaceComp = new Compartment()
-const gutterComp = new Compartment()
+// 视觉辅助三件：缩进参考线 / 括号配对着色 / 行尾标记。
+// 三者都是「看法」，合成一个 compartment 整体 reconfigure。
+const guidesComp = new Compartment()
 // 书签 gutter：行号左侧一列点。状态存在视图里（不进 store：书签是
 // 「这个文件在这个位置有个标记」，与标签元数据无关）。
 const bookmarkComp = new Compartment()
@@ -298,7 +300,7 @@ onMounted(async () => {
       foldComp.of(cfg().fold_gutter ? foldGutter() : []),
       bookmarkComp.of(bookmarkGutter()),
       marksComp.of(markExtension(allMarkWords())),
-      gutterComp.of(cfg().indent_guides ? [] : []),
+      guidesComp.of(guideExtensions(cfg())),
       whitespaceComp.of(
         cfg().show_whitespace ? highlightWhitespace() : placeholder(''),
       ),
@@ -348,6 +350,8 @@ onBeforeUnmount(() => {
 /** 一次文档变更：脏标记、光标、撤销可用性、宏录制。 */
 function onUpdate(vu: ViewUpdate) {
   if (vu.docChanged) {
+    // 正文版本号：让「跟着正文走」的消费方（Markdown 预览）能感知变化。
+    bumpDocVersion(props.tab.id)
     // 宏录制：把插入的文本收成一步。
     let inserted = ''
     vu.changes.iterChanges((_fromA, _toA, _fromB, _toB, ins) => {
@@ -364,6 +368,13 @@ function onUpdate(vu: ViewUpdate) {
   }
   if (vu.selectionSet) {
     emitCursor(vu.state)
+    // 跳转历史：位移超阈值才记，否则打字与方向键微调会把栈撑爆。
+    // 只在主视图记：分屏第二视图是只读的，用户不会在它里面跳转。
+    if (props.viewId !== 'second') {
+      const prevHead = vu.startState.selection.main.head
+      const head = vu.state.selection.main.head
+      recordJump(props.tab.id, prevHead, head)
+    }
     return
   }
   if (vu.viewportChanged && props.viewId !== 'second') {
@@ -436,6 +447,10 @@ watch(() => cfg().show_whitespace, (v) =>
   view?.dispatch({
     effects: whitespaceComp.reconfigure(v ? highlightWhitespace() : placeholder('')),
   }),
+)
+watch(
+  () => [cfg().indent_guides, cfg().bracket_pair_colors, cfg().show_eol],
+  () => view?.dispatch({ effects: guidesComp.reconfigure(guideExtensions(cfg())) }),
 )
 watch(() => props.tab.language, () => {
   void loadLanguage().then((ext) => {

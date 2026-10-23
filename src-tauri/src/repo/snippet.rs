@@ -1,5 +1,4 @@
 //! 代码片段持久化。
-//!
 //! 列表查询不取 content，避免把几十个模板全文拉过 IPC。
 
 use rusqlite::{params, Connection, OptionalExtension};

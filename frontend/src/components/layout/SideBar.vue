@@ -1,5 +1,4 @@
 // 侧栏：五个面板的容器（文件树 / 书签 / 片段 / 函数 / 监控）。
-//
 // 宽度可拖拽：上限与下限在 CSS 变量里，拖拽只改内联宽度。
 <template>
   <div class="nt-sidebar" :style="{ width: `${ui.sidebar_width}px` }">

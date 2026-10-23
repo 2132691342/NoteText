@@ -1,11 +1,5 @@
 // Markdown 三态：编辑 / 分屏 / 预览。
-//
 // 与 DocPreview 的分工：DocPreview 是「点开一个文件先看看内容」，
-// 这里是「要改这个 .md」。编辑态就是普通 CodeEditor（复用它的撤销历史、
-// 快捷键、右键菜单），预览态走 composables/useMarkdown。
-//
-// 预览渲染时机：源文本变 → 重渲染 HTML → nextTick 后画图与公式。
-// 三步异步，所以用 token 防止「旧文本的图覆盖新文本的图」。
 
 <template>
   <div class="nt-md">
@@ -43,7 +37,7 @@ import { useMarkdown } from '@/composables/useMarkdown'
 import { useSettingsStore } from '@/stores/settings'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
-import { getText } from '@/composables/useEditorRegistry'
+import { getText, docVersionOf } from '@/composables/useEditorRegistry'
 import { baseName } from '@/utils'
 import type { Tab } from '@/stores/editor'
 
@@ -62,8 +56,16 @@ const exporting = ref(false)
 
 const name = computed(() => baseName(props.path))
 
-/** 源文本：从编辑器注册表拿，不往 store 里存正文（AGENTS.md §1.2）。 */
-const source = computed(() => getText(props.tab.id))
+/**
+ * 源文本：从编辑器注册表拿，不往 store 里存正文（AGENTS.md §1.2）。
+ *
+ * `docVersionOf` 是必需的依赖：注册表是普通 Map，只读 getText 的话
+ * computed 求值一次拿到 '' 就再不失效，预览会永远停在空态。
+ */
+const source = computed(() => {
+  docVersionOf(props.tab.id)
+  return getText(props.tab.id)
+})
 
 md.setDark(settings.resolvedTheme === 'dark')
 
@@ -73,6 +75,12 @@ let renderToken = 0
 async function render() {
   const token = ++renderToken
   const text = source.value
+  // 预览容器可能还没挂上（切模式后首帧）：等一个 nextTick 再取，
+  // 取不到就整轮作废——不能写成静默 return，那会让预览永远空着。
+  if (!preview.value) {
+    await nextTick()
+    if (token !== renderToken) return
+  }
   if (!preview.value) return
   if (!text.trim()) {
     preview.value.innerHTML = `<p class="nt-md-empty">${t('markdown.previewEmpty')}</p>`
@@ -220,6 +228,12 @@ ${body}
   background: var(--nt-editor-bg);
   font-size: var(--nt-fs-md);
   line-height: var(--nt-lh-base);
+  user-select: text;
+}
+
+/* 正文栏宽封顶：满屏宽的行长读起来眼睛要横扫，预览按 72~80 字符排。 */
+.nt-md-preview > * {
+  max-width: 76ch;
 }
 
 .nt-md-empty {

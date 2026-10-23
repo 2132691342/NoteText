@@ -1,5 +1,4 @@
 //! 草稿持久化：新建未保存标签的正文暂存。
-//!
 //! 上限 2MB；超限不存也不能拖垮会话恢复。
 
 use rusqlite::{params, Connection, OptionalExtension};

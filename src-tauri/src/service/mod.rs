@@ -1,5 +1,4 @@
 //! 业务编排层：事务边界所在。
-//!
 //! service 不 import commands 与 tauri，也不知道窗口与托盘的存在。
 
 pub mod batch;

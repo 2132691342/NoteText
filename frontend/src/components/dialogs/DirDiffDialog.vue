@@ -1,13 +1,10 @@
 // 目录对比浮窗：递归比两个文件夹，按「仅左 / 仅右 / 内容不同 / 相同」分类。
-//
 // 后端 `dir_diff` 已经做了递归比较，这里只负责选目录、展示、跳转。
-// 展示用扁平列表 + 状态标记而不是树：比的是「差异」，树会把
-// 大量相同的目录也铺开，用户要在一屏里看完差异。
 
 <template>
   <NtModal :title="t('dirDiff.title')" width="760" @close="dialogs.close()">
     <div class="nt-dd">
-      <div class="nt-dd-bar">
+      <div class="nt-field nt-dd-bar">
         <span class="nt-label">{{ t('dirDiff.left') }}</span>
         <ElInput :model-value="left" size="small" readonly class="nt-dd-path" />
         <ElButton size="small" @click="pick('left')">{{ t('dirDiff.pickLeft') }}</elButton>
@@ -158,17 +155,6 @@ function openSide(e: DirDiffEntryVO) {
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-
-.nt-dd-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-2);
-  width: 100%;
-  padding: var(--nt-sp-1) var(--nt-sp-2);
-  border-radius: var(--nt-radius-xs);
-  font-size: var(--nt-fs-sm);
-  text-align: left;
 }
 
 /* 四态用语义色的文字而不是底色：一屏几十行铺底色会花 */

@@ -215,6 +215,55 @@
 }
 
 /* ============================================================
+   表单栅格：字段名 + 控件
+   ============================================================
+   以前每个浮窗各自写一份 .nt-label，min-width 分成 3.5 / 4 / 4.5 / 5em 四档，
+   同一行「查找」两个字对不齐、输入框长短不一。这里收口成一组，
+   标签列等宽、控件行等高，栅格才对得上。 */
+.nt-field {
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-3);
+}
+
+/* 标签列：固定列宽，跟随字号缩放。四档里最长的是「替换为」这类五字文案，
+   按 5.5em 定，短文案留白而不是让控件参差。 */
+.nt-label {
+  flex: none;
+  width: calc(5.5em * var(--nt-fs-scale));
+  font-size: var(--nt-fs-label);
+  font-weight: 600;
+  color: var(--nt-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 控件行：撑满标签剩下的宽度，输入框之间就不会长短不一。 */
+.nt-field-control {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 控件行内并排的按钮/读数：不参与拉伸。 */
+.nt-field-fixed {
+  flex: none;
+}
+
+/* 行内控件撑满标签剩下的宽度，并与密集界面的高度刻度对齐。
+   用 :where 保持 0 特异性：浮窗里要给某个控件定宽（如取色器的色板）
+   时，本地规则能直接盖过去，不必写 !important。 */
+.nt-field > :where(.el-input, .el-select, .el-input-number, .nt-field-control) {
+  flex: 1;
+  min-width: 0;
+}
+
+.nt-field :where(.el-input__wrapper, .el-select__wrapper) {
+  min-height: var(--nt-ctl-h);
+  padding: 0 var(--nt-sp-2);
+}
+
+/* ============================================================
    文件树
    ============================================================ */
 .nt-tree {
@@ -324,10 +373,22 @@
   写在 content.css（全局）而不是组件 scoped：装饰由 ViewPlugin 生成，
   元素挂在编辑器内部，scoped 选择器加不到 data 属性上去。
 */
+/* 5 色标记：用下划色做色板主色，底色只做淡色衬底。
+   --nt-mark-line-* 给「标记全部」弹窗的色板取色用：那里的色点要跟
+   编辑器里实际看到的标记色一致，所以主色取描边那一档。 */
 .nt-mark {
   border-radius: 2px;
   padding: 0 1px;
 }
+
+:root {
+  --nt-mark-line-1: var(--nt-danger);
+  --nt-mark-line-2: var(--nt-warning);
+  --nt-mark-line-3: var(--nt-success);
+  --nt-mark-line-4: var(--nt-primary);
+  --nt-mark-line-5: var(--nt-ink-3);
+}
+
 .nt-mark-1 {
   background: var(--nt-danger-bg);
   box-shadow: inset 0 -2px 0 var(--nt-danger);
@@ -347,6 +408,41 @@
 .nt-mark-5 {
   background: var(--nt-elev-selected);
   box-shadow: inset 0 -2px 0 var(--nt-ink-3);
+}
+
+/* 列块模式（Alt+X）：光标变十字 */
+/* ============================================================
+   编辑器视觉辅助：缩进参考线 / 括号配对着色 / 行尾标记
+   ============================================================
+   三个都由 useEditorGuides 的装饰挂类名，这里只给样式。
+   参考线是零宽挂件：1px 竖线 + 负 margin 拉回原位，不占宽度也不遮光标。 */
+.nt-indent-guide {
+  display: inline-block;
+  width: 0;
+  border-left: 1px solid var(--nt-border);
+  margin-left: -1px;
+  vertical-align: bottom;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 括号配对：同一对同色，嵌套越深换档。
+   用 data-* 图表色：编辑器里没有别的用途会跟它撞。 */
+.nt-bracket-1 { color: var(--nt-ch-1); }
+.nt-bracket-2 { color: var(--nt-ch-2); }
+.nt-bracket-3 { color: var(--nt-success); }
+.nt-bracket-4 { color: var(--nt-warning); }
+.nt-bracket-5 { color: var(--nt-ch-3); }
+
+/* 行尾标记：只做视觉提示，不参与布局。 */
+.nt-eol-mark {
+  display: inline-block;
+  color: var(--nt-ink-muted);
+  opacity: 0.55;
+  font-size: 0.85em;
+  padding: 0 1px;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* 列块模式（Alt+X）：光标变十字 */
@@ -1033,6 +1129,63 @@
 .nt-md-preview img {
   max-width: 100%;
   border-radius: var(--nt-radius-sm);
+}
+
+/* 代码块高亮：hljs 只产出 .hljs-* class，配色自己给。
+   不引 hljs 自带主题：那些写死色值，深浅两套要维护两份。
+   这里全部走 --nt-* 令牌，与编辑器语法高亮同一组语义色。 */
+.nt-md-preview .hljs-comment,
+.nt-md-preview .hljs-quote {
+  color: var(--nt-ink-muted);
+  font-style: italic;
+}
+
+.nt-md-preview .hljs-keyword,
+.nt-md-preview .hljs-selector-tag,
+.nt-md-preview .hljs-literal,
+.nt-md-preview .hljs-section,
+.nt-md-preview .hljs-name {
+  color: var(--nt-primary);
+}
+
+.nt-md-preview .hljs-string,
+.nt-md-preview .hljs-regexp,
+.nt-md-preview .hljs-addition,
+.nt-md-preview .hljs-attribute,
+.nt-md-preview .hljs-meta .hljs-string {
+  color: var(--nt-success);
+}
+
+.nt-md-preview .hljs-number,
+.nt-md-preview .hljs-symbol,
+.nt-md-preview .hljs-bullet,
+.nt-md-preview .hljs-params,
+.nt-md-preview .hljs-variable {
+  color: var(--nt-warning);
+}
+
+.nt-md-preview .hljs-title,
+.nt-md-preview .hljs-class .hljs-title,
+.nt-md-preview .hljs-type {
+  color: var(--nt-ch-1);
+}
+
+.nt-md-preview .hljs-built_in,
+.nt-md-preview .hljs-builtin-name,
+.nt-md-preview .hljs-tag {
+  color: var(--nt-ch-2);
+}
+
+.nt-md-preview .hljs-deletion {
+  color: var(--nt-danger);
+}
+
+.nt-md-preview .hljs-emphasis {
+  font-style: italic;
+}
+
+.nt-md-preview .hljs-strong {
+  font-weight: 600;
 }
 
 /* Mermaid 图：居中，失败时退回源码并给危险色 */

@@ -132,6 +132,42 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 `--nt-fs-scale`（缩放）、`--nt-vw-scale`（视口比例）都是算出来的，
 只写 CSS 变量，不进配置。
 
+## 国际化层
+
+中文默认 + 英文，两套文案同构（584 个 key）。三种入口，职责不同：
+
+| 入口 | 用在 | 怎么拿 |
+|---|---|---|
+| `useI18n()` 的 `t` | 组件模板与组件脚本 | 组件实例 |
+| `tr()`（`@/i18n`） | store / utils / api / 命令表——没有组件实例的地方 | 直接 import |
+| `labelKey` 字段 | 命令表（菜单 / 工具栏 / 快捷键设置共用一份） | 渲染时 `t(item.labelKey)` |
+
+**后端不参与国际化**：Rust 侧没有「当前界面语言」这个概念（窗口属于前端），
+所以 `AppError` 的 message 固定写中文。英文界面靠前端按错误码替换：
+
+```
+后端 { code: "1001", message: "文件读写失败", details: "os error 32" }
+  → 前端 normalizeError() 查 errCode.1001
+  → 中文界面："文件读写失败"（后端原句）
+  → 英文界面："File read/write failed"（前端文案）
+  → details 始终保留："os error 32"
+```
+
+为什么不让后端直接出英文：它得先知道界面语言，而那意味着每次切语言
+都要多一次 invoke 告诉它，而且错误发生在「切语言」之前的请求上就翻不回去。
+
+**编码名与语言名也归前端**：后端只给 `id`，显示名查
+`locales` 的 `encodingLabel` / `language.<id>`。
+Rust 侧 `EncodingInfo.label` 只当命令行工具的兜底。
+
+加载器比后端 id 多一个 `tsx`、少 `text`/`log`/`csv`：后两个不挂语法包，
+`.tsx` 在后端归到 `typescript`。
+
+Element Plus 的文案也跟着切：`main.ts` 注入 `computed<Language>`，
+`App.vue` 在 `setup` 顶层 `inject` 后交给 `ElConfigProvider`。
+`inject()` 必须同步调用——放进 `computed` getter 会在每次求值时报
+「inject() can only be used inside setup()」。
+
 ## 权限模型
 
 `src-tauri/capabilities/default.json` 是前端唯一被允许调用的能力面：
@@ -150,9 +186,9 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-测试按域分文件（`src-tauri/tests/<domain>_chain.rs`），公共设施在 `common/mod.rs`，
-每个测试二进制各自编译一次 `common`——所以 `common` 里允许 `#![allow(dead_code)]`：
-不是每个域都用得上全部 helper。
+测试按域分文件（`src-tauri/tests/<domain>_chain.rs`），一个测试一种坏法，
+公共设施在 `common/mod.rs`。每个测试二进制各自编译一次 `common`——所以
+`common` 里允许 `#![allow(dead_code)]`：不是每个域都用得上全部 helper。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。
 
@@ -165,3 +201,4 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 | `app / shell / platform` 三个能力域互不引用 | 独立测试与独立演进 | 它们要合作只能在 `commands` 里编排，能力域自己拿不到对方 |
 | 叶子包 `pkg` 不依赖任何业务包 | 工具函数不会被业务逻辑反向污染 | 出现业务词汇就意味着要往上挪一层 |
 | 前后端纯 invoke，无 HTTP 服务 | 没有端口、没有跨域、不需要 HTTP 客户端 | 不能用一个命令同时被浏览器与桌面复用 |
+| 国际化在前端做，后端 message 固定中文 | 无须为「切语言」多一次 invoke，错误在切语言前发生也能正确显示 | 新错误码要在 `pkg/error.rs` 与两份 locale 同时加 |

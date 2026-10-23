@@ -1,5 +1,4 @@
 // 标签栏：横向滚动的标签 + 脏标记 + 关闭钮。
-//
 // 中键关闭、右键菜单（关闭其他 / 关闭全部 / 复制路径）都在这。
 <template>
   <div class="nt-tabbar" @wheel="onWheel">

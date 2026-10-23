@@ -1,27 +1,24 @@
 // 取色器浮窗：屏幕取色 + HEX / RGB / HSL 三种表示。
-//
 // 用 EyeDropper API（Chromium 内核的 WebView2 支持）；不支持时
-// 退化成一个手动输入的色值转换器——至少 HEX↔RGB↔HSL 互换还有用。
-// 不做「截图取色」：那要额外拿屏幕捕获权限，代价远大于收益。
 
 <template>
   <NtModal :title="t('viewer.colorPicker')" width="420" @close="dialogs.close()">
     <div class="nt-cp">
       <div class="nt-cp-preview" :style="{ background: hex }" />
 
-      <div class="nt-cp-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('viewer.hex') }}</span>
         <ElInput v-model="hex" size="small" spellcheck="false" @change="onHex" />
         <ElButton size="small" @click="copyValue(hex)">{{ t('common.copy') }}</ElButton>
       </div>
 
-      <div class="nt-cp-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('viewer.rgb') }}</span>
         <span class="nt-readout nt-cp-val">{{ rgbText }}</span>
         <ElButton size="small" @click="copyValue(rgbText)">{{ t('common.copy') }}</ElButton>
       </div>
 
-      <div class="nt-cp-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('viewer.hsl') }}</span>
         <span class="nt-readout nt-cp-val">{{ hslText }}</span>
         <ElButton size="small" @click="copyValue(hslText)">{{ t('common.copy') }}</ElButton>
@@ -143,17 +140,6 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
   border-radius: var(--nt-radius);
   border: 1px solid var(--nt-border);
   transition: background-color var(--nt-dur) var(--nt-ease);
-}
-
-.nt-cp-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-2);
-}
-
-.nt-cp-row .nt-label {
-  width: 48px;
-  flex: none;
 }
 
 .nt-cp-val {

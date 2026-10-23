@@ -1,5 +1,4 @@
 //! 宏持久化：录制下来的按键序列。
-//!
 //! 权威数据源在前端编辑器实例，这里只管导出导入。
 
 use rusqlite::{params, Connection, OptionalExtension};

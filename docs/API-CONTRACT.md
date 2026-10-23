@@ -12,13 +12,13 @@
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
 | 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
-| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 `test_bootstrap_chain`） |
+| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 `session_chain（空列表契约 / 会话往返）`） |
 
 ## 文件
 
 | 命令 | 入参 | 出参 |
 |---|---|---|
-| `read_file` | `path`, `mode?` | `FileContentVO` |
+| `read_file` | `path`, `mode?`, `encoding?` | `FileContentVO` |
 | `read_binary` | `path` | `string`（base64，上限 20MB） |
 | `write_file` | `path`, `text`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO` |
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
@@ -207,3 +207,5 @@
 | 二进制出参用 base64 而非 `Vec<u8>` | invoke 会把 `Vec<u8>` 序列化成 `number[]`，体积膨胀约 4 倍 | 前后端各多一次编解码 |
 | 列表字段构造时一律初始化为空数组 | Rust 的 nil slice 会序列化成 `null`，前端按数组读就白屏 | 每次构造都要记得 `Vec::new()` |
 | 前端不挂 fs 插件、二进制读取经 `read_binary` | 不给渲染层整块磁盘权限 | 每次预览要多一次 invoke 往返 |
+| `read_file` 的 `encoding` 可选而非另开一个命令 | 强制编码读取与自动探测读是同一条链路，只差一个参数 | 调用方要传 `undefined` 占位才能给到第三个参数 |
+| 强制编码解不动时退回探测编码 | 用户选错编码也打得开文件，比乱码可恢复 | 返回的编码不是用户选的那个，状态栏要能反映这一点 |

@@ -20,6 +20,7 @@
 | 视图器 | Markdown 三态（编辑/分屏/预览，Mermaid 图表 + KaTeX 公式 + 代码高亮 + 导出 HTML）、图片、日志（ERROR/WARN 着色）、十六进制、文档预览（xlsx / docx / pdf） |
 | 工具箱 | JSON（格式化/校验/JSONPath/转结构体）、格式转换（JSON/YAML/TOML/XML 互转）、文本与目录 Diff、哈希、正则测试、编码转换、11 种行编辑、取色器、日志查看器 |
 | 批量操作 | 目录级查找替换（先扫描预览再勾选应用）、批量重命名（三种模式，冲突项标红） |
+| 菜单与命令 | 十个一级菜单（文件 / 编辑 / 查找 / 视图 / 编码 / 语言 / 工具 / 对比 + 设置 / 帮助），分组由命令表驱动：新命令注册后自动出现在菜单、快捷键设置页与冲突检测里 |
 | 效率工具 | 宏录制回放、列编辑模式、小地图、剪贴板历史、最近文件（可钉住） |
 | 壳层 | 单实例、托盘常驻、文件关联、会话恢复（含未保存草稿）、自动保存（仅已命名文件）、文件监控（外部改动静默重载、本地有改动时只提示）、拖入文件/文件夹即打开、备份导入导出 |
 | 外观 | 浅/深/跟随系统三档主题，界面字号 80%–140% 缩放，全屏 `F11`，打印 `Ctrl+P` |
@@ -52,16 +53,17 @@ npm --prefix frontend run dev          # 浏览器预览（无后端，显示空
 
 ```bash
 pwsh scripts/check.ps1                 # 快门：格式 → 编译 → 测试
-pwsh scripts/check.ps1 -Full           # 全量门禁：+ clippy + 前端构建
-pwsh scripts/check.ps1 -Chain batch     # 只跑名字命中的那条链
+pwsh scripts/check.ps1 -Full           # 全量门禁：+ i18n 审计 + clippy + 前端构建
+node scripts/i18n-audit.mjs            # 单独查国际化
 ```
 
 | 命令 | 作用 |
 |---|---|
 | `pwsh scripts/check.ps1` | rustfmt → cargo check → 测试 |
-| `... -Chain <关键字>` | 只跑命中的那条链 |
-| `... -List` | 列出全部测试链 |
-| `... -Full` | + clippy `-D warnings` + 前端构建（提交前 / CI） |
+| `... -List` | 列出全部测试名 |
+| `... -Detail` | 打印每个测试的名字与结果 |
+| `... -Full` | + i18n 审计 + clippy `-D warnings` + 前端构建（提交前 / CI） |
+| `node scripts/i18n-audit.mjs` | 查 key 引用、zh/en 对齐、模板裸中文、后端错误码覆盖 |
 
 ## 项目结构
 
@@ -106,7 +108,7 @@ NoteText/
 | 路由 | Vue Router 4.3（hash 模式） |
 | UI | Element Plus 2.9（按需引入，变量接到 `--nt-*`） |
 | 原子 CSS | UnoCSS 0.58（刻度接 `--nt-*` 令牌） |
-| 代码编辑 | CodeMirror 6（28 种高亮：13 种静态、15 种按需加载） |
+| 代码编辑 | CodeMirror 6（31 种语言识别，28 种语法高亮：13 静态 + 15 按需加载） |
 | Markdown | markdown-it + highlight.js + Mermaid + KaTeX（编辑 / 分屏 / 预览三态） |
 | 格式转换 | js-yaml、@iarna/toml、fast-xml-parser（JSON / YAML / TOML / XML 互转） |
 | 文档预览 | XLSX、docx-preview、vue-pdf-embed |
@@ -138,18 +140,20 @@ NoteText/
 
 ## 测试
 
-4 条长链路，分 4 个文件，一个域一个文件，聚焦长链路与硬契约，全量 < 1 秒：
+23 个测试分 4 个文件，一个域一个文件；**每个测试函数名就是它守护的那件坏事**，
+失败时报文直接指出坏在哪。全量 < 1 秒。
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
+pwsh scripts/check.ps1 -List        # 列出全部测试名
 ```
 
-| 文件 | 覆盖 |
-|---|---|
-| `session_chain.rs` | 装配 → 建表 → 默认配置 / 会话顺序与窗口尺寸往返 / 书签增查删与幂等 / 空数组序列化契约（合并为一条长链路） |
-| `file_chain.rs` | 行尾按原样写回、CRLF 归一成 LF、BOM 剥离补回、原子写不留痕、编码探测、文件操作护栏（不覆盖 / 不成环 / 拒绝 `..`） |
-| `tools_chain.rs` | JSON 坏输入给行列号、diff 增删计数、正则捕获组、三种哈希已知向量、注释切换往返与半注释补齐 |
-| `batch_chain.rs` | 扫描不改盘、应用只改勾选的、重命名遇冲突整体拒绝不覆盖 |
+| 文件 | 测试数 | 覆盖 |
+|---|---|---|
+| `session_chain.rs` | 5 | 首次启动写默认配置；会话顺序、活跃索引、窗口尺寸往返；关光标签仍留会话行；书签去重与切换删除；空列表序列化成 `[]` 而非 `null` |
+| `file_chain.rs` | 8 | CRLF 归一但记住原样式；不指定行尾时原样写回；原子写不留临时文件、不替你造目录；BOM 剥离与补回；强制编码读取与退回；重命名不覆盖；拒绝相对路径与成环；删除逐个记账 |
+| `tools_chain.rs` | 6 | 坏 JSON 给行列号；diff 增删计数；正则捕获组；三种哈希对已知向量；注释切换往返与半注释补齐；不支持行注释要报错 |
+| `batch_chain.rs` | 4 | 扫描不改盘；应用只改勾选的；重命名遇冲突标记且整体拒绝；无冲突真的落地 |
 
 不知道入口叫什么：`pwsh scripts/check.ps1 -List`。
 

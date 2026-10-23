@@ -1,7 +1,5 @@
 // 设置 store：配置的权威态 + 主题 / 语言 / 字号缩放的落地。
-//
 // 归属（AGENTS.md §2.10）：配置的唯一真相源是后端 SQLite `settings` 表，
-// 这里只是它的镜像 + 派生量（resolvedTheme、缩放变量）。任何改动都
 
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'

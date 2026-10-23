@@ -1,5 +1,4 @@
 //! AppHandle 的全局存取。
-//!
 //! command 默认不注入 AppHandle，装配时装一份供各处按需取用。
 
 use std::sync::OnceLock;

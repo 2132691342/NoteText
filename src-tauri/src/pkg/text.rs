@@ -1,5 +1,4 @@
 //! 纯文本工具：与 IO 无关的字符串算法。
-//!
 //! 依赖方向要求：不引入 domain / repo / service。
 pub fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")

@@ -1,5 +1,4 @@
 // 设置面板：通用（语言 / 会话 / 托盘 / 最近文件）。
-//
 // 每项改动即时生效 + 防抖回写（settings store 的 scheduleSave）。
 <template>
   <div class="nt-set">

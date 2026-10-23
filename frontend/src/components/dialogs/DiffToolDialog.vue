@@ -1,7 +1,5 @@
 // 文本 Diff 浮窗：左右输入 → 行级对齐 + 行内高亮。
-//
 // 后端给的是 DiffLineVO 列表（含行内 span），这里只负责渲染。
-// 「忽略空白 / 大小写」在后端算：两边判据必须一致，否则同一条差异
 
 <template>
   <NtModal :title="t('tool.diffText')" width="900" @close="emit('close')">

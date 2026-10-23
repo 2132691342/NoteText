@@ -1,5 +1,4 @@
 // Minimap：整篇文档的缩略轮廓，点击跳转、滚动跟随。
-//
 // 只画每行的缩进与长度，不渲染文字：几万行的日志用 canvas 画字必掉帧。
 <template>
   <div class="nt-minimap" @click="onJump" @mousedown.prevent>

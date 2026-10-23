@@ -1,7 +1,5 @@
 // 文档预览：按扩展名分流到 xlsx / docx / pdf / 图片 / Markdown / 纯文本。
-//
 // 二进制不进 CodeMirror：解成文本是一屏乱码，而用户点开 .xlsx 想看的是表格。
-// 所有预览包都是动态 import——只写 Markdown 的人不该付 xlsx 的钱。
 <template>
   <div class="nt-doc-preview">
     <div class="nt-doc-head">

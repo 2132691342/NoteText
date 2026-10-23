@@ -1,5 +1,4 @@
 //! 工具箱命令：JSON / Diff / 哈希 / 正则 / 编码清单。
-//!
 //! 出入参结构体一律引用 domain 定义，不在 handler 里内联。
 
 use tauri::State;

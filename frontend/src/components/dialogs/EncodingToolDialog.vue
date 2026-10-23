@@ -1,25 +1,23 @@
 // 编码转换浮窗：整体转码 + 行尾转换。
-//
 // 转码只改「怎么写」，不改编辑器里的文本：用户看到的一直是解码后的
-// Unicode，落盘时才按目标编码编码（service::file::write 的逻辑）。
 <template>
   <NtModal :title="t('tool.encoding')" width="520" @close="emit('close')">
     <div class="nt-enc-tool">
-      <div class="nt-enc-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('tool.from') }}</span>
         <ElSelect v-model="from" size="small" filterable>
-          <ElOption v-for="e in encodings" :key="e.id" :label="e.label" :value="e.id" />
+          <ElOption v-for="e in encodings" :key="e.id" :label="encodingLabel(e.id)" :value="e.id" />
         </ElSelect>
       </div>
-      <div class="nt-enc-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('tool.to') }}</span>
         <ElSelect v-model="to" size="small" filterable>
-          <ElOption v-for="e in encodings" :key="e.id" :label="e.label" :value="e.id" />
+          <ElOption v-for="e in encodings" :key="e.id" :label="encodingLabel(e.id)" :value="e.id" />
         </ElSelect>
         <ElCheckbox v-model="writeBom">{{ t('tool.writeBom') }}</ElCheckbox>
       </div>
 
-      <div class="nt-enc-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('tool.convertLineEnding') }}</span>
         <ElRadioGroup v-model="ending" size="small">
           <ElRadioButton value="crlf">CRLF</ElRadioButton>
@@ -56,6 +54,7 @@ import { doReplaceDoc } from '@/composables/useEditorActions'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
 import type { EncodingInfo } from '@/types/api'
+import { encodingLabel } from '@/utils/encoding'
 
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
@@ -128,20 +127,6 @@ function convertEnding(text: string, target: 'crlf' | 'lf' | 'cr'): string {
   display: flex;
   flex-direction: column;
   gap: var(--nt-sp-3);
-}
-
-.nt-enc-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-3);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 5em;
 }
 
 .nt-enc-note {

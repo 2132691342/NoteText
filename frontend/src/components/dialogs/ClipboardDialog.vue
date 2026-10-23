@@ -1,7 +1,5 @@
 // 剪贴板历史浮窗：列出本次会话复制 / 剪切过的内容，点击回插。
-//
 // 只攒不监听系统剪贴板：Webview 里读系统剪贴板要权限，
-// 而用户要的是「刚才复制过的那几段」，编辑器事件已经够。
 <template>
   <NtModal :title="t('tool.clipboard')" width="620" @close="emit('close')">
     <div class="nt-clip">

@@ -1,11 +1,5 @@
 // 文件树面板：懒展开的目录树。
-//
 // 展开状态在 store 里（切标签不丢），子项缓存按目录。
-// 外部变更由 `fs:changed` 事件驱动重读（见 composables/useExternalChange.ts）。
-//
-// 右键菜单覆盖资源管理器的常用项：新建（文件 / 文件夹）、重命名、删除、
-// 剪切 / 复制 / 粘贴、创建副本、复制路径、在资源管理器显示。
-// 树内拖拽把节点移进目标文件夹（高亮目标 + 禁止拖进自身子目录）。
 
 <template>
   <div class="nt-tree" @contextmenu.prevent="onBlankMenu">

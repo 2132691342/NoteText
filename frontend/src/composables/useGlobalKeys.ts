@@ -1,12 +1,5 @@
 // 全局按键：把组合键映射到命令 id。
-//
 // 三入口收敛（AGENTS.md §2.10）：菜单、工具栏、按键都走命令表，
-// 于是「菜单能用的功能按键一定能按」。
-//
-// **编辑器内也要放行**：Ctrl+S / Ctrl+F / Ctrl+H / Ctrl+/ 这类组合在
-// CodeMirror 里没有任何绑定，早先整块 return 会让「保存」在编辑器里失效——
-// 而这正是用户最常按的几个键。判据改成「这条组合是否有命令认领」：
-// 有认领就执行并 preventDefault，没有就交给 CodeMirror。
 import { onMounted, onUnmounted } from 'vue'
 import { DEFAULT_KEYBINDINGS, useCommandStore } from '@/stores/commands'
 import { useSettingsStore } from '@/stores/settings'
@@ -50,11 +43,8 @@ export function toAccelerator(e: KeyboardEvent): string {
     NumpadAdd: '+',
     NumpadSubtract: '-',
   }
-  // 字母键一律取 e.code 的 `KeyX` → `X`。
-  // 注意：命令表里的 `key` 就是按这里的拼法写的（`Control+,` / `Control+/`），
-  // 两边必须同形，否则「菜单显示有快捷键、按了没反应」。
-  // 不能用 e.key：按住 Shift 时 e.key 是 'F' 而键位表写的是 'F'（大写）还好，
-  // 但 Ctrl+F 在某些输入法状态下 e.key 会变成不可打印字符，匹配就断了。
+  // 字母键取 e.code 的 `KeyX` → `X`；命令表的 `key` 按这个拼法写，两边必须同形。
+  // 不用 e.key：按住 Shift 或输入法开时它会变成不可打印字符，匹配就断了。
   const fromCode = codeMap[e.code] ?? (/^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : null)
   const key = fromCode ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key)
   parts.push(key)
@@ -77,10 +67,17 @@ function isInEditor(target: EventTarget | null): boolean {
 
 function editorOwns(accel: string): boolean {
   // 单键（无修饰）：全部交给编辑器
-  if (!accel.includes('+')) return true
+  if (!accel.includes('+')) {
+    // F1~F12 例外：编辑器不给功能键绑动作，而 F3 / Shift+F3 是最常按的，
+    // 不特例就会被这条规则整块吃掉。
+    if (/^F\d{1,2}$/.test(accel) || /^Shift\+F\d{1,2}$/.test(accel)) return false
+    return true
+  }
   // 纯 Shift 组合也是编辑器的（Shift+方向选词）
   if (/^Shift\+/.test(accel)) return true
-  if (/^Alt\+Arrow(Up|Down|Left|Right)$/.test(accel)) return true
+  // Alt+上下 是「移动当前行」（编辑器自己的动作），但 Alt+左右 是
+  // 「上一个 / 下一个位置」（光标跳转历史）。左右留给命令表分发。
+  if (/^Alt\+Arrow(Up|Down)$/.test(accel)) return true
   if (/^(Alt\+)?Tab$/.test(accel)) return true
   if (/^(Control|Super)\+\[$/.test(accel) || /^(Control|Super)\+\]$/.test(accel)) return true
   if (/^(Control|Super)\+Alt\+\\$/.test(accel)) return true
@@ -97,11 +94,8 @@ export function useGlobalKeys() {
     const custom = Object.keys(overrides).find((k) => overrides[k] === accel)
     if (custom) return custom
 
-    // 2) 命令自己声明的 key。
-    //
-    // 这一条以前缺着：命令表里写了 `key: 'Control+,'` 只用于菜单右侧的提示，
-    // 真正分发靠另一份 DEFAULT_KEYBINDINGS。两份表一旦漂移，按键就变成
-    // 「菜单里写着、按了没反应」。现在以命令声明为准，默认表只做兼容兜底。
+    // 2) 命令自己声明的 key：以它为准，DEFAULT_KEYBINDINGS 只做兼容兜底。
+    // 两份表一旦漂移，按键就变成「菜单里写着、按了没反应」。
     for (const c of commands.registry.values()) {
       if (c.key && c.key === accel) return c.id
     }

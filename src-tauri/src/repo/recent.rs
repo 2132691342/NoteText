@@ -1,5 +1,4 @@
 //! 最近文件持久化：记录 / 固定 / 淘汰。
-//!
 //! 淘汰按 opened_at 淘汰最旧的非固定项。
 
 use rusqlite::{params, Connection, OptionalExtension};

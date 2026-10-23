@@ -1,5 +1,4 @@
 //! 编码域模型：转换请求与编码清单项。
-//!
 //! 支持 12 种：UTF 系列、GB18030、Big5、Shift_JIS、EUC-JP、EUC-KR、KOI8-R、西欧两种。
 
 use serde::{Deserialize, Serialize};
@@ -7,9 +6,9 @@ use serde::{Deserialize, Serialize};
 /// 编码描述：设置页「默认编码」下拉与状态栏编码名的取值表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncodingInfo {
-    /// 内部标识（与前端 utils/encoding.ts 的 key 一致）。
+    /// 内部标识（前端 `utils/encoding.ts` 按它取当前语言的显示名）。
     pub id: String,
-    /// 显示名（中文）：状态栏与下拉用。
+    /// 中文兜底名：只在调接口的工具里用；界面显示名归前端 i18n。
     pub label: String,
     /// 是否需要 BOM 才能可靠识别（UTF-16 家族）。
     pub bom_only: bool,

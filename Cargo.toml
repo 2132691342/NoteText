@@ -5,7 +5,7 @@ resolver = "2"
 # 工作区级依赖版本收敛：各 crate 里写 `dep.workspace = true` 引用这里的版本，
 # 升级一个库只改一处。理由与边界见 AGENTS.md §1.1。
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.80"
 authors = ["NoteText contributors"]

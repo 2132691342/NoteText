@@ -1,5 +1,4 @@
 //! 日志：tracing + 双文件落盘（全量 + 告警）。
-//!
 //! 只记 info / warn / error 三档；写日志失败不能影响编辑可用性。
 
 use std::fs::{File, OpenOptions};

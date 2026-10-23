@@ -1,7 +1,5 @@
 // 编辑器主视图：唯一的常驻视图。
-//
 // 装配顺序：布局（TitleBar → MenuBar → ToolBar → 主体 → StatusBar）
-// → 会话恢复 → 首个标签。
 <template>
   <div class="nt-root">
     <MenuBar v-if="ui.show_menu_bar" />
@@ -16,6 +14,8 @@
     <StatusBar v-if="ui.show_status_bar" />
     <!-- 工具箱与浮窗：统一挂在最外层，避免被编辑器滚动容器裁掉 -->
     <DialogHost />
+    <AskTextDialog />
+    <AskPickDialog />
   </div>
 </template>
 
@@ -28,6 +28,8 @@ import StatusBar from '@/components/layout/StatusBar.vue'
 import TabBar from '@/components/layout/TabBar.vue'
 import EditorArea from '@/components/editor/EditorArea.vue'
 import DialogHost from '@/components/dialogs/DialogHost.vue'
+import AskTextDialog from '@/components/dialogs/AskTextDialog.vue'
+import AskPickDialog from '@/components/dialogs/AskPickDialog.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'

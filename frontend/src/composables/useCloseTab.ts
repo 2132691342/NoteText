@@ -1,8 +1,5 @@
 // 关闭标签的唯一入口：带未保存确认。
-//
 // 为什么单独成文件而不是塞在命令层：标签栏（点 X / 中键 / 右键）与命令层
-// （Ctrl+W / 关闭全部 / 退出）都要走同一条链路。各写一份必然漂移成
-// 「Ctrl+W 会问、点 X 直接丢」。这里只有一份。
 import { i18n } from '@/i18n'
 import { useEditorStore, languageOf } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'

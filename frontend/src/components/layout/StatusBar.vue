@@ -1,7 +1,5 @@
 // 状态栏：修改指示、光标位置、语言、编码、行尾、缩放。
-//
 // 显示项可勾选（右键菜单）：有人只要光标位置，有人要全看。
-// 读数一律等宽数字（tabular-nums），否则每次刷新宽度都在跳。
 <template>
   <div class="nt-statusbar" @contextmenu.prevent="showMenu = true">
     <span class="nt-status-state" :class="{ 'is-dirty': tab?.dirty }">
@@ -30,7 +28,7 @@
 
     <template v-if="visible('encoding')">
       <button class="nt-status-btn" :class="{ 'is-warn': tab?.encoding_uncertain }" @click="commands.run('view.encoding')">
-        {{ tab?.encoding ?? 'UTF-8' }}{{ tab?.has_bom ? ' BOM' : '' }}
+        {{ encodingShort(tab?.encoding ?? 'utf-8') }}
         <span v-if="tab?.encoding_uncertain" :title="t('toast.encodingChanged')">?</span>
       </button>
     </template>
@@ -81,6 +79,7 @@ import { getPosition } from '@/composables/useEditorRegistry'
 import { getText } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
 import { debounce, formatSize } from '@/utils'
+import { encodingShort } from '@/utils/encoding'
 
 const { t } = useI18n()
 const editor = useEditorStore()

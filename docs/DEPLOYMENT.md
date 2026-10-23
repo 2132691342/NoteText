@@ -7,7 +7,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 ├── NoteText.exe                    # 主程序（前端资源已 embed，单文件可跑）
 └── bundle/
     └── nsis/
-        └── NoteText_0.1.0_x64-setup.exe   # NSIS 安装包
+        └── NoteText_1.0.0_x64-setup.exe   # NSIS 安装包
 ```
 
 产物**不入库**（`.gitignore` 排除 `/target/`）：本地构建一次就产生几百 MB，
@@ -28,7 +28,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
   只写 `branches` 时，GitHub 的过滤器是「或」关系，tag 推送仍会命中 `push` 触发器；
   补上 `tags-ignore` 才能把 tag 彻底排除在这条之外
 - `release.yml` 只认 `push.tags`，且用 `v[0-9]+.[0-9]+.[0-9]+` 而不是 `v*`：
-  形如 `v0.1.0` 的 tag 才会发版，顺带挡掉误推的 `v-next` 之类分支式 tag
+  形如 `v1.0.0` 的 tag 才会发版，顺带挡掉误推的 `v-next` 之类分支式 tag
 - `release.yml` 在上传前校验产物存在且体积未异常偏大（>20MB 即失败）：
   前端误引一个大包会让安装包翻倍，本地不易察觉，这里是最后一道回归信号
 

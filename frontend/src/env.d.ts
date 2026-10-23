@@ -1,5 +1,5 @@
-/// <reference types="vite/client" />
-/// <reference types="unplugin-vue-components/vue" />
+// / <reference types="vite/client" />
+// / <reference types="unplugin-vue-components/vue" />
 
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'

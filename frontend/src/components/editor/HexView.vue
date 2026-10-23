@@ -1,7 +1,5 @@
 // Hex 视图主体：按 16 字节一行显示偏移 / 十六进制 / ASCII 三列。
-//
 // 二进制不走 invoke（字节数组会序列化成数字数组，几 MB 就堵死通道），
-// 走后端 read_binary（带上限）。只渲染可视区：全量建 DOM 会卡死界面。
 <template>
   <div class="nt-hex">
     <div class="nt-hex-head">

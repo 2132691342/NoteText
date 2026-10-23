@@ -1,8 +1,5 @@
 // 编辑区：所有标签的编辑器实例常驻，只切换可见性。
-//
 // 关键不变量：**一个标签一个 CodeMirror 实例，切标签不销毁**。
-// 销毁重建会同时丢掉三样东西：撤销历史、未保存的修改、滚动位置。
-// 所以这里 v-for 全量挂载（display 切换），而不是只渲染 active。
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -144,9 +141,7 @@ function startSplitDrag(e: MouseEvent) {
 }
 
 // ---- 拖放打开 ----
-// Tauri 的 dragDropEnabled=false（见 tauri.conf.json）：文件拖进来由前端接管，
-// 否则 WebView 会把它当成导航直接跳走。文件路径从 Tauri 的 onDragDropEvent 拿，
-// 这里只负责显示提示层（见 composables/useFileDrop.ts）。
+// 拖进来由前端接管（Tauri 的 dragDropEnabled=false），否则 WebView 会当导航跳走。
 const dragging = ref(false)
 let depth = 0
 

@@ -1,7 +1,5 @@
 // 书签面板：按文件分组的书签列表，点击跳到该行。
-//
 // 后端已把「该行正文」一起返回（BookmarkVO.line_text），
-// 所以列表不自己读文件——省一次 IO，也避免大文件卡面板。
 <template>
   <div class="nt-panel">
     <div class="nt-panel-head">

@@ -1,5 +1,4 @@
 //! 编辑器服务：语言识别、行注释、大小写转换、转到行。
-//!
 //! 形态是「给一段文本、还一段文本」的纯变换，不涉及 IO。
 
 use crate::domain::snippet::LanguageInfo;

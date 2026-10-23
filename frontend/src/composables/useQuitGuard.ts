@@ -1,11 +1,5 @@
 // 退出守卫：关窗时先检查未保存内容。
-//
 // 链路（specs/04）：前端点 X → 后端发 `app:before-close` → 逐个问未保存标签
-// → 用户确认 → 调 `confirm_quit` + `force_quit` → 后端放行 CloseRequested。
-//
-// 为什么逐个问而不是「有 N 个未保存，全存还是全丢」：全存会遇到「这个文件
-// 我不想存」的情况，全丢会遇到「上一个我想存」的情况。逐个问才有第三个
-// 选项（取消），代价是要多点几下——这在退出这种低频操作上是值得的。
 
 import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'

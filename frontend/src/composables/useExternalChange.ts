@@ -1,7 +1,5 @@
 // 外部变更：文件被别的程序改了怎么办。
-//
 // 三种情况分开处理（这是编辑器最容易被骂的地方）：标签干净 → 静默重载；
-// 标签脏 → 提示重载会丢本地修改；文件被删 / 移走 → 只提示，不动编辑器内容。
 import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useEditorStore } from '@/stores/editor'
@@ -67,10 +65,8 @@ export function useExternalChange() {
       toast.warn(t('toast.fileChangedDirty', { name: baseName(path) }))
       return
     }
-    // 干净标签：**必须真的把新正文推进编辑器**。
-    //
-    // 之前这里只更新编码 / 行尾几个元数据字段，正文没换——表现是
-    // 「提示说文件变了，编辑区还是旧的」，用户以为提示在撒谎。
+    // 干净标签：必须真的把新正文推进编辑器，只改元数据会让编辑区停在旧内容。
+    // 那时提示说文件变了、编辑区还是旧的，用户以为提示在撒谎。
     try {
       const content = await api.readFile(path)
       const changed = getText(tab.id) !== content.text

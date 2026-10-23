@@ -1,5 +1,4 @@
 //! 路径解析：数据目录的唯一来源。
-//!
 //! 默认落在 %APPDATA% 下的 NoteText 目录，NOTETEXT_HOME 可覆写。
 
 use std::path::{Path, PathBuf};

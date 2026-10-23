@@ -1,36 +1,55 @@
-//! 文件域链路：读写编码 / 行尾 / BOM / 原子写 / 编码探测 + 文件树操作的安全护栏。
+//! 文件域：读写编码 / 行尾 / BOM / 原子写 + 文件树操作的安全护栏。
 //!
-//! 失败表现：GBK 文件打开乱码；CRLF 文件一保存行尾全变 LF；重命名悄悄覆盖同名文件；
-//! 目录拖进自己子目录让树成环——都是「用户的文件没了」，且没有撤销键。
+//! 这里守护的都是「用户的文件没了」且没有撤销键的事故：GBK 文件打开乱码、
+//! CRLF 文件一保存行尾全变 LF、重命名悄悄覆盖同名文件、目录拖进自己子目录让树成环。
 
 use std::fs;
+use std::path::PathBuf;
 
+use notetext_lib::app::bootstrap::{self, AppState};
 use notetext_lib::domain::file::ReadMode;
 use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
 use notetext_lib::service::encoding;
 
 mod common;
-use common::{boot, temp_paths};
+use common::temp_paths;
 
-#[test]
-fn test_file_domain_chain() {
+/// 一套隔离的文件服务：每个测试自己一份临时目录。
+fn setup() -> (tempfile::TempDir, AppState, PathBuf) {
     let dir = tempfile::tempdir().expect("建临时目录失败");
     let paths = temp_paths(&dir);
-    let state = boot(&dir);
-    let file = paths.data_dir.join("crlf.txt");
-    fs::write(&file, b"a\r\nb\r\n").expect("写测试文件失败");
-    let p = file.to_string_lossy().to_string();
+    let state = bootstrap::build(&paths).expect("装配失败");
+    (dir, state, paths.data_dir)
+}
 
-    // 读：CRLF 归一成 LF 供编辑器算行列，但记下原样式。
+#[test]
+fn read_normalizes_crlf_but_remembers_original() {
+    let (dir, state, data) = setup();
+    let file = data.join("crlf.txt");
+    fs::write(&file, b"a\r\nb\r\n").expect("写测试文件失败");
+
     let read = state
         .services
         .file
-        .read(&p, ReadMode::Full)
+        .read(&file.to_string_lossy(), ReadMode::Full)
         .expect("读失败");
+
+    // 编辑器按 LF 算行列；行尾样式单独记着，写回时还要用。
     assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
     assert_eq!(read.text, "a\nb\n", "读出来应归一成 LF");
+    drop(dir);
+}
 
-    // 写：不指定行尾按读到的 CRLF 原样写回；显式切换才改。
+#[test]
+fn write_keeps_original_line_ending_unless_switched() {
+    let (dir, state, data) = setup();
+    let file = data.join("crlf.txt");
+    let p = file.to_string_lossy().to_string();
+    fs::write(&file, b"a\r\nb\r\n").expect("写测试文件失败");
+    let _ = state.services.file.read(&p, ReadMode::Full);
+
+    // 不指定行尾：按文件原本的 CRLF 写回。没有这一步，一次保存就把整个文件的
+    // 行尾全变成 LF，diff 里满屏都是改动。
     state
         .services
         .file
@@ -41,6 +60,8 @@ fn test_file_domain_chain() {
         b"a\r\nb\r\n",
         "不指定行尾应原样写回 CRLF"
     );
+
+    // 显式切换才改。
     state
         .services
         .file
@@ -51,8 +72,15 @@ fn test_file_domain_chain() {
         b"a\nb\n",
         "显式 lf 应写成 LF"
     );
+    drop(dir);
+}
 
-    // 原子写：内容落地且不留临时文件；目标目录不存在报错且不顺带造目录。
+#[test]
+fn atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs() {
+    let (dir, state, data) = setup();
+    let file = data.join("x.txt");
+    let p = file.to_string_lossy().to_string();
+
     state
         .services
         .file
@@ -63,14 +91,18 @@ fn test_file_domain_chain() {
         "new content",
         "内容应更新"
     );
-    let leftovers: Vec<String> = fs::read_dir(&paths.data_dir)
+
+    // 临时文件残留会在用户目录里越积越多。
+    let leftovers: Vec<String> = fs::read_dir(&data)
         .expect("列目录失败")
         .flatten()
         .map(|e| e.file_name().to_string_lossy().to_string())
         .filter(|n| n.contains("notetext-tmp"))
         .collect();
     assert!(leftovers.is_empty(), "不应留下临时文件：{leftovers:?}");
-    let missing = paths.data_dir.join("no-such-dir").join("x.txt");
+
+    // 目标目录不存在：报错，不替用户造目录（打错路径不该在磁盘上留痕）。
+    let missing = data.join("no-such-dir").join("x.txt");
     assert!(
         state
             .services
@@ -83,41 +115,62 @@ fn test_file_domain_chain() {
         !missing.parent().expect("有父目录").exists(),
         "不应顺带创建目录"
     );
+    drop(dir);
+}
 
-    // 编码探测：BOM 是硬证据，GBK 字节判 gb18030，空文件按 UTF-8 兜底。
-    assert_eq!(
-        encoding::detect(&[0xEF, 0xBB, 0xBF, 0x61]),
-        ("utf-8-bom".to_string(), false),
-        "带 BOM 应判 utf-8-bom"
-    );
-    let (enc, low) = encoding::detect(&[0xD6, 0xD0, 0xCE, 0xC4]); // GBK "中文"
-    assert_eq!(enc, "gb18030", "GBK 字节应判 gb18030");
-    assert!(!low, "有把握时不该标低置信");
-    assert_eq!(
-        encoding::detect(&[]),
-        ("utf-8".to_string(), false),
-        "空文件按 UTF-8"
-    );
+#[test]
+fn bom_is_stripped_on_read_and_restored_on_write() {
+    let (_dir, _state, _data) = setup();
 
-    // BOM 剥离与补回：对不上就给用户文件头多三个字节。
+    // 剥不干净：正文前面多三个不可见字节，光标位置与列号全偏。
     let (has, body) = encoding::strip_bom(&[0xEF, 0xBB, 0xBF, 0x61, 0x62], "utf-8-bom");
     assert!(has, "应检出 BOM");
     assert_eq!(body, b"ab", "剥掉 BOM 后只剩正文");
+
+    // 补不回去：文件从「带 BOM」变成「不带」，下游工具判定编码会翻车。
     assert_eq!(
         encoding::bom_bytes("utf-8-bom"),
         &[0xEF, 0xBB, 0xBF],
         "BOM 字节要能补回"
     );
+}
 
-    // ---- 文件树操作的护栏 ----
+#[test]
+fn forced_encoding_read_decodes_and_falls_back_when_unsupported() {
+    let (dir, state, data) = setup();
+    let gbk = data.join("gbk.txt");
+    // 用码表里有的全角符号（0xA1A1 起）而不是汉字：内置表是常用子集，汉字不在内。
+    fs::write(&gbk, [0xA1u8, 0xA1, 0xA1, 0xA2]).expect("写 GBK 文件失败");
+    let p = gbk.to_string_lossy().to_string();
+
+    // 用户按「以指定编码重新打开」选了编码，打开的必须不再是乱码。
+    let forced = state
+        .services
+        .file
+        .read_as(&p, ReadMode::Full, Some("gb18030"))
+        .expect("按 GBK 读失败");
+    assert_eq!(forced.text, "、。", "指定 gb18030 应解出表内符号");
+    assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
+
+    // 选了个不认识的编码：退回探测编码，而不是整个文件打不开。
+    let fallback = state
+        .services
+        .file
+        .read_as(&p, ReadMode::Full, Some("klingon"))
+        .expect("选错编码也不该打不开");
+    assert_eq!(fallback.text, "、。", "不支持应退回探测编码");
+    drop(dir);
+}
+
+#[test]
+fn rename_never_overwrites_an_existing_file() {
+    let (dir, state, _data) = setup();
     let svc = &state.services.file_ops;
     let root = dir.path().join("ops");
-    let sub = root.join("sub");
-    fs::create_dir_all(&sub).expect("建目录失败");
+    fs::create_dir_all(&root).expect("建目录失败");
     let a = root.join("a.txt");
     fs::write(&a, "content\n").expect("写文件失败");
 
-    // 重命名落到新路径，原路径消失。
     let b = root.join("b.txt");
     svc.rename(&RenameReq {
         from: a.to_string_lossy().to_string(),
@@ -126,7 +179,7 @@ fn test_file_domain_chain() {
     .expect("重命名失败");
     assert!(!a.exists(), "原路径该消失");
 
-    // 目标已存在：整体拒绝，已有文件不被覆盖。
+    // 目标已存在：整体拒绝。覆盖等于无声销毁别人的文件。
     let c = root.join("c.txt");
     fs::write(&c, "keep me\n").expect("写 c 失败");
     let err = svc
@@ -141,46 +194,26 @@ fn test_file_domain_chain() {
         "keep me",
         "拒绝后已有文件不能被覆盖"
     );
+}
 
-    // 移进自己的子目录：拒绝（树会成环）。
+#[test]
+fn rename_rejects_relative_paths_and_directory_cycles() {
+    let (dir, state, _data) = setup();
+    let svc = &state.services.file_ops;
+    let root = dir.path().join("ops");
+    let sub = root.join("sub");
+    fs::create_dir_all(&sub).expect("建目录失败");
+
+    // 移进自己的子目录：拒绝，否则文件树成环、递归遍历直接挂死。
     let err = svc
         .rename(&RenameReq {
             from: root.to_string_lossy().to_string(),
-            to: root.join("sub").join("root").to_string_lossy().to_string(),
+            to: sub.join("root").to_string_lossy().to_string(),
         })
         .expect_err("目录移进自己子目录必须拒绝");
     assert_eq!(err.code, "1003", "成环必须拒绝");
 
-    // 删除逐个记账：一个不存在的项不影响其他项。
-    let d = root.join("d.txt");
-    fs::write(&d, "bye\n").expect("写 d 失败");
-    let res = svc
-        .remove(&DeleteReq {
-            paths: vec![
-                d.to_string_lossy().to_string(),
-                root.join("nope.txt").to_string_lossy().to_string(),
-            ],
-        })
-        .expect("删除失败");
-    assert_eq!(res.succeeded, 1, "存在的那个该删掉");
-    assert_eq!(res.failed, 1, "不存在的那个该记账失败");
-    assert!(!d.exists(), "存在的那个该真的消失");
-
-    // 新建文件：已存在即拒（不覆盖）。
-    let nf = root.join("fresh.txt");
-    svc.create_file(&MkdirReq {
-        path: nf.to_string_lossy().to_string(),
-    })
-    .expect("建文件失败");
-    assert!(
-        svc.create_file(&MkdirReq {
-            path: nf.to_string_lossy().to_string()
-        })
-        .is_err(),
-        "重复建同一文件必须拒绝"
-    );
-
-    // 相对路径依赖隐式工作目录、`..` 会逃出操作范围，都必须拒。
+    // 相对路径依赖隐式工作目录，`..` 会逃出操作范围。
     assert!(
         svc.rename(&RenameReq {
             from: "a.txt".into(),
@@ -201,5 +234,42 @@ fn test_file_domain_chain() {
         })
         .is_err(),
         "含 .. 的路径必须拒绝"
+    );
+}
+
+#[test]
+fn delete_accounts_for_each_path_and_create_refuses_existing() {
+    let (dir, state, _data) = setup();
+    let svc = &state.services.file_ops;
+    let root = dir.path().join("ops");
+    fs::create_dir_all(&root).expect("建目录失败");
+
+    // 一个不存在的项不该让整批删除失败：用户勾了一堆，其中一个是陈旧路径。
+    let d = root.join("d.txt");
+    fs::write(&d, "bye\n").expect("写 d 失败");
+    let res = svc
+        .remove(&DeleteReq {
+            paths: vec![
+                d.to_string_lossy().to_string(),
+                root.join("nope.txt").to_string_lossy().to_string(),
+            ],
+        })
+        .expect("删除失败");
+    assert_eq!(res.succeeded, 1, "存在的那个该删掉");
+    assert_eq!(res.failed, 1, "不存在的那个该记账失败");
+    assert!(!d.exists(), "存在的那个该真的消失");
+
+    // 新建同名文件：拒绝而不是清空已有内容。
+    let nf = root.join("fresh.txt");
+    svc.create_file(&MkdirReq {
+        path: nf.to_string_lossy().to_string(),
+    })
+    .expect("建文件失败");
+    assert!(
+        svc.create_file(&MkdirReq {
+            path: nf.to_string_lossy().to_string()
+        })
+        .is_err(),
+        "重复建同一文件必须拒绝"
     );
 }

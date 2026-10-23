@@ -1,5 +1,4 @@
 //! 装配：把各组成部分连成唯一入口。
-//!
 //! 顺序固定：路径、目录、数据库、repo、service；每步失败给一句人话。
 
 use crate::app::paths as app_paths;

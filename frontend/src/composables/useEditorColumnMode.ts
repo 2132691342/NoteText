@@ -1,7 +1,5 @@
 // 列编辑：按矩形选区逐行插入 / 删除。
-//
 // CodeMirror 的 `rectangularSelection` 只负责「能选出矩形」，
-// 真正往每一行的同一列插东西（Alt+拖动之后的输入）要自己算：
 
 import { ref } from 'vue'
 import type { EditorView } from '@codemirror/view'

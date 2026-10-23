@@ -1,11 +1,9 @@
 // 正则测试浮窗：实时匹配 + 捕获组表格。
-//
 // 输入变化即重算（防抖 150ms）：测试器要「边打边看」，
-// 点一次按钮才更新就没法用了。
 <template>
   <NtModal :title="t('tool.regex')" width="760" @close="emit('close')">
     <div class="nt-regex-tool">
-      <div class="nt-regex-pattern">
+      <div class="nt-field">
         <span class="nt-label">{{ t('tool.regexPattern') }}</span>
         <ElInput v-model="pattern" size="small" placeholder="\d+" spellcheck="false" />
       </div>
@@ -135,21 +133,6 @@ watch([pattern, text, ignoreCase, multiline, dotAll, extended], () => void recom
   gap: var(--nt-sp-3);
   height: 60vh;
   min-height: 0;
-}
-
-.nt-regex-pattern {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-3);
-  flex: none;
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 4em;
 }
 
 .nt-regex-flags {

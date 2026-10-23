@@ -1,10 +1,5 @@
 // 日志查看器浮窗：按级别着色 + 过滤。
-//
 // 场景：用户报告「应用出了问题」，第一句话总是「日志在哪」。
-// 这里直接读后端日志目录里的 app.log / warn.log，不用他先去资源管理器里翻。
-//
-// 着色按级别（ERROR 红 / WARN 黄）而不是按关键词：日志的级别字段是
-// 后端 tracing 写的，可信；关键词匹配会把正文里的 error 也涂红。
 
 <template>
   <NtModal :title="t('viewer.logViewer')" width="860" @close="dialogs.close()">

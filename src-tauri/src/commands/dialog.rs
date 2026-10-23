@@ -1,5 +1,4 @@
 //! 对话框命令：系统原生打开 / 保存对话框。
-//!
 //! 走 dialog 插件：原生对话框在 WebView 之外，不受 CSP 与模态层影响。
 
 use crate::pkg::error::{AppError, AppResult};

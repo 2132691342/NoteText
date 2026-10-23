@@ -1,8 +1,5 @@
 // 通用右键菜单：把一个条目列表渲染成浮层。
-//
 // 为什么做成通用组件：标签栏、文件树、编辑器各自写过一套，三处的
-// 间距 / 键盘可达性 / 点外部关闭行为都不一样。收敛到一处后
-// 「右键菜单怎么关」只有一个答案。
 <template>
   <Teleport to="body">
     <div ref="root" class="nt-menu" :style="style" @contextmenu.prevent>

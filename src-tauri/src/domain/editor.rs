@@ -1,5 +1,4 @@
 //! 编辑器域模型：标签页状态、光标位置、书签。
-//!
 //! 分工：正文归前端编辑器实例，元数据归这里后进 SQLite。
 
 use serde::{Deserialize, Serialize};

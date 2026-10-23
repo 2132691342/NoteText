@@ -1,7 +1,5 @@
 // 设置面板：编辑器（字号 / 字体 / 制表符 / 各类开关）。
-//
 // 每一项都对应 CodeMirror 的一个 compartment（见 CodeEditor.vue 的 watch），
-// 所以改设置立刻生效、不重开文件。
 <template>
   <div class="nt-set">
     <section class="nt-set-section">

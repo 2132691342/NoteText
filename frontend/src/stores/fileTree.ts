@@ -1,7 +1,5 @@
 // 文件树 store：目录展开状态、工作目录、脏标记、剪切板。
-//
 // 归属：树的「形状」（哪些目录展开）是纯 UI 态，留在前端；
-// 目录内容由后端 read_dir 给，外部变更由 `fs:changed` 事件驱动重读。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api, normalizeError } from '@/api'

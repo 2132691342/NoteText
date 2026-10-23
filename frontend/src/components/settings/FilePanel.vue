@@ -1,7 +1,5 @@
 // 设置面板：文件与编码（默认编码 / 行尾 / 保存行为 / 忽略规则）。
-//
 // 这些是「怎么写盘」的全局默认：单个文件可以在状态栏临时改，
-// 新建文件按这里的默认来。
 <template>
   <div class="nt-set">
     <section class="nt-set-section">
@@ -11,7 +9,7 @@
         <span class="nt-set-label">{{ t('settings.defaultEncoding') }}</span>
         <ElSelect v-model="defaultEncoding" size="small" filterable class="nt-set-ctl">
           <ElOption :label="t('settings.encodingAuto')" value="auto" />
-          <ElOption v-for="e in encodings" :key="e.id" :label="e.label" :value="e.id" />
+          <ElOption v-for="e in encodings" :key="e.id" :label="encodingLabel(e.id)" :value="e.id" />
         </ElSelect>
         <ElCheckbox v-model="autoDetect">{{ t('settings.autoDetectEncoding') }}</ElCheckbox>
       </div>
@@ -64,6 +62,7 @@ import {
 import { api } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
 import type { EncodingInfo } from '@/types/api'
+import { encodingLabel } from '@/utils/encoding'
 
 const { t } = useI18n()
 const settings = useSettingsStore()

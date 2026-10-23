@@ -1,7 +1,5 @@
 // 轻提示 store：顶部 / 右下角的短消息。
-//
 // 与 ElMessage 的分工：ElMessage 是 EP 的现成件，但它的队列在多个
-// 浮窗同时报错时会互相顶掉。这里自绘一个「可选中复制、悬停不计时」的宿主，
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'

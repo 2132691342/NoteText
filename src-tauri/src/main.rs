@@ -1,5 +1,4 @@
 //! 二进制入口：只做装配，不写业务逻辑。
-//!
 //! crate root 是 lib.rs，这里只调用 run()。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 

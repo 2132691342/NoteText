@@ -1,8 +1,5 @@
 // 错误码 → 人话提示 + 下一步动作。
-//
 // 后端给的 message 已经是人话，这里补两件后端做不到的事：
-// 按码段给「下一步」，以及把常见系统错误（文件被占用 / 权限不足）翻成用户能动手的那句话。
-// 文案一律走 i18n（tr）：这里是纯函数，没有组件实例可用 useI18n。
 import { normalizeError } from '@/api'
 import { tr } from '@/i18n'
 import type { AppError } from '@/types/api'

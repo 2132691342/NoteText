@@ -1,7 +1,5 @@
 // 菜单栏：一级菜单 + 下拉。
-//
 // 数据来自命令表（stores/commands），不在这里写死功能——
-// 新增命令只改命令注册处，菜单自动长出来。
 <template>
   <div class="nt-menubar">
     <span class="nt-menubar-brand">NoteText</span>
@@ -14,9 +12,9 @@
       <button
         class="nt-menu-item"
         :class="{ 'is-open': open === group.id }"
-        @click="open = open === group.id ? null : group.id"
+        @click="toggle(group.id, $event)"
       >
-        {{ t(`menu.${group.id}`) }}
+        {{ t(group.labelKey) }}
       </button>
       <Teleport to="body">
         <div
@@ -42,6 +40,7 @@
     </div>
     <div class="nt-menubar-spacer" />
     <button class="nt-menu-item" @click="router.push('/help')">{{ t('menu.help') }}</button>
+    <button class="nt-menu-item" @click="router.push('/settings')">{{ t('menu.settings') }}</button>
   </div>
 </template>
 
@@ -49,7 +48,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useCommandStore, DEFAULT_KEYBINDINGS, type Command } from '@/stores/commands'
+import {
+  useCommandStore,
+  DEFAULT_KEYBINDINGS,
+  MENU_GROUPS,
+  MENU_LABEL_KEYS,
+  type Command,
+  type MenuGroup,
+} from '@/stores/commands'
 import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
@@ -64,12 +70,11 @@ const anchorX = ref(0)
 const GROUPS = computed(() => {
   const byGroup = (g: Command['group']) =>
     commands.byGroup(g).map((c) => ({ ...c, sep: false as const }))
-  return [
-    { id: 'file', items: byGroup('file') },
-    { id: 'edit', items: byGroup('edit') },
-    { id: 'view', items: byGroup('view') },
-    { id: 'tools', items: byGroup('tools') },
-  ]
+  // 只渲染「有命令的分组」：空分组进菜单条只会多一个点不开的按钮。
+  // settings / help 走路由，不进下拉。
+  return MENU_GROUPS.filter((g) => g !== 'settings' && g !== 'help')
+    .map((id) => ({ id, labelKey: MENU_LABEL_KEYS[id as MenuGroup], items: byGroup(id) }))
+    .filter((g) => g.items.length > 0)
 })
 
 /** 下拉定位：贴在触发按钮下方。用 Teleport 到 body 才能越过编辑器的
@@ -83,13 +88,19 @@ function onHover(id: string) {
   // 已打开时滑过即切换：桌面菜单的常规行为。
   if (open.value !== null && open.value !== id) {
     open.value = id
-    const el = document.querySelector(`.nt-menu-wrap:nth-child(${index(id)})`)
-    anchorX.value = el?.getBoundingClientRect().left ?? 0
   }
 }
 
-function index(id: string) {
-  return GROUPS.value.findIndex((g) => g.id === id) + 2
+/** 点击切换：打开时记住触发按钮的左边界，下拉按它定位。 */
+function toggle(id: string, e: MouseEvent) {
+  if (open.value === id) {
+    open.value = null
+    return
+  }
+  open.value = id
+  // 直接从事件目标取坐标：不按 DOM 顺序反推（菜单条会随分组增减变化）。
+  const el = (e.currentTarget as HTMLElement | null) ?? null
+  anchorX.value = el?.getBoundingClientRect().left ?? 0
 }
 
 function keyOf(cmd: { id: string }): string {

@@ -1,5 +1,4 @@
 //! id 生成：UUID v4。
-//!
 //! 只给要导入导出的实体（宏 / 草稿）用；标签与书签用数据库自增整数。
 
 use std::hash::{BuildHasher, Hasher};

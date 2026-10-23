@@ -1,7 +1,5 @@
 // 浮窗统一容器：遮罩 + 焦点圈 + Esc 关闭 + 滚动锁。
-//
 // 所有浮窗一律包它，不自写 Teleport + backdrop——每处写一遍，
-// 就会出现「有的浮窗 Esc 能关、有的不能」这种不一致。
 <template>
   <Teleport to="body">
     <div class="nt-modal-mask" @click.self="emit('close')">

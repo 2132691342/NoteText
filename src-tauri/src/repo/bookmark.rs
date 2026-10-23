@@ -1,5 +1,4 @@
 //! 书签持久化：按「文件某一行」定位。
-//!
 //! 唯一键是 path + line：同一行重复加视为已存在。
 
 use rusqlite::{params, Connection, OptionalExtension};

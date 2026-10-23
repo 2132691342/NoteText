@@ -1,5 +1,4 @@
 //! 正则域模型：模式、选项、匹配结构。
-//!
 //! 与 hash.rs 同属「拿一段文本做一次纯计算」的工具场。
 
 use serde::{Deserialize, Serialize};

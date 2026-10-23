@@ -120,8 +120,9 @@ document.dispatchEvent(new CustomEvent('editor-cmd', { detail: { cmd, payload } 
 
 ## 取舍
 
-**不引 Pinia 之外的全局状态库**（Vuex / mitt）：Pinia 的 store 就是模块级单例，
-而跨组件通信用自定义事件更直接。引 mitt 只为了 `emit/on` 两个函数不值得。
-
-**快捷键用字符串而不是 `KeyboardEvent.code` 枚举**：字符串可序列化
-（存进配置表）、可读（设置页直接显示）、可与 Tauri 的 accelerator 格式互转。
+| 选择 | 优势 | 代价 |
+|---|---|---|
+| 不引 Pinia 之外的全局状态库（Vuex / 事件总线库） | store 就是模块级单例，跨组件通信自定义事件更直接 | 事件名靠约定，改事件名编译器不报错 |
+| 快捷键用字符串而非 `KeyboardEvent.code` 枚举 | 可序列化（存进配置表）、可读（设置页直接显示）、可与 Tauri accelerator 互转 | 拼写要人工对：`Control+Shift+F` 写错不会报错，只是按不出来 |
+| 命令表启动时一次注册、之后不改 | 三入口（菜单 / 工具栏 / 快捷键）读同一份，不存在漂移 | 动态命令（比如按当前文件类型变样）要自己判断 `enabled()` |
+| 正文不进 store | 大文件不卡；保存与恢复只传元数据 | 需要 `useEditorRegistry` 这层间接，取正文要走 `getText(tabId)` |

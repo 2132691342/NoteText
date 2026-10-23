@@ -1,7 +1,5 @@
 // 编辑器语言：按 language id 给 CodeMirror 的语言扩展。
-//
 // 语言包按需动态 import：30 种语言全静态引入会把首屏撑大几 MB，
-// 而用户一次只开一两种语言的文件。
 import { type Ref } from 'vue'
 import type { Extension } from '@codemirror/state'
 import { LanguageDescription, StreamLanguage } from '@codemirror/language'
@@ -37,6 +35,8 @@ const DYNAMIC: Record<string, () => Promise<unknown>> = {
   go: () => import('@codemirror/lang-go'),
   java: () => import('@codemirror/lang-java'),
   python: () => import('@codemirror/lang-python'),
+  // 后端的 C 与 C++ 是两个 id（.c/.h 归 c），复用同一个语法包。
+  c: () => import('@codemirror/lang-cpp'),
   cpp: () => import('@codemirror/lang-cpp'),
   php: () => import('@codemirror/lang-php'),
   lua: () => import('@codemirror/legacy-modes/mode/lua'),

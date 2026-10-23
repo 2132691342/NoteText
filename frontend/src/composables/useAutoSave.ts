@@ -1,8 +1,5 @@
 // 自动保存：按配置的间隔把已命名的脏标签写盘。
-//
 // 只自动存「已有路径」的标签：未命名的标签没有落盘位置，自动存会弹出
-// 另存为对话框——用户正在打字时弹原生框是最糟的打断方式。这类标签
-// 靠草稿机制保命（见 useQuitGuard 的 saveDraft）。
 import { onUnmounted, watch } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 import { useSettingsStore } from '@/stores/settings'

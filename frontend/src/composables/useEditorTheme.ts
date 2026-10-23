@@ -1,7 +1,5 @@
 // 编辑器主题：CodeMirror 的扩展跟随 --nt-* 令牌。
-//
 // 为什么手写而不是引 @codemirror/theme-one-dark：EP 的主题包写死色值，
-// 而我们的纪律是「色值只在 themes.css 定义」。这里用 EditorView.theme
 
 import { EditorView } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'

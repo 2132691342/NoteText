@@ -1,11 +1,9 @@
 // 转到行浮窗：输入行号跳过去。
-//
 // 行号上限取当前文档行数：输入超范围时按钮置灰，而不是跳过去
-// 报一个「行号超出范围」——那要等用户点了才知道。
 <template>
   <NtModal :title="t('dialog.gotoLine')" width="360" @close="emit('close')">
     <div class="nt-goto">
-      <div class="nt-goto-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('dialog.line') }}</span>
         <ElInput
           ref="input"
@@ -73,20 +71,6 @@ function go() {
   display: flex;
   flex-direction: column;
   gap: var(--nt-sp-4);
-}
-
-.nt-goto-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-3);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 3.5em;
 }
 
 .nt-goto-actions {

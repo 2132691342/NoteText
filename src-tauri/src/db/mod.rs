@@ -1,5 +1,4 @@
 //! 数据库：打开 + 迁移 + WAL 设置。
-//!
 //! fail-fast：DB 打不开直接启动失败，不做半残启动。
 
 use std::path::Path;

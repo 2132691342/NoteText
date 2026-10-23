@@ -1,5 +1,4 @@
 //! 哈希域模型：文件 / 文本的摘要。
-//!
 //! 算法清单与 Windows 自带工具一致，便于用户交叉校验。
 
 use serde::{Deserialize, Serialize};

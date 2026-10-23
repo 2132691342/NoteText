@@ -1,9 +1,8 @@
 // 编辑器实例注册表：store 只存元数据，正文由这里按 tabId 取。
-//
 // 分开的原因：每次按键都把正文同步进 store，会让 Vue 的响应式系统
-// 处理整篇文档的 diff，几百 KB 的日志文件直接卡死。
 import { type EditorView } from '@codemirror/view'
 import type { Text } from '@codemirror/state'
+import { ref } from 'vue'
 import { undoDepth, redoDepth } from '@codemirror/commands'
 
 /** 一个标签的编辑状态：视图 + 保存基线。 */
@@ -15,14 +14,45 @@ interface Entry {
 
 const entries = new Map<number, Entry>()
 
+/**
+ * 每个标签的正文版本号：正文每变一次 +1。
+ *
+ * `entries` 是普通 Map，computed 读它不会因正文变化而失效——Markdown 预览
+ * 就这样永远停在空态（求值一次拿到 '' 后再不重算）。要跟着正文走的消费方
+ * 先在 computed 里读这个版本号，把它变成真正的依赖。
+ */
+const docVersions = ref(new Map<number, number>())
+
+/** 取某个标签的正文版本号。未挂载为 0。 */
+export function docVersionOf(tabId: number): number {
+  return docVersions.value.get(tabId) ?? 0
+}
+
+/** 标记某个标签的正文变了：注册、载入完成、每次文档变更都调。 */
+export function bumpDocVersion(tabId: number) {
+  const next = new Map(docVersions.value)
+  next.set(tabId, (next.get(tabId) ?? 0) + 1)
+  docVersions.value = next
+}
+
+/** 卸载时清掉版本记录：集合不该跟着关闭的标签无限增长。 */
+export function dropDocVersion(tabId: number) {
+  if (!docVersions.value.has(tabId)) return
+  const next = new Map(docVersions.value)
+  next.delete(tabId)
+  docVersions.value = next
+}
+
 /** 挂载一个 tab 的编辑器视图。baseline 由组件按载入内容给出。 */
 export function register(tabId: number, view: EditorView, baseline: Text) {
   entries.set(tabId, { view, baseline })
+  bumpDocVersion(tabId)
 }
 
 /** 卸载。 */
 export function unregister(tabId: number) {
   entries.delete(tabId)
+  dropDocVersion(tabId)
 }
 
 /** 取某个 tab 的视图。 */

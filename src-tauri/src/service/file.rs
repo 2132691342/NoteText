@@ -1,5 +1,4 @@
 //! 文件服务：读取 / 写入 / 目录树 / 元信息 / 编码探测。
-//!
 //! 三条决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；大文件分模式读。
 
 use std::fs;
@@ -185,6 +184,17 @@ impl FileService {
 
     /// 读文件。`mode` 决定全量 / 头部 / 行区间。
     pub fn read(&self, path: &str, mode: ReadMode) -> AppResult<FileContentVO> {
+        self.read_as(path, mode, None)
+    }
+
+    /// 读文本文件，可强制指定编码。`encoding` 给值时跳过探测；
+    /// 解不动时退回探测编码，不让用户得到打不开的文件。
+    pub fn read_as(
+        &self,
+        path: &str,
+        mode: ReadMode,
+        encoding: Option<&str>,
+    ) -> AppResult<FileContentVO> {
         let p = Path::new(path);
         if !p.is_file() {
             return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
@@ -230,12 +240,36 @@ impl FileService {
         };
 
         let truncated = mode != ReadMode::Full && (bytes.len() as u64) < meta.len();
-        let (encoding, low_conf) = encoding::detect(&bytes);
+        let (detected, low_conf) = encoding::detect(&bytes);
+        let encoding = encoding.unwrap_or(&detected).to_string();
         let (has_bom, body) = encoding::strip_bom(&bytes, &encoding);
-        let decoded = encoding::decode(body, &encoding).map_err(|e| {
-            AppError::wrap(codes::ENCODE_FAILED, "按探测到的编码解码失败", e)
-                .with_detail(format!("编码：{encoding}"))
-        })?;
+        let decoded = match encoding::decode(body, &encoding) {
+            Ok(t) => t,
+            // 强制编码解不动：退回探测到的编码。用户选错时至少还打得开。
+            Err(e) => {
+                if detected == encoding {
+                    return Err(
+                        AppError::wrap(codes::ENCODE_FAILED, "按指定编码解码失败", e)
+                            .with_detail(format!("编码：{encoding}")),
+                    );
+                }
+                let (bom2, body2) = encoding::strip_bom(&bytes, &detected);
+                let text2 = encoding::decode(body2, &detected).map_err(|e2| {
+                    AppError::wrap(codes::ENCODE_FAILED, "解码失败", e2)
+                        .with_detail(format!("指定编码：{encoding}，探测编码：{detected}"))
+                })?;
+                let le2 = detect_line_ending_of(&bytes);
+                return Ok(FileContentVO {
+                    path: path.to_string(),
+                    text: crate::pkg::text::normalize_newlines(&text2),
+                    encoding: detected.clone(),
+                    read_bytes: bytes.len(),
+                    truncated: truncated || low_conf,
+                    line_ending: le2,
+                    has_bom: bom2,
+                });
+            }
+        };
         // 行尾在探测之后归一：`detect_line_ending_of` 要看原始字节判 CRLF/LF，
         // 而归一后的文本才交给编辑器算行列（混用行尾会让列号随行尾漂移）。
         let line_ending = detect_line_ending_of(&bytes);

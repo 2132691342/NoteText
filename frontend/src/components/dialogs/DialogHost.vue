@@ -1,7 +1,5 @@
 // 工具箱浮窗宿主：JSON / Diff / 哈希 / 正则 / 编码 / 行编辑。
-//
 // 统一挂在最外层（不塞进某个组件）：浮窗要能盖住编辑器，
-// 且 Esc 关闭、焦点圈在浮窗内（不自写 Teleport + backdrop 每处一遍）。
 <template>
   <component
     :is="currentComp"
@@ -40,6 +38,7 @@ const COMPONENTS = {
   dirDiff: () => import('@/components/dialogs/DirDiffDialog.vue'),
   colorPicker: () => import('@/components/dialogs/ColorPickerDialog.vue'),
   logViewer: () => import('@/components/dialogs/LogViewerDialog.vue'),
+  drafts: () => import('@/components/dialogs/DraftsDialog.vue'),
 } as const
 
 const current = computed(() => dialogs.active)
@@ -77,6 +76,7 @@ const currentTitle = computed(() => {
     dirDiff: 'dirDiff.title',
     colorPicker: 'viewer.colorPicker',
     logViewer: 'viewer.logViewer',
+    drafts: 'dialog.drafts',
   }
   return t(map[key] ?? key)
 })

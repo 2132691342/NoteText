@@ -16,7 +16,7 @@
 | 路由 | Vue Router | ^4.3.x（hash 模式） |
 | UI 组件库 | Element Plus | ^2.9.x（按需引入，变量接到 `--nt-*`） |
 | 原子 CSS | UnoCSS | ^0.58.x（布局与间距；色值仍走 `--nt-*` 令牌） |
-| 代码编辑器 | CodeMirror 6 | ^6.x（30 种语言，静态 + 动态按需加载） |
+| 代码编辑器 | CodeMirror 6 | ^6.x（31 种语言识别，静态 + 动态按需加载） |
 | Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
 | 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
 | 文档预览 | XLSX · docx-preview · vue-pdf-embed | 按扩展名分流 |
@@ -351,6 +351,30 @@ mod dialog_stub;
 - 文案一律走 i18n（`src/locales/`，key 按域分层）；
   模板里禁止硬编码用户可见字符串；文案里的裸 `@` 必须写成 `{'@'}`
 
+### 2.10.2 国际化（强制）
+
+中文默认 + 英文，两者永远同构：**加一个 key 就两个文件同时加**。密钥与失效由
+`scripts/i18n-audit.mjs` 机械核对（`check.ps1 -Full` 会跑），不靠人工对表。
+
+| 位置 | 该写什么 | 不能写什么 |
+|---|---|---|
+| 组件模板 | `t('dialog.drafts')` | 任何中文文本节点 / 中文 `title` / `placeholder` |
+| 组件脚本 | `useI18n()` 的 `t` | 中文字符串字面量 |
+| store / utils / api | `tr()`（`@/i18n`） | 同上——这些地方没有组件实例，但仍必须走 i18n |
+| 命令表 | `labelKey` / `hintKey` 指向 key | 直接给文案 |
+| 后端 | `AppError` 的 message 写中文 | — |
+
+**后端 message 固定中文**：Rust 侧没有「界面语言」这个概念（窗口属于前端），
+所以它只负责一句中文描述。英文界面由前端 `normalizeError()` 按错误码取
+`errCode.<code>` 的英文句子，后端那句降级为 `details`。
+**加新错误码时，`pkg/error.rs` 与 `locales/{zh-CN,en}.ts` 的 `errCode` 三处要一起加**，
+审计脚本会校验。
+
+**Element Plus 文案跟随界面语言**：`main.ts` 注入 `computed<Language>`，
+`App.vue` 在最顶层 `inject` 后交给 `ElConfigProvider`。
+`inject()` 必须在 `setup` 顶层同步调用——放进 `computed` 的 getter 里会在每次
+求值时报「inject() can only be used inside setup()」。
+
 ### 2.11 数据库迁移
 
 - rusqlite `execute_batch` 里 `CREATE TABLE IF NOT EXISTS`：幂等，已存在的表跳过
@@ -428,28 +452,51 @@ mod dialog_stub;
 | 命令 | 跑什么 | 什么时候用 |
 |---|---|---|
 | `pwsh scripts/check.ps1` | rustfmt → cargo check → 全量测试 | 日常快门 |
-| `pwsh scripts/check.ps1 -Full` | + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
-| `pwsh scripts/check.ps1 -List` | 列出全部测试链 | 不知道入口叫什么时 |
-| `pwsh scripts/check.ps1 -Detail` | 打印每条链的名字与结果 | 想看断言清单时 |
+| `pwsh scripts/check.ps1 -Full` | + i18n 审计 + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
+| `pwsh scripts/check.ps1 -List` | 列出全部测试名 | 不知道入口叫什么时 |
+| `pwsh scripts/check.ps1 -Detail` | 打印每个测试的名字与结果 | 想看断言清单时 |
 
 - **默认安静**：失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
-- 只有 4 条链且全量 < 1 秒，**不设「只跑一条链」的开关**——
+- 只有 23 个测试且全量 < 1 秒，**不设「只跑一条链」的开关**——
   加了省不了多少时间，却要多记一个参数
+- `scripts/i18n-audit.mjs` 可以单独跑：`node scripts/i18n-audit.mjs`
+  它查四件事——key 引用是否都有定义、zh/en 是否对齐、模板里有没有裸中文、
+  后端错误码是否两边都有文案。四类问题都是编译期抓不到的
 
 实测耗时（本机）：快门约 15s、`-Full` 约 60s。
 
 ### 3.4 测试索引
 
-4 条长链路，分 4 个文件（`src-tauri/tests/`），一个域一个文件，入口一律叫
-`test_<domain>_chain`。每条链都跨多个模块，优先守护「用户文件没了 / 界面崩白屏」
-级别的事故，简单纯函数断言不入链。
+4 个文件（`src-tauri/tests/`），一个域一个文件；每个文件里**一个测试函数验一种坏法**，
+函数名就是那句坏事。这样失败时报文直接指出坏在哪，不必对着行号往回找。
 
-| 文件 | 链 | 覆盖的链路 |
+简单纯函数断言不入链；每一条都守护「用户文件没了 / 界面崩白屏」级别的事故。
+
+| 文件 | 测试 | 坏法 |
 |---|---|---|
-| `session_chain.rs` | `test_bootstrap_chain` | **装配与持久化**：首次启动写默认配置 → 空库恢复给空标签 → 会话顺序、活跃索引、窗口尺寸往返 → 标签全关时会话行仍保留 → 书签去重与切换删除 → 空列表序列化契约（必须 `[]` 而非 `null`） |
-| `file_chain.rs` | `test_file_domain_chain` | **文件域**：CRLF 读出归一成 LF → 不指定行尾按原样写回、显式切换才改 → 原子写不留临时文件、目标目录不存在不静默创建 → 编码探测与 BOM 剥离补回 → 文件操作护栏（目标已存在不覆盖、目录不进自己子目录、相对路径与 `..` 拒绝、删除逐个记账、新建已存在即拒） |
-| `tools_chain.rs` | `test_tools_contract_chain` | **工具箱与文本变换**：坏 JSON 给行列号 → diff 行级对齐与增删计数 → 正则捕获组 → 三种哈希对已知向量 → 注释切换加去往返、半注释块补齐、不支持行注释报错 |
-| `batch_chain.rs` | `test_batch_safety_chain` | **批量操作**：扫描阶段不改文件 → 应用只改勾选的 → 重命名冲突标冲突且不可应用 → 强行应用整体拒绝不覆盖 → 无冲突真的落地 |
+| `session_chain.rs` | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
+| | `session_round_trip_keeps_order_active_index_and_window_size` | 重启后标签顺序与窗口尺寸丢失 |
+| | `closing_all_tabs_keeps_the_session_row_for_window_size` | 关光标签后下次启动变成默认窗口大小 |
+| | `bookmark_add_dedupes_and_toggle_removes` | F2 按两下加出两条书签 |
+| | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
+| `file_chain.rs` | `read_normalizes_crlf_but_remembers_original` | 行尾样式没记住 |
+| | `write_keeps_original_line_ending_unless_switched` | 一次保存把整个文件行尾改成 LF |
+| | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
+| | `bom_is_stripped_on_read_and_restored_on_write` | 正文前多三个不可见字节 / BOM 丢失 |
+| | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
+| | `rename_never_overwrites_an_existing_file` | 重命名无声销毁别人的文件 |
+| | `rename_rejects_relative_paths_and_directory_cycles` | 文件树成环、递归遍历挂死 |
+| | `delete_accounts_for_each_path_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
+| `tools_chain.rs` | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
+| | `diff_counts_added_and_removed_lines` | 增删计数错，用户照错结果改 |
+| | `regex_reports_capture_groups_for_every_match` | 空匹配不推进挂死界面 |
+| | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
+| | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
+| | `toggle_comment_rejects_languages_without_line_comments` | 静默返回原文让用户以为生效 |
+| `batch_chain.rs` | `scan_reports_without_touching_files` | 扫描阶段就落盘，绕过确认 |
+| | `apply_replaces_only_the_checked_files` | 改掉用户没勾选的文件 |
+| | `rename_conflict_is_flagged_and_cannot_be_applied` | 重命名覆盖已有文件 |
+| | `rename_without_conflict_actually_lands` | 该落地的没落地 |
 
 **改这里 → 这样验**：
 

@@ -1,5 +1,4 @@
 //! 会话与标签持久化。
-//!
 //! 写入用全量替换而非 diff：标签总数只在个位数到十位数之间。
 
 use rusqlite::{params, Connection};

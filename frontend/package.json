@@ -1,6 +1,6 @@
 {
   "name": "notetext-frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "NoteText frontend - Vue 3 + TS + Vite (Tauri 2 embedded WebView2)",

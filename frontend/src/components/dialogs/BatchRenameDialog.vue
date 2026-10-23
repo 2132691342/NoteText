@@ -1,12 +1,10 @@
 // 批量重命名浮窗：三种模式（查找替换 / 加序号 / 大小写），预览后才落地。
-//
 // 冲突（目标已存在）在预览里就标红并不可勾选：覆盖别人的文件没有撤销键，
-// 与其应用时报错回滚，不如在勾选阶段就挡住。
 <template>
   <NtModal :title="t('tool.batchRename')" width="780" @close="emit('close')">
     <div class="nt-rename">
       <div class="nt-rename-form">
-        <div class="nt-rename-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('tool.renameMode') }}</span>
           <ElRadioGroup v-model="mode" size="small">
             <ElRadioButton value="replace">{{ t('tool.renameReplace') }}</ElRadioButton>
@@ -15,14 +13,14 @@
           </ElRadioGroup>
         </div>
 
-        <div v-if="mode === 'replace'" class="nt-rename-row">
+        <div v-if="mode === 'replace'" class="nt-field">
           <span class="nt-label">{{ t('dialog.find') }}</span>
           <ElInput v-model="find" size="small" />
           <span class="nt-label">{{ t('tool.renameReplace') }}</span>
           <ElInput v-model="replace" size="small" />
         </div>
 
-        <div v-else-if="mode === 'sequence'" class="nt-rename-row">
+        <div v-else-if="mode === 'sequence'" class="nt-field">
           <span class="nt-label">{{ t('tool.renameFormat') }}</span>
           <ElInput v-model="replace" size="small" placeholder="{n}_" />
           <span class="nt-label">{{ t('tool.renameStart') }}</span>
@@ -30,7 +28,7 @@
           <ElCheckbox v-model="prefix" size="small">{{ t('tool.renamePrefix') }}</ElCheckbox>
         </div>
 
-        <div v-else class="nt-rename-row">
+        <div v-else class="nt-field">
           <span class="nt-label">{{ t('tool.renameCase') }}</span>
           <ElRadioGroup v-model="caseTarget" size="small">
             <ElRadioButton value="upper">{{ t('tool.toUpper') }}</ElRadioButton>
@@ -38,7 +36,7 @@
           </ElRadioGroup>
         </div>
 
-        <div class="nt-rename-row">
+        <div class="nt-field">
           <ElButton size="small" @click="pickFiles">{{ t('tool.renamePick') }}</ElButton>
           <span class="nt-readout">{{ files.length }} {{ t('tool.renameFileCount') }}</span>
           <div class="nt-rename-spacer" />
@@ -209,20 +207,6 @@ function baseOf(p: string): string {
   flex-direction: column;
   gap: var(--nt-sp-3);
   flex: none;
-}
-
-.nt-rename-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-3);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 4em;
 }
 
 .nt-rename-spacer {

@@ -1,7 +1,5 @@
 // Tauri invoke 封装：全站唯一的「前端 → Rust」出口。
-//
 // 每个命令一个导出函数（函数名与 Rust 侧一致），错误统一转成 AppError。
-// 浏览器里无后端时返回 `code: 'no-backend'`，界面显示空态而不是崩。
 
 import { invoke } from '@tauri-apps/api/core'
 import { tr } from '@/i18n'
@@ -38,13 +36,18 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
   }
 }
 
-/** 把 invoke 的 reject 归一成 AppError。 */
+/**
+ * 把 invoke 的 reject 归一成 AppError。
+ *
+ * 后端 message 是写死的中文（Rust 侧没有界面语言这个概念），直接透给英文
+ * 界面就是中英混排。这里按错误码取本地化文案，后端那句只当 details 用。
+ */
 export function normalizeError(e: unknown): AppError {
   if (typeof e === 'string') {
     // 老形状：纯字符串。按 JSON 试着解一次。
     try {
       const parsed = JSON.parse(e) as AppError
-      if (parsed && typeof parsed.code === 'string') return parsed
+      if (parsed && typeof parsed.code === 'string') return localize(parsed)
     } catch {
       /* 不是 JSON：按未知错误处理 */
     }
@@ -53,17 +56,26 @@ export function normalizeError(e: unknown): AppError {
   if (e && typeof e === 'object') {
     const o = e as Partial<AppError> & { message?: string }
     if (typeof o.code === 'string') {
-      return {
+      return localize({
         code: o.code,
-        message: o.message ?? tr('error.unknown', { reason: '' }),
+        message: o.message ?? '',
         details: o.details ?? '',
-      }
+      })
     }
     if (typeof o.message === 'string') {
       return { code: 'unknown', message: o.message, details: '' }
     }
   }
   return { code: 'unknown', message: tr('error.unknown', { reason: '' }), details: String(e) }
+}
+
+/** 按错误码换成当前语言的文案；码不认识时保留后端原句。 */
+function localize(err: AppError): AppError {
+  const key = 'errCode.' + err.code
+  const text = tr(key)
+  // vue-i18n 缺 key 时返回 key 本身：那等于没翻译，用原句。
+  if (!text || text === key) return err
+  return { code: err.code, message: text, details: err.details || err.message }
 }
 
 // ---- 按域分组的薄封装 ----
@@ -123,8 +135,12 @@ import type { AppConfig } from '@/types/api'
 
 export const api = {
   // 文件
-  readFile: (path: string, mode?: ReadMode) =>
-    call<FileContentVO>('read_file', { path, mode: serializeReadMode(mode) }),
+  readFile: (path: string, encoding?: string, mode?: ReadMode) =>
+    call<FileContentVO>('read_file', {
+      path,
+      encoding: encoding ?? null,
+      mode: serializeReadMode(mode),
+    }),
   /** 读二进制（预览 / Hex）。返回 base64：走 Vec<u8> 会被序列化成 number[]。 */
   readBinary: (path: string) => call<string>('read_binary', { path }),
   writeFile: (

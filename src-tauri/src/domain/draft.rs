@@ -1,5 +1,4 @@
 //! 草稿域模型：新建未保存标签的正文暂存。
-//!
 //! 只在关闭时写；与 session.tabs 的分工是「这个标签有没有 path」。
 
 use serde::{Deserialize, Serialize};

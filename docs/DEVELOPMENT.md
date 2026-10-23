@@ -15,9 +15,9 @@
 
 ```powershell
 pwsh scripts/check.ps1              # 日常快门（rustfmt → check → 测试）
-pwsh scripts/check.ps1 -Chain batch  # 只跑名字命中的那条链
-pwsh scripts/check.ps1 -List        # 列出全部测试链
-pwsh scripts/check.ps1 -Full        # + clippy -D warnings + 前端构建
+pwsh scripts/check.ps1 -List        # 列出全部测试名
+pwsh scripts/check.ps1 -Detail      # 打印每个测试的名字与结果
+pwsh scripts/check.ps1 -Full        # + i18n 审计 + clippy -D warnings + 前端构建
 
 npm --prefix frontend install       # 首次
 npm --prefix frontend run dev       # 浏览器预览（无后端，空态）
@@ -25,8 +25,8 @@ npm --prefix frontend run dev       # 浏览器预览（无后端，空态）
 ./frontend/node_modules/.bin/tauri build   # 产物 target/release/NoteText.exe
 ```
 
-定位测试的标准动作：先 `-List` 拿索引，再 `-Chain <关键字>` 落到一条链，
-不翻测试文件。
+定位测试：先 `-List` 拿清单，再 `cargo test --test <文件> <测试名>` 落到一个
+用例上。测试函数名就是它守护的那件坏事，不必翻文件反推。
 
 单独跑某一步时才手敲：
 
@@ -34,8 +34,9 @@ npm --prefix frontend run dev       # 浏览器预览（无后端，空态）
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test  --manifest-path src-tauri/Cargo.toml          # 全部域
-cargo test  --manifest-path src-tauri/Cargo.toml -- file    # 只跑文件域
+cargo test  --manifest-path src-tauri/Cargo.toml --test file_chain   # 只跑文件域
 cd frontend; npx vue-tsc -b; npx vite build
+node scripts/i18n-audit.mjs                              # 国际化审计
 ```
 
 ## 隔离数据（调试时）

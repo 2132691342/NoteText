@@ -1,20 +1,18 @@
 // 目录查找浮窗：在整个文件夹里搜，结果按文件分组。
-//
 // 与「本文件查找」分开：目录查找要遍历文件、要进度、结果可能上万条，
-// 塞进同一个小浮窗会让界面卡住。这里单独一个大浮窗 + 结果列表。
 <template>
   <NtModal :title="t('dialog.findInFiles')" width="760" @close="emit('close')">
     <div class="nt-fif">
-      <div class="nt-fif-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('dialog.directory') }}</span>
         <ElInput v-model="dir" size="small" readonly @click="pick" />
         <ElButton size="small" @click="pick">{{ t('common.browse') }}</ElButton>
       </div>
-      <div class="nt-fif-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('dialog.find') }}</span>
         <ElInput v-model="query" size="small" spellcheck="false" @keydown.enter="run" />
       </div>
-      <div class="nt-fif-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('dialog.includePattern') }}</span>
         <ElInput v-model="include" size="small" placeholder="*.ts" spellcheck="false" />
         <span class="nt-label">{{ t('dialog.excludePattern') }}</span>
@@ -252,20 +250,6 @@ function highlight(h: { line: string }): string {
   gap: var(--nt-sp-3);
   height: 70vh;
   min-height: 0;
-}
-
-.nt-fif-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-2);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 4.5em;
 }
 
 .nt-fif-flags {

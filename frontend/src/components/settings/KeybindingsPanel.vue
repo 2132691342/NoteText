@@ -1,7 +1,5 @@
 // 设置面板：快捷键（查看默认键位 + 自定义覆盖）。
-//
 // 覆盖写进 config.keybindings（后端 settings KV），不进 Rust 侧——
-// 键位是纯界面关注点，后端不该知道。
 <template>
   <div class="nt-set">
     <section class="nt-set-section">

@@ -1,5 +1,4 @@
 //! 最近文件域模型：记录与固定。
-//!
 //! exists 由后端打开前探测，省掉前端每个文件一次 IPC。
 
 use serde::{Deserialize, Serialize};

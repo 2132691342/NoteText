@@ -1,7 +1,5 @@
 // 自绘标题栏：品牌 + 当前文件名 + 窗控。
-//
 // 无边框窗口（tauri.conf.json decorations=false）后，最小化 / 最大化 /
-// 关闭都不再是系统装饰，全走这里。拖拽区用 data-tauri-drag-region 声明。
 <template>
   <div class="nt-titlebar" data-tauri-drag-region>
     <div class="nt-titlebar-brand">

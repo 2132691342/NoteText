@@ -1,7 +1,5 @@
 // 行编辑浮窗：11 种行级变换，可预览后应用。
-//
 // 变换在后端算（service::editor::apply_line_op）：同样的逻辑
-// 也服务「批量处理文件」，两边必须一致。
 <template>
   <NtModal :title="t('tool.lineOp')" width="640" @close="emit('close')">
     <div class="nt-lineop">

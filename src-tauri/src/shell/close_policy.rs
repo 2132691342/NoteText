@@ -1,5 +1,4 @@
 //! 关闭策略：关窗时是退出还是收进托盘（见 specs/04）。
-//!
 //! 三种来源分开处理：点 X / 前端确认退出 / 托盘点退出。
 
 use std::sync::atomic::{AtomicBool, Ordering};

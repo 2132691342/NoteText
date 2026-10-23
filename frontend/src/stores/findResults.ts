@@ -1,5 +1,4 @@
 // 查找结果：目录级查找的命中，供侧栏面板显示。
-//
 // 从浮窗搬到 store：浮窗关掉结果就没了，而用户要反复点开好几处。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'

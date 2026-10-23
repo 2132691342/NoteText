@@ -1,5 +1,4 @@
 //! NoteText 库目标：装配入口与全部模块。
-//!
 //! 拆 lib 与 bin 两个目标，让集成测试链接同一份装配而不必拉起 WebView。
 
 pub mod app;

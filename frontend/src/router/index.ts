@@ -1,7 +1,5 @@
 // 路由表：hash 模式，单窗口桌面应用。
-//
 // 为什么 hash 而不是 history：Tauri 的 asset 协议下没有服务端做重写，
-// history 模式刷新会 404。hash 模式刷新、前进后退都稳定。
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const router = createRouter({

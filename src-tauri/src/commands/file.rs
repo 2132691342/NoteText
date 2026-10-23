@@ -1,5 +1,4 @@
 //! 文件命令：读取 / 写入 / 目录 / 对话框 / 编码探测。
-//!
 //! 二进制走 read_binary 且出参是 base64；读取带 20MB 上限。
 
 use tauri::{AppHandle, State};
@@ -9,16 +8,18 @@ use crate::domain::file::{FileContentVO, ReadMode};
 use crate::pkg::error::AppResult;
 
 /// 读文本文件。`mode` 决定全量 / 前段 / 行区间。
+/// `encoding` 给值时跳过自动探测（用户指定编码重开）。
 #[tauri::command]
 pub fn read_file(
     state: State<'_, AppState>,
     path: String,
     mode: Option<ReadMode>,
+    encoding: Option<String>,
 ) -> AppResult<FileContentVO> {
     state
         .services
         .file
-        .read(&path, mode.unwrap_or(ReadMode::Full))
+        .read_as(&path, mode.unwrap_or(ReadMode::Full), encoding.as_deref())
 }
 
 /// 写文本文件。编码 / 行尾 / BOM 缺省时按读时的值写回。

@@ -1,8 +1,8 @@
-//! 装配与持久化链路：建库 → 默认配置 → 会话往返 → 书签去重 → 空列表序列化契约。
+//! 装配与持久化：建库 → 默认配置 → 会话往返 → 书签去重 → 空列表序列化契约。
 //!
-//! 失败表现：启动即崩；重启后标签顺序与窗口尺寸丢失；或前端按数组读空列表拿到 null 而白屏。
+//! 失败表现：启动即崩；重启后标签顺序与窗口尺寸丢失；
+//! 或前端按数组读空列表拿到 null 而白屏。
 
-use notetext_lib::app::bootstrap;
 use notetext_lib::domain::bookmark::BookmarkAddReq;
 use notetext_lib::domain::config::AppConfig;
 use notetext_lib::domain::session::SessionDO;
@@ -11,27 +11,35 @@ use notetext_lib::repo::session::SessionRepo;
 use notetext_lib::repo::settings::SettingsRepo;
 
 mod common;
-use common::{tab, temp_paths};
+use common::{boot, tab};
+
+/// 装配一个干净的应用实例。
+fn setup() -> (tempfile::TempDir, notetext_lib::app::bootstrap::AppState) {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let state = boot(&dir);
+    (dir, state)
+}
 
 #[test]
-fn test_bootstrap_chain() {
-    let dir = tempfile::tempdir().expect("建临时目录失败");
-    let state = bootstrap::build(&temp_paths(&dir)).expect("装配失败");
-
-    // 首次启动写默认配置；空库恢复给空标签，前端显示欢迎页而不是崩。
+fn first_launch_writes_defaults_and_gives_empty_session() {
+    let (_dir, state) = setup();
     state
         .db
         .with(|conn| {
             let cfg = SettingsRepo::load(conn)?;
             assert_eq!(cfg, AppConfig::default(), "首次启动应写入默认配置");
+            // 空库必须能给出一份「没有标签」的结果：前端据此显示欢迎页。
             let empty = SessionRepo::load(conn)?;
             assert!(empty.session.is_none(), "空库不应有会话");
             assert!(empty.tabs.is_empty(), "空库不应有标签");
             Ok(())
         })
         .expect("数据库链路不可用");
+}
 
-    // 会话往返：标签顺序、活跃索引、窗口尺寸都要回来。
+#[test]
+fn session_round_trip_keeps_order_active_index_and_window_size() {
+    let (_dir, state) = setup();
     let tabs = vec![
         tab(1, "C:\\a.txt", "a.txt"),
         tab(2, "", "未命名-1"),
@@ -54,8 +62,18 @@ fn test_bootstrap_chain() {
     let restored_session = restored.session.expect("会话行应存在");
     assert_eq!(restored_session.active_index, 2, "活跃索引应恢复");
     assert_eq!(restored_session.window_width, 1000, "窗口宽度应恢复");
+}
 
-    // 标签全关时会话行仍留着：窗口尺寸记在这张表上。
+#[test]
+fn closing_all_tabs_keeps_the_session_row_for_window_size() {
+    let (_dir, state) = setup();
+    let session = SessionDO {
+        window_width: 1000,
+        window_height: 700,
+        ..Default::default()
+    };
+
+    // 标签全关不等于「没有会话」：窗口尺寸记在这张表上，删行会让下次启动开成默认大小。
     state
         .db
         .with(|conn| SessionRepo::save(conn, &session, &[]))
@@ -63,13 +81,18 @@ fn test_bootstrap_chain() {
     let empty = state.db.with(SessionRepo::load).expect("恢复空会话失败");
     assert!(empty.tabs.is_empty(), "空会话应没有标签");
     assert!(empty.session.is_some(), "但会话行要留着（记窗口大小）");
+}
 
-    // 书签：同行重复加去重，再切换一次即删。
+#[test]
+fn bookmark_add_dedupes_and_toggle_removes() {
+    let (_dir, state) = setup();
     let req = BookmarkAddReq {
         path: "C:\\tmp\\a.txt".into(),
         line: 3,
         label: Some("入口".into()),
     };
+
+    // F2 是切换键：同一行按两下必须回到「没有书签」，否则按越多加越多。
     state
         .db
         .with(|conn| {
@@ -82,8 +105,12 @@ fn test_bootstrap_chain() {
             Ok(())
         })
         .expect("书签链路不可用");
+}
 
-    // 序列化契约：空列表必须序列化成 [] 而非 null（前端按数组读就崩）。
+#[test]
+fn empty_lists_serialize_to_array_not_null() {
+    let (_dir, state) = setup();
+    // Rust 的 nil slice 序列化成 null，前端按数组读就崩在渲染里。
     for (name, json) in [
         (
             "书签",

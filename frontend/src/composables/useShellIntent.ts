@@ -1,7 +1,5 @@
 // 壳意图：托盘「新建文档」与「外部打开文件」的落地。
-//
 // 为什么需要：用户当时可能在设置页，事件早于视图挂载就丢了。
-// 所以先存一份意图，视图挂载时消费一次，之后再靠事件即时响应。
 import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useEditorStore } from '@/stores/editor'

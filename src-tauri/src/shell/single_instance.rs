@@ -1,5 +1,4 @@
 //! 单实例：把二次启动携带的文件路径转交给已有实例。
-//!
 //! 目标实例还没装配完时排队，等 app:ready 之后再投递。
 
 use tauri::{AppHandle, Emitter, Manager};

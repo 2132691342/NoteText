@@ -1,5 +1,4 @@
 //! 应用生命周期钩子：启动收尾与退出收尾。
-//!
 //! on_ready 广播就绪事件，on_exit flush 日志与数据库。
 
 use tauri::{AppHandle, Manager};

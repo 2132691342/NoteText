@@ -56,7 +56,7 @@ MD5 / SHA-1 / SHA-256 三种，**全部手写实现**（标准库不暴露原始
 
 选这三种的理由：命令行工具（`certutil` / `Get-FileHash`）默认就出它们，
 用户要对照校验时不用先猜算法。三种各有一个已知向量测试
-（`tools_chain::test_tools_contract_chain`），与命令行输出对不上时测试先红。
+（`tools_chain::tools_chain`），与命令行输出对不上时测试先红。
 
 ### 正则（迷你引擎）
 
@@ -77,7 +77,7 @@ MD5 / SHA-1 / SHA-256 三种，**全部手写实现**（标准库不暴露原始
 不会栈溢出（最长输入受 32MB 读取上限约束）。
 
 **空匹配必须推进一位**：否则 `a*` 在空串上死循环，挂住 UI。
-`tools_chain::test_tools_contract_chain` 有一条专门守护这个。
+`tools_chain::tools_chain` 有一条专门守护这个。
 
 **匹配上限 1000 条**：超出截断并置 `truncated`，
 前端显示「仅前 1000 条」——一次渲染上万条会把界面卡死。

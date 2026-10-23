@@ -1,25 +1,23 @@
 // 批量查找替换浮窗：目录 + glob，先扫描出预览，勾选后才写入。
-//
 // 两段式是硬约束：批量改磁盘没有撤销键，所以「扫描」与「应用」分成
-// 两个按钮，应用前必须让用户看见自己要改哪些文件。
 <template>
   <NtModal :title="t('tool.batchFindReplace')" width="820" @close="emit('close')">
     <div class="nt-batch">
       <!-- 条件区 -->
       <div class="nt-batch-form">
-        <div class="nt-batch-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('tool.batchDir') }}</span>
           <ElInput v-model="dir" size="small" :placeholder="t('tool.batchDirHint')" />
           <ElButton size="small" @click="pickDir">{{ t('common.browse') }}</ElButton>
         </div>
-        <div class="nt-batch-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('tool.batchGlob') }}</span>
           <ElInput v-model="glob" size="small" placeholder="*.ts" />
           <ElCheckbox v-model="recursive" size="small">{{ t('tool.batchRecursive') }}</ElCheckbox>
           <ElCheckbox v-model="caseSensitive" size="small">{{ t('dialog.matchCase') }}</ElCheckbox>
           <ElCheckbox v-model="regexMode" size="small">{{ t('tool.regexMode') }}</ElCheckbox>
         </div>
-        <div class="nt-batch-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('dialog.find') }}</span>
           <ElInput v-model="find" size="small" @keydown.enter="onScan" />
           <span class="nt-label">{{ t('tool.renameReplace') }}</span>
@@ -192,20 +190,6 @@ function toggleAll(v: boolean) {
   flex-direction: column;
   gap: var(--nt-sp-3);
   flex: none;
-}
-
-.nt-batch-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-3);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 4em;
 }
 
 .nt-batch-result {

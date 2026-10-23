@@ -1,12 +1,5 @@
 // Markdown 渲染：markdown-it + 代码高亮 + Mermaid + KaTeX。
-//
 // 三件事分开做，各自可以单独失败：
-// - **代码块高亮**（highlight.js）：同步，失败退化成无高亮；
-// - **Mermaid 图表**：异步渲染成 SVG，失败回退显示源码；
-// - **KaTeX 公式**：只处理文本节点，跳过代码块（里面的 `$` 是内容不是公式）。
-//
-// 全部动态 import：只写纯文本的人不该付 Mermaid + KaTeX 的加载代价。
-// 实例是模块级单例：切标签不重建，`markdown-it` 的插件注册是一次性的。
 
 import type { Ref } from 'vue'
 

@@ -1,7 +1,5 @@
 // 编辑器 store：标签页生命周期、活跃标签、脏标记、光标位置。
-//
 // **正文内容归编辑器实例（CodeMirror）**，这里只存标签元数据：每次按键都过 IPC
-// 会占满主线程与 WebView 之间的通道，而保存 / 恢复只需要路径与光标。
 
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
@@ -193,7 +191,7 @@ export const useEditorStore = defineStore('editor', () => {
           /* stat 失败就按全量读试一次，真正的错误由 readFile 报 */
         }
       }
-      const content = await api.readFile(path, effective)
+      const content = await api.readFile(path, undefined, effective)
       const tab = newTab()
       applyContent(tab, content)
       // 截断的标签一律只读：保存会把截断后的内容写回磁盘，那是数据丢失。

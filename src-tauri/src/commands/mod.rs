@@ -1,5 +1,4 @@
 //! command 层：Tauri 的 invoke 入口。
-//!
 //! handler 薄：解析参数、调 service、返回；函数名与前端 invoke 字符串一一对应。
 
 pub mod batch;

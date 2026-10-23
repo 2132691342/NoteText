@@ -1,7 +1,5 @@
 // JSON 工具浮窗：格式化 / 压缩 / 校验 / JSONPath / 转结构体。
-//
 // 输入默认带编辑器里选中的文本（dialog store 的 seedText），
-// 输出可一键写回编辑器——「看到结果还要手动复制」是最烦的一步。
 <template>
   <NtModal :title="t('tool.json')" width="760" @close="emit('close')">
     <div class="nt-tool">

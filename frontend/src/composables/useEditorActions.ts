@@ -1,8 +1,5 @@
 // 编辑器动作层：所有「对正文做一件事」的操作都从这里进 CodeMirror。
-//
 // 为什么不用 document 上的自定义事件：分屏时同一个标签有两个视图，
-// 事件会被两个视图同时收到；事件也没有返回值，调用方拿不到有没有成功。
-// 直接按 tabId 取视图再操作，只有一个答案。
 import type { EditorView } from '@codemirror/view'
 import { EditorSelection, type ChangeSpec } from '@codemirror/state'
 import {
@@ -19,6 +16,7 @@ import {
   selectLine,
 } from '@codemirror/commands'
 import { get, getText, allViews } from '@/composables/useEditorRegistry'
+import { matchBrackets } from '@codemirror/language'
 
 /** 取目标视图：给了 tabId 用它，否则用当前聚焦的那个。 */
 export function viewOf(tabId?: number | null): EditorView | undefined {
@@ -183,6 +181,31 @@ export function doGotoLine(tabId: number | null | undefined, line: number): bool
   const l = v.state.doc.line(n)
   v.dispatch({ selection: { anchor: l.from } })
   scrollPosToCenter(v, l.from)
+  v.focus()
+  return true
+}
+
+/**
+ * 在光标处的括号与它的配对括号之间跳。
+ *
+ * 用语法树的 matchBrackets 而不是自己数字符：字符串里的 `"("` 与
+ * 注释里的括号会被它自动排除，自己扫会把光标送到字符串中间去。
+ * 光标不在括号上时返回 false，调用方给提示。
+ */
+export function doGotoBracket(tabId?: number | null): boolean {
+  const v = viewOf(tabId)
+  if (!v) return false
+  const pos = v.state.selection.main.head
+  // 四个方向都试：用户可能把光标停在括号前或括号后，两种都要能用。
+  const m =
+    matchBrackets(v.state, pos + 1, -1) ??
+    matchBrackets(v.state, pos, -1) ??
+    matchBrackets(v.state, pos - 1, 1) ??
+    matchBrackets(v.state, pos, 1)
+  if (!m || !m.end) return false
+  // 配对端：m.end 是配对括号的区间，落在那一段的开头。
+  const target = m.end.from
+  v.dispatch({ selection: { anchor: target }, scrollIntoView: true })
   v.focus()
   return true
 }
@@ -546,15 +569,24 @@ export function allMarkWords(): Set<string> {
   return all
 }
 
-/** 给选区 / 光标处的词上标记。 */
+/**
+ * 给选区 / 光标处的词上标记；给了区间就按区间标记。
+ *
+ * 区间的存在意义是「标记全部命中」：那边已经算好了每一处的偏移，
+ * 逐个去改编辑器选区再读回来既慢又会把用户的光标跳得到处都是。
+ */
 export function doMarkSelection(
   tabId: number | null | undefined,
   color: MarkColor,
+  from?: number,
+  to?: number,
 ): boolean {
   const v = viewOf(tabId)
   if (!v) return false
-  const { from, to } = v.state.selection.main
-  const word = from === to ? wordAt(v) : v.state.sliceDoc(from, to)
+  const word =
+    from != null && to != null
+      ? v.state.sliceDoc(from, to)
+      : wordAt(v) || v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to)
   if (!word.trim()) return false
   if (!marks.has(color)) marks.set(color, new Set())
   marks.get(color)!.add(word.trim())

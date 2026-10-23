@@ -1,5 +1,4 @@
 //! 配置域模型：界面偏好与启动期固定项。
-//!
 //! 界面偏好落 settings 表，启动期固定项落 config.json；默认值集中在 Default。
 
 use serde::{Deserialize, Serialize};

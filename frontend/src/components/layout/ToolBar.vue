@@ -1,7 +1,5 @@
 // 工具栏：高频操作的图标钮一排。
-//
 // 只放「每天都用」的几个（新建 / 打开 / 保存 / 撤销 / 查找 / 替换 / 换行 / 缩放），
-// 其余进菜单。工具栏塞满会让每个都难找——那是菜单的职责。
 <template>
   <div class="nt-toolbar">
     <button class="nt-icon-btn" :title="tip('toolbar.new')" @click="commands.run('file.new')">

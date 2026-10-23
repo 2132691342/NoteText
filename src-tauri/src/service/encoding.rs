@@ -1,5 +1,4 @@
 //! 编码：探测 / 解码 / 编码 / BOM 处理 / 清单。
-//!
 //! 用字节合法性判断而不用字符统计库；没把握时置 low_confidence。
 
 use std::collections::BTreeMap;

@@ -1,5 +1,4 @@
 //! 窗口命令：无边框窗体的托管。
-//!
 //! 最小化 / 最大化 / 关闭属于系统能力，不经 service。
 #[tauri::command]
 pub fn window_minimize(window: tauri::Window) -> Result<(), String> {

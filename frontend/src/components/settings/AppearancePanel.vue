@@ -1,7 +1,5 @@
 // 设置面板：外观（主题 / 字号 / 界面字体）。
-//
 // 主题三档（浅 / 深 / 跟随系统）与字号缩放都只改一个 CSS 变量，
-// 全站刻度等比跟随——不需要为每种分辨率调一套数值。
 <template>
   <div class="nt-set">
     <section class="nt-set-section">

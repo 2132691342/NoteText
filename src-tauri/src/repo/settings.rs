@@ -1,5 +1,4 @@
 //! 配置偏好 KV：settings 表的读写。
-//!
 //! 整份 AppConfig 序列化成一行 JSON，避免按项建列。
 
 use rusqlite::{params, Connection, OptionalExtension};

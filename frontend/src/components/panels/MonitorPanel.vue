@@ -1,7 +1,5 @@
 // 文件监控面板：tail -f 当前文件，外部追加即时显示。
-//
 // 轮询而不是 notify：notify 的事件不含「追加了多少行」，而 tail -f
-// 只要增量。每 800ms 读一次行区间，比全量重读省一个量级。
 <template>
   <div class="nt-panel">
     <div class="nt-panel-head">
@@ -77,7 +75,7 @@ async function poll() {
   if (!p || !watching.value) return
   try {
     const from = startLine.value
-    const c = await api.readFile(p, { mode: 'range', start_line: from, lines: 500 })
+    const c = await api.readFile(p, undefined, { mode: 'range', start_line: from, lines: 500 })
     const lines = c.text ? c.text.replace(/\n$/, '').split('\n') : []
     if (lines.length) {
       tail.value = [...tail.value, ...lines].slice(-MAX_LINES)

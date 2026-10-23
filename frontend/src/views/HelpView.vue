@@ -1,7 +1,5 @@
 // 帮助视图：渲染 assets/docs 里的内置手册。
-//
 // 手册是给用户的那一份（与 specs/ docs/ 的开发文档分开维护，AGENTS.md §2.6.1）。
-// 内容通过 import.meta.glob 懒加载，改文档不用改代码。
 <template>
   <div class="nt-help">
     <header class="nt-help-head" data-tauri-drag-region>

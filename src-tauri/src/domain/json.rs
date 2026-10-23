@@ -1,5 +1,4 @@
 //! 工具箱域模型：JSON / Diff / 哈希 / 正则。
-//!
 //! 共同形态是「拿一段文本做一次纯计算」。
 
 use serde::{Deserialize, Serialize};

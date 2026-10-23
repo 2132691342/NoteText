@@ -1,7 +1,5 @@
 // 关于浮窗：版本、数据目录、日志目录、运行环境。
-//
 // 排障第一步是「日志在哪」——把它直接摆在关于里，用户自己能找到文件，
-// 比让用户描述环境快得多。
 <template>
   <NtModal :title="t('menu.about')" width="440" @close="emit('close')">
     <div class="nt-about">
@@ -18,21 +16,21 @@
       </p>
 
       <div class="nt-about-rows">
-        <div class="nt-about-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('settings.dataDir') }}</span>
           <span class="nt-about-path" :title="info?.data_dir">{{ info?.data_dir }}</span>
           <ElButton size="small" text @click="openDir(info?.data_dir)">
             {{ t('settings.openDir') }}
           </ElButton>
         </div>
-        <div class="nt-about-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('settings.logDir') }}</span>
           <span class="nt-about-path" :title="info?.log_dir">{{ info?.log_dir }}</span>
           <ElButton size="small" text @click="openDir(info?.log_dir)">
             {{ t('settings.openDir') }}
           </ElButton>
         </div>
-        <div class="nt-about-row">
+        <div class="nt-field">
           <span class="nt-label">{{ t('about.system') }}</span>
           <span class="nt-readout">{{ info?.os }} / {{ info?.arch }}</span>
         </div>
@@ -123,20 +121,6 @@ async function openDir(dir?: string) {
   display: flex;
   flex-direction: column;
   gap: var(--nt-sp-2);
-}
-
-.nt-about-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-2);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 4.5em;
 }
 
 .nt-about-path {

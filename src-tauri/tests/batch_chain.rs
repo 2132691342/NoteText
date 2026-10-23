@@ -1,32 +1,33 @@
-//! 批量操作链路：扫描不写盘、应用只改勾选的、冲突不覆盖。
+//! 批量操作的安全护栏：扫描不写盘、应用只改勾选的、冲突不覆盖。
 //!
 //! 失败表现：批量替换静默改掉用户没勾选的文件；或重命名把已有文件覆盖——
 //! 两种都是「用户的文件没了」，且没有撤销键。
 
 use std::fs;
+use std::path::PathBuf;
 
+use notetext_lib::app::bootstrap::{self, AppState};
 use notetext_lib::domain::batch::{
     BatchFindReq, BatchRenameReq, BatchReplaceReq, FindMode, RenameApplyReq, RenameMode, RenamePair,
 };
 
 mod common;
-use common::boot;
+use common::temp_paths;
 
-#[test]
-fn test_batch_safety_chain() {
+fn setup() -> (tempfile::TempDir, AppState, PathBuf) {
     let dir = tempfile::tempdir().expect("建临时目录失败");
-    let state = boot(&dir);
-
+    let paths = temp_paths(&dir);
+    let state = bootstrap::build(&paths).expect("装配失败");
     let root = dir.path().join("batch");
     fs::create_dir_all(&root).expect("建目录失败");
-    let a = root.join("a.txt");
-    let b = root.join("b.txt");
-    let c = root.join("c.txt");
-    fs::write(&a, "hello world\nhello again\n").expect("写 a 失败");
-    fs::write(&b, "nothing here\n").expect("写 b 失败");
-    fs::write(&c, "x").expect("写 c 失败");
+    (dir, state, root)
+}
 
-    // 扫描只报不改：扫完文件必须还是原样。
+#[test]
+fn scan_reports_without_touching_files() {
+    let (_dir, state, root) = setup();
+    fs::write(root.join("a.txt"), "hello world\nhello again\n").expect("写 a 失败");
+
     let scan = state
         .services
         .batch
@@ -39,15 +40,27 @@ fn test_batch_safety_chain() {
             recursive: Some(true),
         })
         .expect("扫描失败");
+
     assert_eq!(scan.hits.len(), 1, "只有 a.txt 含 hello");
     assert_eq!(scan.total_count, 2, "a.txt 里 hello 出现两次");
+    // 扫描是「先看再决定」，此时落盘就等于绕过用户的确认。
     assert!(
-        fs::read_to_string(&a).expect("读回 a").contains("hello"),
+        fs::read_to_string(root.join("a.txt"))
+            .expect("读回 a")
+            .contains("hello"),
         "扫描阶段不能改动文件"
     );
+}
 
-    // 应用只改勾选的：没勾 b，b 就不能被动过。
+#[test]
+fn apply_replaces_only_the_checked_files() {
+    let (_dir, state, root) = setup();
+    let a = root.join("a.txt");
+    let b = root.join("b.txt");
+    fs::write(&a, "hello world\nhello again\n").expect("写 a 失败");
+    fs::write(&b, "nothing here\n").expect("写 b 失败");
     let before_b = fs::read_to_string(&b).expect("读 b");
+
     let res = state
         .services
         .batch
@@ -62,6 +75,7 @@ fn test_batch_safety_chain() {
             files: vec![a.to_string_lossy().to_string()],
         })
         .expect("应用失败");
+
     assert_eq!(res.changed, 1, "只应改一个文件");
     assert_eq!(res.replacements, 2, "两处 hello 都替换");
     assert_eq!(
@@ -69,8 +83,16 @@ fn test_batch_safety_chain() {
         before_b,
         "没勾选的文件不能被改"
     );
+}
 
-    // 重命名冲突：目标已存在时标冲突，且不可应用。
+#[test]
+fn rename_conflict_is_flagged_and_cannot_be_applied() {
+    let (_dir, state, root) = setup();
+    let a = root.join("a.txt");
+    let b = root.join("b.txt");
+    fs::write(&a, "hello world\n").expect("写 a 失败");
+    fs::write(&b, "nothing here\n").expect("写 b 失败");
+
     let plan = state
         .services
         .batch
@@ -99,8 +121,18 @@ fn test_batch_safety_chain() {
         })
         .expect_err("覆盖已存在文件必须报错");
     assert!(!err.message.is_empty(), "错误要带一句人话");
+    assert!(
+        fs::read_to_string(&b).expect("读回 b").contains("nothing"),
+        "被占用的目标文件不能被覆盖"
+    );
+}
 
-    // 无冲突时要真的落地：新名字出现、旧名字消失。
+#[test]
+fn rename_without_conflict_actually_lands() {
+    let (_dir, state, root) = setup();
+    let c = root.join("c.txt");
+    fs::write(&c, "x").expect("写 c 失败");
+
     let ok = state
         .services
         .batch

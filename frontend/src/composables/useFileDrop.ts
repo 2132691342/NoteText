@@ -1,8 +1,5 @@
 // 文件拖放：把外部文件拖进窗口就打开。
-//
 // Tauri 的 `dragDropEnabled: false`（见 tauri.conf.json）关掉了 WebView 自己的
-// 拖放导航——开着的话拖进文件会让整个界面跳到那个文件。关掉之后路径只能从
-// Tauri 的 `onDragDropEvent` 拿：WebView 的 DragEvent 里 `File.path` 已废弃。
 import { onMounted, onUnmounted } from 'vue'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useEditorStore } from '@/stores/editor'

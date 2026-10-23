@@ -1,5 +1,4 @@
 //! 路径解析：app 层的装配。
-//!
 //! 与 pkg::paths 的分工：pkg 管路径算法，这里管唯一实例从哪来。
 
 use std::sync::OnceLock;

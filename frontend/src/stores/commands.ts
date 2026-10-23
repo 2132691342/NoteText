@@ -1,7 +1,5 @@
 // 命令 store：快捷键 / 菜单 / 工具栏的统一分发表。
-//
 // 为什么收敛到一处：三个入口（菜单、工具栏、按键）最终都该走到同一个
-// 命令 id。散在各处就会出现「菜单能用的功能按键按不了」。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { LineOp } from '@/types/api'
@@ -10,7 +8,7 @@ import type { LineOp } from '@/types/api'
 export interface Command {
   id: string
   /** 菜单分组：同组的在菜单里用分隔线隔开。 */
-  group: 'file' | 'edit' | 'view' | 'tools' | 'help'
+  group: MenuGroup
   /** i18n key（menu.* / tool.*）。 */
   labelKey: string
   /** 默认组合键（Tauri 的 accelerator 格式）。空 = 无快捷键。 */
@@ -18,6 +16,44 @@ export interface Command {
   run: () => void | Promise<void>
   /** 是否可执行（置灰判据）。 */
   enabled?: () => boolean
+}
+
+/**
+ * 菜单分组的全集与顺序。
+ *
+ * 十个顶级菜单与主流编辑器对齐：文件 / 编辑 / 查找 / 视图 / 编码 /
+ * 语言 / 设置 / 工具 / 对比 / 帮助。顺序即渲染顺序，改这里就是改菜单条。
+ */
+export const MENU_GROUPS = [
+  'file',
+  'edit',
+  'search',
+  'view',
+  'encoding',
+  'language',
+  'settings',
+  'tools',
+  'compare',
+  'help',
+] as const
+
+export type MenuGroup = (typeof MENU_GROUPS)[number]
+
+/** 分组 → 顶级菜单的 i18n key 前缀。菜单条按这个取标题。
+ *
+ * 四个新菜单用 `*Menu` 后缀：`menu.encoding` / `menu.language` 已被
+ * 「视图 → 编码」「视图 → 语言」两条命令占用，同名会撞。 */
+export const MENU_LABEL_KEYS: Record<MenuGroup, string> = {
+  file: 'menu.file',
+  edit: 'menu.edit',
+  search: 'menu.search',
+  view: 'menu.view',
+  encoding: 'menu.encodingMenu',
+  language: 'menu.languageMenu',
+  settings: 'menu.settings',
+  tools: 'menu.tools',
+  compare: 'menu.compareMenu',
+  help: 'menu.help',
 }
 
 export const useCommandStore = defineStore('commands', () => {
@@ -77,6 +113,11 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'edit.outdent': 'Control+[',
   'edit.find': 'Control+F',
   'edit.replace': 'Control+H',
+  'edit.findNext': 'F3',
+  'edit.findPrev': 'Shift+F3',
+  'edit.gotoBracket': 'Control+Shift+\\',
+  'edit.prevPosition': 'Alt+Left',
+  'edit.nextPosition': 'Alt+Right',
   'edit.findInFiles': 'Control+Shift+F',
   'edit.gotoLine': 'Control+G',
   'edit.toggleComment': 'Control+/',

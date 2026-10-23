@@ -1,7 +1,5 @@
 // 与后端 `domain/*` 的 json tag 一一对应。
-//
 // 铁律：跨边界字段一律 snake_case。改字段必须同步 `src-tauri/src/domain/` 与
-// `CONTRACT_VERSION`，否则编译不报错、运行时全 undefined。
 
 /** 契约版本：后端改字段时 +1，前端 `api/index.ts` 在启动时校验。 */
 export const CONTRACT_VERSION = 1
@@ -475,9 +473,7 @@ export type LineOp =
   | 'sort_desc'
 
 // ---- 批量操作域 ----
-//
-// 与后端 domain/batch.rs 一一对应。两段式（scan → apply）由前端驱动：
-// 批量改磁盘没有撤销键，所以类型上也分成「预览」与「应用」两组。
+// 与 domain/batch.rs 对应；两段式（scan → apply）由前端驱动：批量改磁盘没有撤销键。
 
 export type FindMode = 'plain' | 'regex'
 
@@ -560,9 +556,7 @@ export interface RenameApplyReq {
 }
 
 // ---- 文件操作域（文件树右键 / 拖拽） ----
-//
-// 与后端 domain/file_ops.rs 一一对应。目标已存在一律拒绝（不覆盖），
-// 目录不能进自己的子目录，路径必须绝对且不含 `..`。
+// 与 domain/file_ops.rs 对应：目标已存在一律拒绝，路径必须绝对且不含 `..`。
 
 export interface RenameReq {
   from: string

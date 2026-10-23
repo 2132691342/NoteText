@@ -1,5 +1,4 @@
 //! Windows 原生消息框：Win32 MessageBoxW。
-//!
 //! 用途：WebView2 还没起来时的唯一用户可见出口。
 
 use std::ffi::OsStr;

@@ -1,7 +1,5 @@
 // 窗口级命令：全屏切换。
-//
 // 全屏走 Tauri 的窗口 API（WebView2 的原生全屏），不是浏览器 F11——
-// 前者能让标题栏一起消失，后者只作用于内容区。
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isDesktop } from '@/api'
 

@@ -1,12 +1,10 @@
 // 哈希工具浮窗：算文本或文件的 MD5 / SHA-1 / SHA-256。
-//
 // 默认算当前编辑器内容；「算文件」走文件对话框。
-// 结果给大写与小写两份：certutil 出大写、Get-FileHash 出大写，
 
 <template>
   <NtModal :title="t('tool.hash')" width="560" @close="emit('close')">
     <div class="nt-hash-tool">
-      <div class="nt-hash-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('tool.hashAlgo') }}</span>
         <ElRadioGroup v-model="algo" size="small" @change="run">
           <ElRadioButton value="md5">MD5</ElRadioButton>
@@ -15,7 +13,7 @@
         </ElRadioGroup>
       </div>
 
-      <div class="nt-hash-row">
+      <div class="nt-field">
         <span class="nt-label">{{ t('tool.hashText') }}</span>
         <ElButton size="small" @click="pickFile">{{ t('tool.hashFile') }}</ElButton>
         <span v-if="filePath" class="nt-hash-file" :title="filePath">{{ filePath }}</span>
@@ -101,20 +99,6 @@ async function copy(s: string) {
   display: flex;
   flex-direction: column;
   gap: var(--nt-sp-3);
-}
-
-.nt-hash-row {
-  display: flex;
-  align-items: center;
-  gap: var(--nt-sp-3);
-}
-
-.nt-label {
-  font-size: var(--nt-fs-label);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-  flex: none;
-  min-width: 4em;
 }
 
 .nt-hash-file {
