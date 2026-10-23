@@ -177,7 +177,7 @@ fn atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs() {
         "内容应更新"
     );
 
-    let leftovers: Vec<String> = fs::read_dir(&data)
+    let leftovers: Vec<String> = fs::read_dir(data)
         .expect("列目录失败")
         .flatten()
         .map(|e| e.file_name().to_string_lossy().to_string())
