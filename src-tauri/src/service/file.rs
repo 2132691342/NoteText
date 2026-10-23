@@ -164,7 +164,9 @@ impl FileService {
         fs::read(p).map_err(|e| AppError::wrap("1002", "读不了：文件被占用", e))
     }
 
-    /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。只用 NUL 判据：UTF-16 文本也含 NUL，但编辑器用 UTF-16 打开的场景 远少于真二进制文件，误判的代价（用户手动切编码）可接受。
+    /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。
+    /// UTF-16 文本本身也满是 NUL，但带 BOM 的 UTF-16 是明确的文本证据，
+    /// 判成二进制会把用户的 .txt 送进十六进制视图。
     fn sniff_binary(&self, path: &Path) -> bool {
         let Ok(meta) = fs::metadata(path) else {
             return false;
@@ -179,7 +181,11 @@ impl FileService {
         let mut buf = [0u8; SNIFF_BYTES];
         let mut reader = std::io::BufReader::new(f);
         let n = reader.read(&mut buf).unwrap_or(0);
-        buf[..n].contains(&0)
+        let head = &buf[..n];
+        if head.starts_with(&[0xFF, 0xFE]) || head.starts_with(&[0xFE, 0xFF]) {
+            return false;
+        }
+        head.contains(&0)
     }
 
     /// 读文件。`mode` 决定全量 / 头部 / 行区间。
@@ -247,26 +253,40 @@ impl FileService {
             Ok(t) => t,
             // 强制编码解不动：退回探测到的编码。用户选错时至少还打得开。
             Err(e) => {
-                if detected == encoding {
-                    return Err(
-                        AppError::wrap(codes::ENCODE_FAILED, "按指定编码解码失败", e)
-                            .with_detail(format!("编码：{encoding}")),
-                    );
+                if detected != encoding {
+                    let (bom2, body2) = encoding::strip_bom(&bytes, &detected);
+                    if let Ok(text2) = encoding::decode(body2, &detected) {
+                        let le2 = detect_line_ending_of(&bytes);
+                        return Ok(FileContentVO {
+                            path: path.to_string(),
+                            text: crate::pkg::text::normalize_newlines(&text2),
+                            encoding: detected.clone(),
+                            read_bytes: bytes.len(),
+                            truncated: truncated || low_conf,
+                            line_ending: le2,
+                            has_bom: bom2,
+                        });
+                    }
                 }
-                let (bom2, body2) = encoding::strip_bom(&bytes, &detected);
-                let text2 = encoding::decode(body2, &detected).map_err(|e2| {
-                    AppError::wrap(codes::ENCODE_FAILED, "解码失败", e2)
-                        .with_detail(format!("指定编码：{encoding}，探测编码：{detected}"))
-                })?;
-                let le2 = detect_line_ending_of(&bytes);
+                // 两条路都解不动：有损解一次再返回。
+                // 文本编辑器的底线是「文件打得开」——几个替换符远好过一句
+                // 「解码失败」把文件挡在门外。truncated 让状态栏提示不确定。
+                tracing::warn!(
+                    path,
+                    encoding = %encoding,
+                    error = %e,
+                    "解码失败，已按有损方式打开"
+                );
+                let text = String::from_utf8_lossy(body).to_string();
+                let le = detect_line_ending_of(&bytes);
                 return Ok(FileContentVO {
                     path: path.to_string(),
-                    text: crate::pkg::text::normalize_newlines(&text2),
-                    encoding: detected.clone(),
+                    text: crate::pkg::text::normalize_newlines(&text),
+                    encoding: "utf-8".into(),
                     read_bytes: bytes.len(),
-                    truncated: truncated || low_conf,
-                    line_ending: le2,
-                    has_bom: bom2,
+                    truncated: true,
+                    line_ending: le,
+                    has_bom,
                 });
             }
         };

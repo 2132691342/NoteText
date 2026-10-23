@@ -29,8 +29,11 @@
             spellcheck="false"
             @keydown.enter.prevent="onEnter($event)"
             @keydown.esc.prevent="emit('close')"
-          />
-          <span class="nt-readout nt-find-count nt-field-fixed">{{ countLabel }}</span>
+          >
+            <template v-if="countLabel" #suffix>
+              <span class="nt-find-count">{{ countLabel }}</span>
+            </template>
+          </ElInput>
         </div>
         <div class="nt-find-flags">
           <ElCheckbox v-model="matchCase">{{ t('dialog.matchCase') }}</ElCheckbox>
@@ -66,8 +69,11 @@
             spellcheck="false"
             @keydown.enter.prevent="replaceOne"
             @keydown.esc.prevent="emit('close')"
-          />
-          <span class="nt-readout nt-find-count nt-field-fixed">{{ countLabel }}</span>
+          >
+            <template v-if="countLabel" #suffix>
+              <span class="nt-find-count">{{ countLabel }}</span>
+            </template>
+          </ElInput>
         </div>
         <div class="nt-field">
           <span class="nt-label">{{ t('dialog.replaceWith') }}</span>
@@ -152,8 +158,11 @@
             size="small"
             spellcheck="false"
             @keydown.enter.prevent="markAll"
-          />
-          <span class="nt-readout nt-find-count nt-field-fixed">{{ countLabel }}</span>
+          >
+            <template v-if="countLabel" #suffix>
+              <span class="nt-find-count">{{ countLabel }}</span>
+            </template>
+          </ElInput>
         </div>
         <div class="nt-find-flags">
           <ElCheckbox v-model="matchCase">{{ t('dialog.matchCase') }}</ElCheckbox>
@@ -722,10 +731,17 @@ function highlight(r: Hit): string {
   font-weight: 600;
 }
 
+/* 命中计数：挂在输入框的 suffix 里，不占独立列。
+   独立列会让同一组「查找 / 替换为」两行输入框宽度不等——
+   一行有计数、一行没有，右端就参差。 */
 .nt-find-count {
   flex: none;
-  min-width: 6em;
-  text-align: right;
+  margin-left: var(--nt-sp-1);
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .nt-find-err {
@@ -743,11 +759,33 @@ function highlight(r: Hit): string {
   min-width: 0;
 }
 
+/* 选项区：四列等宽栅格。
+   flex-wrap 会让每一项按自身文字宽度排，两行的列头对不上；
+   栅格把「区分大小写 / 全字匹配 / 正则表达式」固定在同一列上。 */
 .nt-find-flags {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
-  gap: var(--nt-sp-3) var(--nt-sp-4);
+  gap: var(--nt-sp-2) var(--nt-sp-3);
+}
+
+.nt-find-flags :deep(.el-checkbox) {
+  margin-right: 0;
+  min-width: 0;
+  height: auto;
+}
+
+.nt-find-flags :deep(.el-checkbox__label) {
+  font-size: var(--nt-fs-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 目录查找那一行的按钮组要独占一行、靠右 */
+.nt-find-flags > .nt-find-actions-right {
+  grid-column: 1 / -1;
+  justify-self: end;
 }
 
 .nt-find-actions {

@@ -10,14 +10,16 @@ import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
 import DocPreview from '@/components/editor/DocPreview.vue'
 import HexView from '@/components/editor/HexView.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
-import { useEditorStore } from '@/stores/editor'
+import { useEditorStore, viewTypeOf } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
 import { useSettingsStore } from '@/stores/settings'
 import { get } from '@/composables/useEditorRegistry'
 import { getText } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
 import { ellipsisMiddle } from '@/utils'
+import { hasRichPreview, isTextKind, kindOf } from '@/utils/fileKind'
 import type { RecentFileVO } from '@/types/api'
+import type { Tab } from '@/stores/editor'
 
 const { t } = useI18n()
 const editor = useEditorStore()
@@ -41,38 +43,31 @@ async function onOpenRecent(path: string) {
   await editor.openPath(path)
 }
 
-/** 文档预览的扩展名：这些格式有专门的预览器，不该进代码编辑器。 */
-const DOC_EXTS = new Set([
-  'xlsx', 'xlsm', 'csv', 'docx', 'pdf',
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
-])
-
-function extOfPath(p: string): string {
-  return p.split('.').pop()?.toLowerCase() ?? ''
-}
-
-/** 该标签走文档预览器而不是代码编辑器。 */
-function isDocTab(path: string, forcePreview: boolean): boolean {
-  if (forcePreview) return true
-  if (!path) return false
-  return DOC_EXTS.has(extOfPath(path))
-}
-
 /**
- * 该标签走 Markdown 三态编辑器。
+ * 标签该用哪个视图组件。
  *
- * 与 DocPreview 的分工：`showing_preview` 是用户主动按了「预览」后的只读态；
- * 这里默认就把 .md 送进可编辑的三态视图——用户点开一个 .md
- * 是想改它，不是想先看一遍再找按钮切回编辑。
+ * 「这个文件是什么形态」由 `utils/fileKind` 判定，组件只按形态选渲染器：
+ * 二进制 → Hex；有专属预览器 → DocPreview；Markdown 默认进三态编辑器，
+ * 用户按了「预览」才落到只读预览；其余进 CodeMirror。
  */
-function isMarkdownTab(path: string): boolean {
-  const e = extOfPath(path)
-  return e === 'md' || e === 'markdown'
+function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'code' {
+  const kind = kindOf(tab.path, tab.view_type === 'hex')
+  if (tab.view_type === 'hex' || kind === 'binary') return 'hex'
+  if (kind === 'markdown') return tab.showing_preview ? 'doc' : 'markdown'
+  if (hasRichPreview(kind)) return 'doc'
+  return tab.showing_preview ? 'doc' : 'code'
 }
 
-/** 二进制视图：进 Hex 而不是 CodeMirror。 */
-function isHexTab(viewType: string): boolean {
-  return viewType === 'hex'
+/** 切到十六进制：预览器给的是「这种格式读不了」时的兜底入口。 */
+function toHex(tab: Tab) {
+  tab.view_type = 'hex'
+  tab.showing_preview = false
+}
+
+/** 从十六进制切回编辑器：只有文本文件给这个入口。 */
+function toEditor(tab: Tab) {
+  tab.view_type = viewTypeOf(tab.path)
+  tab.showing_preview = false
 }
 
 /**
@@ -240,19 +235,23 @@ onBeforeUnmount(() => {
         class="nt-editor-slot"
       >
         <template v-if="mounted.has(tab.id)">
-          <div v-if="isHexTab(tab.view_type)" class="nt-inline-view">
-            <HexView :path="tab.path" />
+          <div v-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">
+            <HexView
+              :path="tab.path"
+              :can-edit="isTextKind(kindOf(tab.path))"
+              @edit="toEditor(tab)"
+            />
           </div>
           <MarkdownEditor
-            v-else-if="isMarkdownTab(tab.path) && !tab.showing_preview"
+            v-else-if="viewOfTab(tab) === 'markdown'"
             :path="tab.path"
             :tab="tab"
-            @toggle-edit="tab.showing_preview = true"
           />
           <DocPreview
-            v-else-if="isDocTab(tab.path, tab.showing_preview)"
+            v-else-if="viewOfTab(tab) === 'doc'"
             :path="tab.path"
             @toggle-edit="tab.showing_preview = false"
+            @open-hex="toHex(tab)"
           />
           <CodeEditor v-else :tab="tab" :view-id="'main'" />
         </template>
@@ -262,7 +261,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 分屏：只在活跃标签上渲染第二个只读视图 -->
-      <template v-if="editor.active && editor.active.split && !isDocTab(editor.active.path, editor.active.showing_preview) && !isMarkdownTab(editor.active.path) && !isHexTab(editor.active.view_type)">
+      <template v-if="editor.active && editor.active.split && viewOfTab(editor.active) === 'code'">
         <div class="nt-split-handle" @mousedown="startSplitDrag" />
         <div class="nt-split-second">
           <CodeEditor :tab="editor.active" :view-id="'second'" :readonly="true" />

@@ -7,6 +7,7 @@ import { api, normalizeError } from '@/api'
 import type {
   EditorPosition,
   FileContentVO,
+  FileMeta,
   ReadMode,
   TabDO,
   ViewType,
@@ -14,6 +15,7 @@ import type {
 import { useToastStore } from './toast'
 import { tr } from '@/i18n'
 import { baseName } from '@/utils'
+import { isTextKind, kindOf } from '@/utils/fileKind'
 
 /** 一个标签页。`path` 为空 = 新建未保存的草稿标签。 */
 export interface Tab {
@@ -168,6 +170,10 @@ export const useEditorStore = defineStore('editor', () => {
    *
    * 大文件自动降级：先 stat 拿大小，超过后端全量读上限就改读前段，
    * 并标记只读。之前没有任何调用方传 mode，超 32MB 的文件直接报错打不开。
+   *
+   * 非文本（PDF / 表格 / 图片 / 二进制）**不走 read_file**：把 PDF 的字节
+   * 按文本解码只会得到乱码或解码错误，用户看到的是「打不开」。
+   * 这类文件只建标签，正文由预览器 / Hex 视图自己去读字节。
    */
   async function openPath(path: string, mode?: ReadMode): Promise<Tab | null> {
     const existing = findByPath(path)
@@ -178,17 +184,32 @@ export const useEditorStore = defineStore('editor', () => {
       return existing
     }
     try {
+      let meta: FileMeta | null = null
+      try {
+        meta = await api.statFile(path)
+      } catch {
+        /* stat 失败就按全量读试一次，真正的错误由 readFile 报 */
+      }
+
+      const kind = kindOf(path, meta?.is_binary ?? false)
+      if (!isTextKind(kind)) {
+        const tab = newTab()
+        tab.path = path
+        tab.title = fileNameOf(path)
+        tab.language = languageOf(path)
+        // 二进制进 Hex，能预览的进预览器（DocPreview 自己按扩展名分流）
+        tab.view_type = kind === 'binary' ? 'hex' : viewTypeOf(path)
+        tab.showing_preview = kind !== 'binary'
+        tab.read_only = true
+        return tab
+      }
+
       let effective = mode
       let truncatedBySize = false
       if (!effective) {
-        try {
-          const meta = await api.statFile(path)
-          if (meta.size > FULL_READ_LIMIT) {
-            effective = { mode: 'head' }
-            truncatedBySize = true
-          }
-        } catch {
-          /* stat 失败就按全量读试一次，真正的错误由 readFile 报 */
+        if (meta && meta.size > FULL_READ_LIMIT) {
+          effective = { mode: 'head' }
+          truncatedBySize = true
         }
       }
       const content = await api.readFile(path, undefined, effective)

@@ -92,8 +92,8 @@ NoteText/
 │       ├── utils/             # 纯函数
 │       └── *.css              # themes / base / ep-theme / content / print 五个 CSS
 ├── assets/docs/               # 内置用户手册（帮助页渲染）
-├── docs/ specs/               # 项目级文档与子系统规格
-└── scripts/                   # 验证入口（check.ps1）
+├── specs/                     # 子系统规格（01–13，一个子系统一篇）
+└── scripts/                   # 验证入口（check.ps1 / i18n-audit.mjs）
 ```
 
 ## 技术栈
@@ -110,7 +110,7 @@ NoteText/
 | 代码编辑 | CodeMirror 6（31 种语言识别，28 种语法高亮：13 静态 + 15 按需加载） |
 | Markdown | markdown-it + highlight.js + Mermaid + KaTeX（编辑 / 分屏 / 预览三态） |
 | 格式转换 | js-yaml、@iarna/toml、fast-xml-parser（JSON / YAML / TOML / XML 互转） |
-| 文档预览 | XLSX、docx-preview、vue-pdf-embed |
+| 文档预览 | XLSX、docx-preview、WebView2 内置 PDF 阅读器 |
 | 图表 | ECharts 5.5 |
 | 国际化 | Vue I18n 9.10（zh-CN 默认 + en） |
 | 数据库 | SQLite（WAL，rusqlite bundled 无 CGO） |
@@ -125,21 +125,14 @@ NoteText/
 |---|---|
 | [AGENTS.md](AGENTS.md) | **工程规范（唯一权威）**：分层 / 依赖方向 / 错误码 / 测试 / 命名 |
 | [DESIGN.md](DESIGN.md) | 视觉语言与交互原则 |
-| [docs/OVERVIEW.md](docs/OVERVIEW.md) | **项目全景**：能力清单、模块地图、一次对话的链路、关键取舍 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分层、启动时序、IPC 契约、前端状态归属 |
-| [docs/DATA-MODEL.md](docs/DATA-MODEL.md) | 表结构、数据落在哪、会话恢复的形态 |
-| [docs/API-CONTRACT.md](docs/API-CONTRACT.md) | invoke 命令表与出入参契约 |
-| [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 页面与组件地图 |
-| [docs/ERROR-CODES.md](docs/ERROR-CODES.md) | 错误码段位与前端分流 |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、验证入口、数据位置、改代码时看什么 |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 构建、安装器、CI 与 Release |
-| specs/ | 子系统规格（01–13，一个子系统一篇） |
+| [specs/](specs/) | 子系统规格（01–13，一个子系统一篇）：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍 |
 
-内置用户手册在 `assets/docs/`，面向用户；`docs/` 与 `specs/` 面向开发，两者不重复维护同一份话术。
+内置用户手册在 `assets/docs/`，面向用户；`specs/` 面向开发，两者不重复维护同一份话术。
 
 ## 测试
 
-16 个测试分 4 个文件，一个域一个文件；**每个测试函数名就是它守护的那件坏事**，
+16 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按四类长链路分组
+（文件读写 / 会话持久化 / 批量操作 / 工具箱变换）。**每个测试函数名就是它守护的那件坏事**，
 失败时报文直接指出坏在哪。全量 < 1 秒。
 
 ```bash
@@ -147,15 +140,15 @@ cargo test --manifest-path src-tauri/Cargo.toml
 pwsh scripts/check.ps1 -List        # 列出全部测试名
 ```
 
-| 文件 | 测试数 | 覆盖 |
-|---|---|---|
-| `session_chain.rs` | 4 | 首次启动写默认配置且空库可读；会话顺序、活跃索引、窗口尺寸往返；关光标签仍留会话行；空列表序列化成 `[]` 而非 `null` |
-| `file_chain.rs` | 5 | 读写往返保住行尾与 BOM；强制编码读取与不支持时退回；原子写不留临时文件、不替你造目录；重命名拒绝覆盖、成环与路径逃逸；删除逐个记账 |
-| `tools_chain.rs` | 3 | 坏 JSON 给行列号；三种哈希对已知向量；注释切换往返、半注释补齐、无行注释语言报错 |
-| `batch_chain.rs` | 4 | 扫描不改盘；应用只改勾选的；重命名遇冲突标记且整体拒绝；无冲突真的落地 |
+判据见 [AGENTS.md §3](AGENTS.md)：只留跨模块长链路、协议硬约束与安全护栏，
+单个纯函数的输入输出不入链。
 
-测试只留长链路、协议硬约束与安全护栏——单个纯函数的输入输出不入链。
-判据见 [AGENTS.md §3](AGENTS.md)。
+| 分组 | 守护的坏事（摘） |
+|---|---|
+| 文件域 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；原子写不留临时文件、不替你造目录；重命名拒绝覆盖 / 成环 / 路径逃逸 |
+| 会话 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null` |
+| 批量 | 扫描阶段不落盘；应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
+| 工具箱 | 坏 JSON 给行列号；哈希对已知向量；注释切换往返且半注释块补齐 |
 
 ## 许可证
 

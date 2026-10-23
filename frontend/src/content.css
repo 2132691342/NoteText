@@ -1028,198 +1028,293 @@
    Markdown 预览
    ============================================================
    由 markdown-it 生成的 HTML，类名以 nt-md- 开头。
-   排版口径：一条 44em 的阅读栏（容器 flex 居中，见 MarkdownEditor.vue），
-   层级靠「字号 + 字重 + 间距」三件套区分，不靠色块——
-   深色下给每个标题糊一层底，读起来是卡片墙不是文档。 */
-.nt-md-preview > :first-child {
+   排版口径：一条 52em 的阅读栏（`.nt-md-doc` 贴左），
+   层级靠「字号 + 字重 + 间距」三件套区分，不靠色块。
+   所有块级元素只吃 max-width，不吃固定宽度：分屏窄到 380px 时，
+   长句、长链接、宽代码块都要在容器内换行或自带横向滚动，
+   不能把预览面板顶出一条整页横向滚动条。 */
+.nt-md-preview {
+  /* 滚动条只属于预览面板：正文溢出不能外溢到窗口层 */
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.nt-md-doc {
+  /* 左对齐、不居中：正文与代码编辑器一样从左上角起排。
+     居中会在宽面板里造出两条对称的空白，看起来像「内容跑到屏幕中间」。 */
+  max-width: 52em;
+  margin: 0;
+  padding: var(--nt-sp-6) var(--nt-sp-5) var(--nt-sp-10);
+  /* 中文没有词边界，长 URL / 长路径靠 anywhere 断行；
+     break-word 兜住旧 WebView 对 anywhere 支持不佳的场景。 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.nt-md-doc > :first-child {
   margin-top: 0;
 }
 
-.nt-md-preview h1,
-.nt-md-preview h2,
-.nt-md-preview h3,
-.nt-md-preview h4 {
-  margin: var(--nt-sp-8) 0 var(--nt-sp-4);
+.nt-md-doc h1,
+.nt-md-doc h2,
+.nt-md-doc h3,
+.nt-md-doc h4,
+.nt-md-doc h5,
+.nt-md-doc h6 {
+  margin: var(--nt-sp-6) 0 var(--nt-sp-3);
   font-weight: 600;
   line-height: var(--nt-lh-tight);
   color: var(--nt-ink);
-  /* 标题是「换挡」信号：与上文拉开，与下文收紧。
-     上下同距会让标题浮在段中间，读不出它管着哪一段。 */
+  /* 标题是「换挡」信号：与上文拉开，与下文收紧 */
   text-wrap: balance;
+  /* 锚点跳转后标题不被面板顶边切掉 */
+  scroll-margin-top: var(--nt-sp-6);
 }
 
-/* 文档题名：整篇只该有一个，给足存在感。 */
-.nt-md-preview h1 {
+/* 文档题名：整篇只该有一个，给足存在感但不吞掉半屏 */
+.nt-md-doc h1 {
   font-size: var(--nt-fs-2xl);
   font-weight: 650;
   letter-spacing: -0.01em;
-  padding-bottom: var(--nt-sp-3);
-  border-bottom: 1px solid var(--nt-border);
-}
-
-.nt-md-preview h2 {
-  font-size: var(--nt-fs-xl);
   padding-bottom: var(--nt-sp-2);
   border-bottom: 1px solid var(--nt-border);
 }
 
-.nt-md-preview h3 {
+.nt-md-doc h2 {
+  font-size: var(--nt-fs-xl);
+  padding-bottom: var(--nt-sp-1);
+  border-bottom: 1px solid var(--nt-border);
+}
+
+.nt-md-doc h3 {
   font-size: var(--nt-fs-lg);
 }
 
-.nt-md-preview h4 {
+.nt-md-doc h4,
+.nt-md-doc h5,
+.nt-md-doc h6 {
   font-size: var(--nt-fs-md);
   color: var(--nt-ink-2);
 }
 
-.nt-md-preview p {
-  margin: 0 0 var(--nt-sp-4);
+.nt-md-doc p {
+  margin: 0 0 var(--nt-sp-3);
 }
 
-/* 代码块：比正文面低一级的底 + 1px 描边，深色下不至于糊进背景。 */
-.nt-md-pre,
-.nt-md-preview pre {
-  margin: var(--nt-sp-5) 0;
-  padding: var(--nt-sp-3) var(--nt-sp-4);
-  overflow: auto;
-  font-family: var(--font-mono);
-  font-size: var(--nt-fs-sm);
-  line-height: var(--nt-lh-base);
+/* 空态：提示语是 innerHTML 注入的，拿不到组件的 scoped 属性，样式必须放这里 */
+.nt-md-doc > .nt-md-empty {
+  margin: 0;
+  padding: var(--nt-sp-10) 0;
+  text-align: center;
+  color: var(--nt-ink-muted);
+}
+
+/* 锚点跳转后的落点高亮：不给反馈的话，用户点了目录只觉得「闪了一下」 */
+.nt-md-doc .is-anchor-flash {
+  animation: nt-md-flash 900ms var(--nt-ease);
+}
+
+@keyframes nt-md-flash {
+  from {
+    background: var(--nt-primary-soft);
+    box-shadow: 0 0 0 var(--nt-sp-1) var(--nt-primary-soft);
+  }
+}
+
+/* 代码块：外层容器管底 / 描边 / 圆角，内层只放代码。
+   标题栏左边语言、右边复制：预览是只读的，没有复制按钮用户只能划选，
+   而划选常常把行号或相邻段落一起带进去。
+   横向滚动留在 pre 内部：长行把整块推出阅读栏是最常见的排版事故。 */
+.nt-md-code {
+  margin: var(--nt-sp-4) 0;
+  max-width: 100%;
   background: var(--nt-elev-surface);
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-sm);
-  /* 代码块里的换行由用户写死：禁掉 balance 一类的排版干预。 */
-  text-wrap: wrap;
+  overflow: hidden;
 }
 
-/* 语言角标：右上角一个半透明小字，不占版面又能说明这段是什么语言。 */
-.nt-md-pre {
-  position: relative;
-}
-
-.nt-md-pre::before {
-  content: attr(data-lang);
-  position: absolute;
-  top: 0;
-  right: 0;
-  padding: 2px var(--nt-sp-2);
-  font-family: var(--font-sans);
+.nt-md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nt-sp-2);
+  height: calc(var(--nt-ctl-h-sm) - 4px);
+  padding: 0 var(--nt-sp-2);
+  border-bottom: 1px solid var(--nt-border);
   font-size: var(--nt-fs-2xs);
   color: var(--nt-ink-muted);
-  background: var(--nt-elev-surface);
-  border-bottom-left-radius: var(--nt-radius-xs);
-  border-left: 1px solid var(--nt-border);
-  border-bottom: 1px solid var(--nt-border);
-  pointer-events: none;
+  user-select: none;
 }
 
-.nt-md-preview pre code {
+.nt-md-code-lang {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nt-md-code-copy {
+  flex: none;
+  height: calc(var(--nt-ctl-h-sm) - 10px);
+  padding: 0 var(--nt-sp-2);
+  font-family: var(--font-sans);
+  font-size: var(--nt-fs-2xs);
+  color: var(--nt-ink-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--nt-radius-xs);
+  cursor: pointer;
+  transition:
+    color var(--nt-dur-fast) var(--nt-ease),
+    background-color var(--nt-dur-fast) var(--nt-ease),
+    border-color var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-md-code-copy:hover {
+  color: var(--nt-ink);
+  background: var(--nt-elev-selected);
+  border-color: var(--nt-border);
+}
+
+.nt-md-code-copy:active {
+  transform: scale(0.92);
+}
+
+.nt-md-pre,
+.nt-md-doc pre {
+  margin: 0;
+  padding: var(--nt-sp-3) var(--nt-sp-4);
+  max-width: 100%;
+  overflow: auto hidden;
+  font-family: var(--font-mono);
+  font-size: var(--nt-fs-sm);
+  line-height: 1.6;
+  tab-size: 4;
+  /* 代码的换行由作者写死，禁掉任何排版干预 */
+  white-space: pre;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  /* 只读区域的代码要能直接划选复制 */
+  user-select: text;
+}
+
+.nt-md-doc pre code {
   padding: 0;
   background: none;
   font-size: inherit;
+  white-space: inherit;
 }
 
-/* 行内 code：靠底色 + 描边认出来，不用斜体——中文斜体是假斜体，发虚。 */
-.nt-md-preview :not(pre) > code {
-  padding: 1px 5px;
+/* 行内 code：靠底色认出来，不用斜体——中文斜体是假斜体，发虚。
+   细描边让它在浅色底上也能与正文分开，但不至于变成一个个小盒子。 */
+.nt-md-doc :not(pre) > code {
+  padding: 0 4px;
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: 0.9em;
   color: var(--nt-ink);
   background: var(--nt-elev-selected);
-  border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-xs);
 }
 
-/* 引用块：左侧一条主色竖线 + 次级墨色，不用整块底色。 */
-.nt-md-preview blockquote {
-  margin: var(--nt-sp-5) 0;
-  padding: var(--nt-sp-2) var(--nt-sp-4);
+/* 引用块：左侧一条中性竖线 + 次级墨色，不用整块底色。 */
+.nt-md-doc blockquote {
+  margin: var(--nt-sp-4) 0;
+  padding: 0 var(--nt-sp-4);
   color: var(--nt-ink-2);
-  border-left: 3px solid var(--nt-primary);
+  border-left: 3px solid var(--nt-border-strong);
 }
 
-.nt-md-preview blockquote > :last-child {
+.nt-md-doc blockquote > :last-child {
   margin-bottom: 0;
 }
 
 /* 列表：项目符号与文字之间必须留空隙，否则 "•主线版本" 糊成一团。 */
-.nt-md-preview ul,
-.nt-md-preview ol {
-  margin: var(--nt-sp-4) 0;
+.nt-md-doc ul,
+.nt-md-doc ol {
+  margin: var(--nt-sp-3) 0;
   padding-left: var(--nt-sp-6);
 }
 
-.nt-md-preview li {
-  margin-bottom: var(--nt-sp-2);
+.nt-md-doc li {
+  margin-bottom: var(--nt-sp-1);
   padding-left: var(--nt-sp-1);
 }
 
-.nt-md-preview li > ul,
-.nt-md-preview li > ol {
-  margin: var(--nt-sp-2) 0 0;
+.nt-md-doc li > ul,
+.nt-md-doc li > ol {
+  margin: var(--nt-sp-1) 0 0;
 }
 
-.nt-md-preview li > :last-child {
+.nt-md-doc li > :last-child {
   margin-bottom: 0;
 }
 
-/* 列表符号用主色：一条竖线串起同一层级的项，扫读时层级更清楚。 */
-.nt-md-preview li::marker {
+.nt-md-doc li::marker {
   color: var(--nt-ink-3);
+  font-variant-numeric: tabular-nums;
 }
 
-.nt-md-preview a {
+/* 链接：下划线是「可点」的唯一信号，颜色只做层级。
+   不给 border-bottom 造下划线——那会被换行切断。 */
+.nt-md-doc a {
   color: var(--nt-primary);
-  text-decoration: none;
-  border-bottom: 1px solid var(--nt-primary-soft);
-  transition: border-color var(--nt-dur-fast) var(--nt-ease);
+  text-decoration: underline;
+  text-decoration-color: var(--nt-primary-soft);
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color var(--nt-dur-fast) var(--nt-ease);
 }
 
-.nt-md-preview a:hover {
-  border-bottom-color: var(--nt-primary);
+.nt-md-doc a:hover {
+  text-decoration-color: var(--nt-primary);
 }
 
-/* 表格：斑马纹按行走，比全框线安静，也更容易横向扫。 */
-.nt-md-preview table {
-  margin: var(--nt-sp-5) 0;
+/* 表格：斑马纹按行走，比全框线安静。窄面板里整表横向滚动，
+   拆列换行会让表格彻底读不懂。 */
+.nt-md-doc table {
+  display: block;
+  margin: var(--nt-sp-4) 0;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   font-size: var(--nt-fs-sm);
-  width: 100%;
 }
 
-.nt-md-preview th,
-.nt-md-preview td {
-  padding: var(--nt-sp-2) var(--nt-sp-3);
+.nt-md-doc th,
+.nt-md-doc td {
+  padding: var(--nt-sp-1) var(--nt-sp-3);
   border-bottom: 1px solid var(--nt-border);
   text-align: left;
 }
 
-.nt-md-preview th {
+.nt-md-doc th {
   font-weight: 600;
   color: var(--nt-ink);
   background: var(--nt-elev-surface);
   border-bottom: 1px solid var(--nt-border-strong);
+  white-space: nowrap;
 }
 
-.nt-md-preview tbody tr:nth-child(even) {
+.nt-md-doc tbody tr:nth-child(even) {
   background: var(--nt-elev-surface);
 }
 
 /* 分割线：比 hr 元素本身更透气，用来给长文档分段。 */
-.nt-md-preview hr {
+.nt-md-doc hr {
   height: 1px;
-  margin: var(--nt-sp-8) 0;
+  margin: var(--nt-sp-6) 0;
   background: var(--nt-border);
   border: none;
 }
 
-.nt-md-preview img {
+.nt-md-doc img {
   max-width: 100%;
   border-radius: var(--nt-radius-sm);
 }
 
 /* 图片说明：Figure/figcaption 由外部工具插入，这里给一个统一样式。 */
-.nt-md-preview figcaption {
+.nt-md-doc figcaption {
   margin-top: var(--nt-sp-2);
   font-size: var(--nt-fs-hint);
   color: var(--nt-ink-muted);
@@ -1304,4 +1399,102 @@
 /* 公式：行内不额外撑行高，块级留出间距 */
 .nt-md-math .katex {
   font-size: 1.05em;
+}
+
+/* ============================================================
+   文档预览：表格（xlsx / csv）与 Word（docx）
+   ============================================================
+   这两块的 DOM 是字符串注入 / 第三方库生成的，拿不到组件的 scoped 属性，
+   样式只能写在这里。
+   表格口径：等宽数字、右对齐数字列、首行吸顶、列宽按 Excel 的 wch 折算。
+   Word 口径：白纸黑字不跟主题（文档保真优先），纸外底色跟主题。 */
+
+.nt-sheet-table {
+  /* fixed：列宽只认 colgroup 与首行，否则行号列会被内容挤窄，
+     吸顶时与该列的宽度对不上，滚动就能看到内容从缝里透出来。 */
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink);
+  background: var(--nt-editor-bg);
+}
+
+.nt-sheet-table td {
+  /* 单元格内容不换行：换行会让整张表的行高参差，读起来找不到同一行的列 */
+  white-space: pre;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px var(--nt-sp-2);
+  border: 1px solid var(--nt-border);
+  user-select: text;
+}
+
+.nt-sheet-table td.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 表格骨架：列字母行吸顶。
+   横向滚到第 20 列时，没有列字母就不知道自己在哪一列。
+   行号列不吸顶：横向滚动时 sticky 的行号会与滚动中的首列叠在一起，
+   露出一截被裁掉的文字，看起来像渲染错位。 */
+.nt-sheet-head td.nt-sheet-col,
+.nt-sheet-head td.nt-sheet-corner {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 22px;
+  text-align: center;
+  font-size: var(--nt-fs-2xs);
+  font-weight: 400;
+  color: var(--nt-ink-3);
+  background: var(--nt-elev-selected);
+}
+
+.nt-sheet-table td.nt-sheet-rownum {
+  width: 44px;
+  text-align: center;
+  font-size: var(--nt-fs-2xs);
+  color: var(--nt-ink-3);
+  background: var(--nt-elev-selected);
+}
+
+/* 第一行数据也吸住：数据表的第一行基本都是表头，往下翻三屏就丢了列名。
+   只对「一行普通表头」生效，跨列合并的大标题行不冻（会把列名挤出视野）。 */
+.nt-sheet-freeze > td {
+  position: sticky;
+  top: 22px;
+  z-index: 1;
+  font-weight: 600;
+  background: var(--nt-elev-selected);
+}
+
+.nt-sheet-note {
+  margin: var(--nt-sp-2) 0 0;
+  padding: 0 var(--nt-sp-2);
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-muted);
+}
+
+/* Word：纸张区。docx-preview 自带 .docx-wrapper / section.docx 两套类名，
+   这里只覆盖底色、纸张阴影与页间距，不碰它自己的排版。 */
+.docx-wrapper {
+  background: transparent !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--nt-sp-4);
+}
+
+.docx-wrapper > section.docx {
+  background: #ffffff;
+  color: #212529;
+  box-shadow: var(--nt-card-shadow);
+  border: 1px solid var(--nt-border);
+  margin: 0 !important;
+  /* 纸张保持自己的宽度：压窄会重排分页，看到的内容就和 Word 里对不上了。
+     面板不够宽时由外层滚动 + 缩放解决。 */
 }

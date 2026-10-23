@@ -1,7 +1,7 @@
 # AGENTS.md · NoteText 工程规范
 
 > 本文件是代码风格 / 分包 / 依赖方向 / 工作流的**唯一权威**。
-> 设计说明见 `docs/` 与 `specs/`；冲突时以本文件为准。
+> 设计说明见 `specs/`；冲突时以本文件为准。
 
 ---
 
@@ -19,7 +19,7 @@
 | 代码编辑器 | CodeMirror 6 | ^6.x（31 种语言识别，静态 + 动态按需加载） |
 | Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
 | 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
-| 文档预览 | XLSX · docx-preview · vue-pdf-embed | 按扩展名分流 |
+| 文档预览 | XLSX · docx-preview · WebView2 内置 PDF 阅读器 | 按扩展名分流 |
 | 图表 | ECharts | ^5.5.x（按需引入，色值取 `--nt-ch-*`） |
 | 国际化 | Vue I18n | ^9.10.x（zh-CN 默认 + en；设置页可切换，EP 文案同步） |
 | 样式 | 原生 CSS 设计令牌 | `themes.css` + `ep-theme.css` + `base.css` + `content.css`；色值与尺寸只在 `themes.css` 定义 |
@@ -44,6 +44,9 @@
   要支持 `{n,m}` 量词与命名组时换 regex crate。
 - **WangEditor**：富文本编辑器没有对应场景（NoteText 是代码 / 纯文本向的），
   Markdown 走 markdown-it 一条链路，不再挂第二个编辑器运行时。
+- **vue-pdf-embed / pdfjs-dist**：v1 打包 1.7MB 且要自己配 worker，配错就是白屏。
+  PDF 交给 WebView2 内置阅读器（`<embed type="application/pdf">` + asset 协议）：
+  流式读取、支持搜索与打印，还能绕过 `read_binary` 的 20MB 上限。
 
 **视觉分层纪律不变**：Element Plus 只是基元供给方，视觉语言仍由 `themes.css` 的
 靛蓝五档令牌说了算——EP 的 CSS 变量经 `ep-theme.css` 全部接到 `--nt-*`，
@@ -81,7 +84,7 @@ NoteText/
 │   │   ├── platform/           # ⑧ 平台相关：Win32 消息框 / AppHandle 存取
 │   │   └── pkg/                # ⑨ 叶子工具包（AppError / paths / log / id / text）
 │   ├── capabilities/           # Tauri 权限清单
-│   └── tests/integration.rs    # 集成测试（编译 lib 而不链接 WebView）
+│   └── tests/chain_tests.rs    # 集成测试（编译 lib 而不链接 WebView）
 └── frontend/src/               # 前端唯一源码目录
 ```
 
@@ -156,7 +159,7 @@ Rust 的 nil slice 序列化成 `null`，前端按数组读就是
 
 - 出参里的切片与 map 字段**构造时一律初始化**（`Vec::new()` / `BTreeMap::new()`）
 - 前端接住数组字段时同样按「可能是 null」处理（`res.entries ?? []`）
-- `tests/integration.rs` 的 `test_bootstrap_chain` 守护这一点
+- `tests/chain_tests.rs` 的 `empty_lists_serialize_to_array_not_null` 守护这一点
 
 #### 2.3.3 前端目录（强制）
 
@@ -213,7 +216,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 | 7000–7999 | 壳层（单实例 / 托盘 / 窗口） |
 | 8000–8999 | 用户数据（书签 / 片段 / 宏 / 草稿） |
 
-每个码的完整含义与处置动作见 [`docs/ERROR-CODES.md`](docs/ERROR-CODES.md)。
+每个码的完整含义与处置动作见后端 `pkg/error.rs` 的 `codes` 模块（码值常量集中处）。
 
 **message 必须带「下一步」**：不是「失败了」，而是「读不了：文件被占用」。
 前端 `utils/errors.ts` 按码段补第二步动作，两端不重复同一句话。
@@ -261,8 +264,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 文档只回答三件事：**这个项目是什么、每个模块怎么设计实现、为什么这么选型**。
 
 - 根级：`README.md`（入口与能力全景）/ `AGENTS.md`（工程规范，唯一权威）/ `DESIGN.md`（视觉语言）
-- `docs/`：项目级说明（全景 / 架构 / 数据模型 / API 契约 / 页面 / 错误码 / 开发 / 部署）
-- `specs/`：子系统规格，编号 01-12，一个子系统一个文件
+- `specs/`：子系统规格，编号 01-13，一个子系统一个文件
 - 每篇只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。**优势与代价必须写出来**
 - 表格与短段落优先；能用表就不用列表
 - **不写改动过程**：不建 CHANGELOG，不记录「本次改了什么」「之前坏在哪」，
@@ -438,8 +440,8 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **一个域一个测试文件**（`src-tauri/tests/<domain>_chain.rs`），公共设施在 `common/mod.rs`。
-  改某个域只读那个文件，不必通读全部测试
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），按 section 分「文件 / 会话 / 批量 / 工具箱」四组。
+  所有长链路集中一处，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
 - 不写 `-short` 隔离：当前没有依赖真实网络 / 真实 git 的链路，
@@ -463,29 +465,28 @@ mod dialog_stub;
 
 ### 3.4 测试索引
 
-4 个文件（`src-tauri/tests/`），一个域一个文件；每个文件里**一个测试函数验一种坏法**，
-函数名就是那句坏事。这样失败时报文直接指出坏在哪，不必对着行号往回找。
+单个文件 `src-tauri/tests/chain_tests.rs`，按四组排列；每个函数名就是它守护的那句坏事，
+失败时报文直接指出坏在哪，不必对着行号往回找。简单纯函数断言不入链；每一条都守护
+「用户文件没了 / 界面崩白屏」级别的事故。
 
-简单纯函数断言不入链；每一条都守护「用户文件没了 / 界面崩白屏」级别的事故。
-
-| 文件 | 测试 | 坏法 |
+| 分组 | 测试 | 坏法 |
 |---|---|---|
-| `session_chain.rs` | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
-| | `session_round_trip_keeps_order_active_index_and_window_size` | 重启后标签顺序与窗口尺寸丢失 |
-| | `closing_all_tabs_keeps_the_session_row_for_window_size` | 关光标签后下次启动变成默认窗口大小 |
-| | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
-| `file_chain.rs` | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
+| 文件域 | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
 | | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
 | | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
 | | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
 | | `delete_accounts_for_each_path_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
-| `tools_chain.rs` | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
-| | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
-| | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
-| `batch_chain.rs` | `scan_reports_without_touching_files` | 扫描阶段就落盘，绕过确认 |
+| 会话 | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
+| | `session_round_trip_keeps_order_active_index_and_window_size` | 重启后标签顺序与窗口尺寸丢失 |
+| | `closing_all_tabs_keeps_the_session_row_for_window_size` | 关光标签后下次启动变成默认窗口大小 |
+| | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
+| 批量 | `scan_reports_without_touching_files` | 扫描阶段就落盘，绕过确认 |
 | | `apply_replaces_only_the_checked_files` | 改掉用户没勾选的文件 |
 | | `rename_conflict_is_flagged_and_cannot_be_applied` | 重命名覆盖已有文件 |
 | | `rename_without_conflict_actually_lands` | 该落地的没落地 |
+| 工具箱 | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
+| | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
+| | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
 **改这里 → 这样验**：
 
 | 改动位置 | 命令 |
@@ -511,8 +512,7 @@ pwsh scripts/check.ps1 -Full         # rustfmt + 前端构建 + cargo check + cl
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check   # 必须无输出
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets    # 编译比测试更早暴露类型错误
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --lib \
-  --test batch_chain --test file_chain --test session_chain --test tools_chain
+cargo test --manifest-path src-tauri/Cargo.toml --lib --test chain_tests
 cd frontend && npm run build         # vue-tsc -b && vite build：类型检查已串在构建里
 ```
 

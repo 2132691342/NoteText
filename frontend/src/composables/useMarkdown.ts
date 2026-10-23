@@ -2,6 +2,7 @@
 // 三件事分开做，各自可以单独失败：
 
 import type { Ref } from 'vue'
+import { tr } from '@/i18n'
 
 /** 主题色给 Mermaid 用：深浅两套，切换主题时重新 initialize。 */
 let mermaidTheme: 'dark' | 'default' | null = null
@@ -59,6 +60,8 @@ export function useMarkdown(): MarkdownRender {
       },
     })
     // 代码块外包一层：mermaid 块要能被 querySelector 找到，所以要带 class。
+    // 普通代码块再包一层标题栏：左边语言、右边复制——预览是只读的，
+    // 没有复制按钮用户只能划选，而划选常常连着行号或相邻段落。
     const defaultFence = instance.renderer.rules.fence!.bind(instance.renderer.rules)
     instance.renderer.rules.fence = (tokens, idx, options, _env, self) => {
       const token = tokens[idx]
@@ -67,8 +70,38 @@ export function useMarkdown(): MarkdownRender {
         // 内容原样放进容器：由 renderDiagrams 异步换成 SVG。
         return `<div class="nt-md-mermaid" data-source="${escapeAttr(token.content)}"></div>`
       }
-      const html = defaultFence(tokens, idx, options, _env, self)
-      return info ? html.replace(/^<pre>/, `<pre class="nt-md-pre" data-lang="${escapeAttr(info)}">`) : html
+      const pre = defaultFence(tokens, idx, options, _env, self).replace(
+        /^<pre>/,
+        '<pre class="nt-md-pre">',
+      )
+      const lang = escapeAttr(info || 'text')
+      return (
+        '<div class="nt-md-code">' +
+        `<div class="nt-md-code-bar"><span class="nt-md-code-lang">${lang}</span>` +
+        `<button type="button" class="nt-md-code-copy">${escapeAttr(tr('markdown.copyCode'))}</button></div>` +
+        pre +
+        '</div>'
+      )
+    }
+    // 标题锚点：markdown-it 默认不生成 id，文档自带的目录点了没有任何反应。
+    // id 规则与 GitHub 的 slug 对齐，别人生成的目录才能直接命中。
+    instance.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+      const inline = tokens[idx + 1]
+      const text = inline && inline.type === 'inline' ? inline.content : ''
+      tokens[idx].attrSet('id', uniqueSlug(slugify(text), env))
+      return self.renderToken(tokens, idx, options)
+    }
+    // 外链一律新窗口：在 WebView 里原地导航会把整个应用顶掉。
+    const defaultLinkOpen = instance.renderer.rules.link_open
+    instance.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+      const href = tokens[idx].attrGet('href') ?? ''
+      if (/^https?:/i.test(href)) {
+        tokens[idx].attrSet('target', '_blank')
+        tokens[idx].attrSet('rel', 'noopener noreferrer')
+      }
+      return defaultLinkOpen
+        ? defaultLinkOpen(tokens, idx, options, env, self)
+        : self.renderToken(tokens, idx, options)
     }
     md = instance
     return instance
@@ -190,6 +223,32 @@ function unescapeAttr(s: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
+}
+
+/**
+ * 标题 → 锚点 id。
+ *
+ * 规则与 GitHub 的 slug 对齐：小写、去掉标点（`1. 快速开始` 的句点）、
+ * 空格转连字符、保留中日韩字符。文档里手写的目录用的是同一套，
+ * 换了规则那些 `#1-快速开始` 就全都点不动。
+ */
+function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
+    .replace(/\s+/g, '-')
+}
+
+/** 同名标题依次加 `-1`、`-2`：重复 id 会让所有同名锚点都跳到第一个。 */
+function uniqueSlug(base: string, env: Record<string, unknown>): string {
+  const key = '__ntSlugs'
+  if (!env[key]) env[key] = new Map<string, number>()
+  const seen = env[key] as Map<string, number>
+  const id = base || 'section'
+  const n = seen.get(id) ?? 0
+  seen.set(id, n + 1)
+  return n === 0 ? id : `${id}-${n}`
 }
 
 /** 供外部重置（测试用）：清掉单例，下次重新建。 */

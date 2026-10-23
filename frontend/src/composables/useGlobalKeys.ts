@@ -65,6 +65,18 @@ function isInEditor(target: EventTarget | null): boolean {
   return !!el?.closest?.('.cm-editor')
 }
 
+/**
+ * 焦点是否在只读文本面上（Markdown 预览 / 文档预览 / 十六进制）。
+ *
+ * 这些地方没有编辑器实例，用户选中的是页面里的真实文本。复制必须走浏览器
+ * 原生路径：否则命令会去操作「当前激活的编辑器视图」，把用户选中的预览文本
+ * 换成编辑器里的选区（通常是空的），Ctrl+C 就等于什么都没复制。
+ */
+function isReadonlySurface(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return !!el?.closest?.('.nt-md-preview, .nt-md-doc, .nt-doc-host, .nt-hex-body')
+}
+
 function editorOwns(accel: string): boolean {
   // 单键（无修饰）：全部交给编辑器
   if (!accel.includes('+')) {
@@ -113,6 +125,10 @@ export function useGlobalKeys() {
 
     // 在编辑器里：编辑器自己绑过的组合优先给它。
     if (isInEditor(e.target) && editorOwns(accel)) return
+
+    // 只读预览里：C / X / A / V 交给浏览器。preventDefault 一旦执行，
+    // 原生复制就被掐掉，而命令只会去操作看不见的编辑器。
+    if (isReadonlySurface(e.target) && /^(Control|Super)\+[CXAV]$/.test(accel)) return
 
     // 原生输入框里只放行「到不了文本」的组合（Ctrl+S 这类）；
     // 单键与非 Ctrl 组合留在输入框里（否则侧栏搜索框打不了字）。

@@ -146,16 +146,52 @@ offset_at_line_col(text, line, col) -> Option<usize>
 
 ### 视图分流
 
-`EditorArea.vue` 按 `view_type` 与扩展名分发，不让二进制进 CodeMirror：
+文件形态由 `utils/fileKind.ts` 一处判定，`EditorArea.vue` 只按形态选容器：
 
-| 条件 | 容器 |
-|---|---|
-| `view_type = 'hex'` | `HexView.vue`（虚拟滚动，只渲染可视区） |
-| `showing_preview` 为真 | `DocPreview.vue`（动态 import 对应预览器） |
-| 扩展名属于 xlsx / docx / pdf / 图片 / md | `DocPreview.vue` |
-| 其余 | `CodeEditor.vue` |
+| 形态 | 判定 | 容器 |
+|---|---|---|
+| `binary` | 可执行 / 压缩包 / 媒体，或未知扩展名且 `stat.is_binary` | `HexView.vue`（虚拟滚动，只渲染可视区） |
+| `legacyDoc` | `.doc` `.ppt(x)` `.odt` `.rtf` `.epub` 等无内嵌渲染器的文档 | `DocPreview.vue` → 「没有内置预览」卡片 |
+| `image` `sheet` `docx` `pdf` | 扩展名表 | `DocPreview.vue`（动态 import 对应预览器） |
+| `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
+| `text` | 其余 | `CodeEditor.vue` / `DocPreview.vue`（`showing_preview`） |
+
+**打开链路先 stat 再决定要不要读正文**：`read_file` 是「按文本解码」，
+PDF / 表格 / 图片走它只会得到乱码或解码错误。非文本形态只建标签，
+正文由预览器自己按字节读（`read_binary`，20MB 上限）。
 
 预览器全部动态 `import`：一个只写纯文本的人不该付 xlsx 的钱。
+
+**PDF 不进 JS**：`<embed type="application/pdf">` 指到 asset 协议，由 WebView2
+内置阅读器渲染——流式读取、无 20MB 上限、支持搜索与打印。代价是阅读器内部
+主题不受 `themes.css` 控制，所以旁边常驻「用外部程序打开」。三处配置缺一不可：
+`protocol-asset` 特性、`assetProtocol.enable`、CSP 的
+`frame-src` / `object-src` 放行 `asset:`。
+
+**必须覆盖 wry 的默认浏览器参数**：wry 默认传
+`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`，
+其中 `msPdfOOUI` 会把内置 PDF 阅读器关掉（`<embed>` 只剩一块空白）。
+窗口配置里的 `additionalBrowserArgs` 去掉这一项，其余两项保持原样。
+
+**表格与 Word 是真查看器，不是「塞个 HTML」**：
+
+| 能力 | 表格（xlsx / xls / csv / tsv） | Word（docx） |
+|---|---|---|
+| 分页 / 分表 | 底部工作表页签，多表可切 | `breakPages` 按页渲染，头部显示页数 |
+| 保真 | 读 `!cols` 折算列宽、`!merges` 还原合并、`raw:false` 取显示值 | docx-preview + `experimental`，页眉页脚脚注、图片 base64 内嵌 |
+| 对齐 | 数字列右对齐 + 等宽数字 | 由文档自身样式决定 |
+| 规模 | 单表上限 2000 行 / 80 列，超出给提示 | 全量渲染（docx 本身不会太大） |
+| 缩放 | 50%~300% | 50%~300% |
+
+行数上限是硬约束：几万行全铺进 DOM 会把界面卡死，而「看一眼里面是什么」
+根本不需要滚动到底。切页签复用同一个工作簿对象，不重复解压文件。
+
+**只读预览也必须能复制**：`body` 上是 `user-select: none`，预览区要显式
+`user-select: text`；而 `useGlobalKeys` 里凡是命令表命中的组合都会
+`preventDefault()`，Ctrl+C 会去复制「当时激活的编辑器视图」而不是用户选中的
+预览文本。所以预览区（`.nt-md-preview` / `.nt-doc-host` / `.nt-hex-body`）里的
+`Ctrl+C/X/A/V` 一律放行给浏览器原生行为。代码块另带一个复制按钮，
+不依赖划选（划选常把行号与相邻段落一起带走）。
 
 **`showing_preview` 与 `view_type` 正交**：`view_type` 是后端持久化的契约
 （`domain::editor::ViewType`，按扩展名推断、写进会话表），而预览只是
@@ -163,8 +199,13 @@ offset_at_line_col(text, line, col) -> Option<usize>
 所以给 tab 加一个独立开关，而不是给 `ViewType` 加一档 `preview`——
 后者会让后端语义与前端渲染互相污染。
 
-预览态下 `DocPreview` 顶部有「返回编辑」按钮：按扩展名自动进预览的文件
-（如 `.xlsx`）没有「编辑」可言，按钮对它们不显示。
+**十六进制与编辑器互切**：文本文件也能主动进 Hex 看一眼，
+所以 `HexView` 顶部带「返回编辑」（只在 `isTextKind` 为真时出现）。
+没有这条回头路，一次「十六进制查看」就把标签永久锁死在 Hex 里。
+
+**解码兜底**：`read_file` 在指定编码与探测编码都解不动时按 UTF-8 有损解码，
+并置 `truncated`（标签只读 + 状态栏提示不确定）。文本编辑器的底线是
+「文件打得开」——几个替换符远好过一句「解码失败」把文件挡在门外。
 
 ## 约束
 

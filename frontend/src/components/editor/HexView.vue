@@ -7,6 +7,11 @@
       <span class="nt-readout">{{ total }} B</span>
       <div class="nt-hex-spacer"></div>
       <span v-if="loading" class="nt-readout">{{ t('common.loading') }}</span>
+      <!-- 文本文件也能主动进 Hex 看一眼：必须留一条回到编辑器的路，
+           否则这个标签就被永久锁在十六进制里了。 -->
+      <ElButton v-if="canEdit" size="small" @click="emit('edit')">
+        {{ t('tool.backToEdit') }}
+      </ElButton>
     </div>
 
     <div v-if="error" class="nt-empty">
@@ -39,6 +44,7 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElButton } from 'element-plus'
 import { baseName } from '@/utils'
 import { api, normalizeError } from '@/api'
 
@@ -50,7 +56,8 @@ function base64ToBytes(b64: string): Uint8Array {
   return out
 }
 
-const props = defineProps<{ path: string }>()
+const props = defineProps<{ path: string; canEdit?: boolean }>()
+const emit = defineEmits<{ edit: [] }>()
 
 const { t } = useI18n()
 
@@ -140,9 +147,10 @@ function hexByte(b: number): string {
 .nt-hex {
   display: flex;
   flex-direction: column;
-  gap: var(--nt-sp-3);
+  gap: var(--nt-sp-2);
   min-height: 0;
   height: 100%;
+  padding: var(--nt-sp-2) var(--nt-sp-3);
 }
 
 .nt-hex-head {
@@ -165,6 +173,8 @@ function hexByte(b: number): string {
   border-radius: var(--nt-radius-sm);
   font-family: var(--nt-font-editor);
   font-size: var(--nt-fs-sm);
+  /* 只读视图默认继承 body 的 user-select:none，十六进制会连划选都做不到 */
+  user-select: text;
 }
 
 .nt-hex-spacer-box {
