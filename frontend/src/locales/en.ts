@@ -445,6 +445,7 @@ export default {
     previewTooLargeHint: 'Open it with an external program',
     openExternal: 'Open with external program',
     pdfHint: 'Rendered by the built-in PDF viewer (scroll / zoom / search); if it stays blank, use “Open with external program”.',
+    htmlHint: 'Static preview: scripts are disabled; edits refresh after ~0.3 s. Use an external browser for the full experience.',
     backToEdit: 'Back to editor',
     encodingConvertHint: 'The conversion is written back to the current file immediately. Line ending and encoding follow the choices above; the text in the editor does not change.',
     encodingLowConfidence: 'The current encoding was detected with low confidence — confirm the source encoding above before converting.',

@@ -39,13 +39,15 @@
       </template>
     </div>
 
-    <!-- 子目录：懒加载，children 到位后才渲染 -->
+    <!-- 子目录：懒加载，children 到位后才渲染。contextmenu 必须向上转发：
+         菜单在面板层，不转发的话子节点右键就是死的。 -->
     <template v-if="expanded && entry.is_dir">
       <FileTreeNode
         v-for="child in tree.children.get(entry.path) ?? []"
         :key="child.path"
         :entry="child"
         :depth="depth + 1"
+        @contextmenu="onChildMenu"
       />
     </template>
   </div>
@@ -115,6 +117,11 @@ function onContextMenu(e: MouseEvent) {
   e.preventDefault()
   e.stopPropagation()
   emit('contextmenu', { x: e.clientX, y: e.clientY, entry: props.entry })
+}
+
+/** 子节点冒泡上来的右键意图：原样继续向面板转发。 */
+function onChildMenu(payload: { x: number; y: number; entry: DirEntry }) {
+  emit('contextmenu', payload)
 }
 
 // ---- 菜单项触发的行内编辑 ----

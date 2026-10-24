@@ -223,6 +223,7 @@ onBeforeUnmount(() => {
           <DocPreview
             v-else-if="viewOfTab(tab) === 'doc'"
             :path="tab.path"
+            :tab-id="tab.id"
             @toggle-edit="tab.showing_preview = false"
             @open-hex="toHex(tab)"
           />

@@ -60,6 +60,13 @@
       <p class="nt-doc-foot">{{ t('tool.pdfHint') }}</p>
     </div>
 
+    <!-- HTML：沙箱 iframe 静态预览。sandbox 全空 = 脚本、表单、同源全禁，
+         style 标签与内联样式照常生效；正文随编辑 300ms 防抖刷新。 -->
+    <div v-else-if="kind === 'html'" class="nt-doc-html">
+      <iframe class="nt-html-frame" sandbox="" :srcdoc="htmlShown" :title="fileName" />
+      <p class="nt-doc-foot">{{ t('tool.htmlHint') }}</p>
+    </div>
+
     <!-- 表格：正文区 + 底部工作表页签。多表是常态，只给第一张等于没打开。 -->
     <div v-else-if="kind === 'sheet'" class="nt-doc-sheet">
       <div ref="host" class="nt-doc-host nt-sheet-host" :style="{ zoom }" @click="onHostClick" />
@@ -99,8 +106,9 @@ import { useSettingsStore } from '@/stores/settings'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { baseName, copyText } from '@/utils'
 import { kindOf } from '@/utils/fileKind'
+import { docVersionOf, get } from '@/composables/useEditorRegistry'
 
-const props = defineProps<{ path: string }>()
+const props = defineProps<{ path: string; tabId?: number }>()
 const emit = defineEmits<{ openHex: []; toggleEdit: [] }>()
 
 const { t } = useI18n()
@@ -114,7 +122,7 @@ const fileName = computed(() => baseName(props.path))
 const assetUrl = computed(() => convertFileSrc(props.path))
 const src = assetUrl
 
-type Kind = 'sheet' | 'docx' | 'pdf' | 'image' | 'markdown' | 'text' | 'unsupported' | 'tooLarge' | 'loading'
+type Kind = 'sheet' | 'docx' | 'pdf' | 'image' | 'markdown' | 'html' | 'text' | 'unsupported' | 'tooLarge' | 'loading'
 const kind = ref<Kind>('loading')
 
 /** 头部读数：表格是区域与行列数，Word 是页数。 */
@@ -162,6 +170,10 @@ async function classify() {
       kind.value = 'markdown'
       await renderMarkdown(run)
       return
+    case 'html':
+      kind.value = 'html'
+      await loadDiskHtml()
+      return
     case 'text':
       await renderPlainText(run)
       return
@@ -186,6 +198,47 @@ async function renderPlainText(run: number) {
     if (run !== token) return
     toast.warn(normalizeError(e).message)
     kind.value = 'unsupported'
+  }
+}
+
+/**
+ * HTML 正文：编辑器里的实时内容优先（改动立刻能看），视图不在再退回磁盘。
+ * computed 里读 docVersion 建立响应依赖——正文变了 iframe 才会跟着换。
+ */
+const diskHtml = ref('')
+const htmlText = computed(() => {
+  if (kind.value !== 'html') return ''
+  if (props.tabId != null) {
+    docVersionOf(props.tabId)
+    const v = get(props.tabId)
+    if (v) return v.state.doc.toString()
+  }
+  return diskHtml.value
+})
+
+/** iframe 的 srcdoc 防抖 300ms：每个键击重排 iframe 会闪，攒一下再换。 */
+const htmlShown = ref('')
+let htmlTimer: number | undefined
+watch(
+  htmlText,
+  (v) => {
+    window.clearTimeout(htmlTimer)
+    htmlTimer = window.setTimeout(() => {
+      htmlShown.value = v
+    }, 300)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => window.clearTimeout(htmlTimer))
+
+/** HTML 兜底正文：编辑器视图不在时从磁盘读一份（带编码探测）。 */
+async function loadDiskHtml() {
+  try {
+    const c = await api.readFile(props.path)
+    diskHtml.value = c.text
+  } catch {
+    diskHtml.value = ''
   }
 }
 
@@ -626,6 +679,24 @@ watch(() => props.path, () => {
   display: flex;
   flex-direction: column;
   gap: var(--nt-sp-1);
+}
+
+/* HTML：沙箱 iframe 铺满正文区。底色走编辑器面（随明暗），页面自己的背景色盖在上面 */
+.nt-doc-html {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nt-sp-1);
+}
+
+.nt-html-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  border-radius: var(--nt-radius-sm);
+  background: var(--nt-editor-bg);
 }
 
 .nt-doc-pdf embed {

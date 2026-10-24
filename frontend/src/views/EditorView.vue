@@ -35,10 +35,8 @@ import { useEditorStore } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { registerCommands } from '@/composables/useCommands'
 import { useViewportScale } from '@/composables/useViewportScale'
-import { useGlobalKeys } from '@/composables/useGlobalKeys'
 import { useExternalChange } from '@/composables/useExternalChange'
 import { useShellIntent } from '@/composables/useShellIntent'
-import { useQuitGuard } from '@/composables/useQuitGuard'
 import { useFileDrop } from '@/composables/useFileDrop'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { tr } from '@/i18n'
@@ -50,17 +48,18 @@ const tree = useFileTreeStore()
 const ui = computed(() => settings.config.ui)
 
 useViewportScale()
-useGlobalKeys()
+// 退出守卫与全局键在 App 根层注册：路由切到设置页时编辑器视图已卸载，
+// 挂在这里会随视图一起销毁（设置页点 X 没反应就是这么来的）。
 registerCommands()
 useExternalChange()
 useShellIntent()
-useQuitGuard()
 useFileDrop()
 useAutoSave()
 
 onMounted(async () => {
-  // 会话恢复：失败不阻塞启动（用户看到的是欢迎页）。
-  if (settings.config.ui.restore_session) {
+  // 会话恢复：失败不阻塞启动（用户看到的是欢迎页）。只恢复一次——
+  // 设置页 / 帮助页是独立路由，回来时本视图重新挂载，再灌一遍就是重复标签。
+  if (settings.config.ui.restore_session && !editor.sessionRestored) {
     try {
       const { api } = await import('@/api')
       const restored = await api.restoreSession()
@@ -79,8 +78,12 @@ onMounted(async () => {
     }
   }
 
-  // 记住上次打开的文件夹：启动即进入用户熟悉的工作区。
-  if (settings.config.file.remember_last_folder && settings.config.file.last_folder) {
+  // 记住上次打开的文件夹：启动即进入用户熟悉的工作区。已在工作区就别重开。
+  if (
+    settings.config.file.remember_last_folder &&
+    settings.config.file.last_folder &&
+    !tree.root
+  ) {
     await tree.open(settings.config.file.last_folder)
   }
 

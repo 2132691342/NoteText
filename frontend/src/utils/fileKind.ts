@@ -9,12 +9,15 @@ import { extName } from '@/utils'
  * 它给的是「用外部程序打开」的卡片，而不是一屏十六进制。
  * `binary` 则是可执行文件 / 压缩包这类根本不该当文档看的东西。
  */
-export type FileKind = 'text' | 'markdown' | 'image' | 'sheet' | 'docx' | 'pdf' | 'legacyDoc' | 'binary'
+export type FileKind = 'text' | 'markdown' | 'html' | 'image' | 'sheet' | 'docx' | 'pdf' | 'legacyDoc' | 'binary'
 
 const IMAGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif'])
 
 /** 表格：xlsx 库能读老 .xls，CSV/TSV 按同一条链路转成表。 */
 const SHEET = new Set(['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods'])
+
+/** HTML：可编辑的文本，预览走沙箱 iframe（不执行脚本）。 */
+const HTML = new Set(['html', 'htm', 'xhtml'])
 
 /** docx-preview 只认 OOXML；老 .doc 是 OLE 复合文档，读不了。 */
 const DOCX = new Set(['docx', 'docm', 'dotx'])
@@ -60,6 +63,7 @@ export function kindOf(path: string, isBinary = false): FileKind {
   if (DOCX.has(ext)) return 'docx'
   if (PDF.has(ext)) return 'pdf'
   if (MARKDOWN.has(ext)) return 'markdown'
+  if (HTML.has(ext)) return 'html'
   if (LEGACY_DOC.has(ext)) return 'legacyDoc'
   if (BINARY.has(ext)) return 'binary'
   return isBinary ? 'binary' : 'text'
@@ -67,7 +71,7 @@ export function kindOf(path: string, isBinary = false): FileKind {
 
 /** 该形态能不能按文本读进 CodeMirror。 */
 export function isTextKind(kind: FileKind): boolean {
-  return kind === 'text' || kind === 'markdown'
+  return kind === 'text' || kind === 'markdown' || kind === 'html'
 }
 
 /** 该形态该交给 DocPreview（含「读不了但有出路」的老式文档）。 */

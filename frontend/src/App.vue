@@ -22,10 +22,17 @@ import type { Language } from 'element-plus/es/locale'
 import ToastHost from '@/components/common/ToastHost.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
 import UnsavedDialog from '@/components/dialogs/UnsavedDialog.vue'
+import { useQuitGuard } from '@/composables/useQuitGuard'
+import { useGlobalKeys } from '@/composables/useGlobalKeys'
 
 // inject 必须在 setup 顶层同步调用；放进 computed getter 会每次求值都告警。
 // main.ts 注入的就是 computed，直接交给 EP 即可。
 const locale = inject<ComputedRef<Language>>('epLocale')
+
+// 退出守卫与全局键必须挂在根上：设置页 / 帮助页是独立路由，挂在编辑器视图里
+// 会随路由卸载——设置页点 X 就没人应答，等于「点了关闭没反应」。
+useQuitGuard()
+useGlobalKeys()
 </script>
 
 <style scoped>

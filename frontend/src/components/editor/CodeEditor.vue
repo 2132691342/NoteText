@@ -82,7 +82,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
 import { api } from '@/api'
 import { useToastStore } from '@/stores/toast'
-import { register, unregister, isDirty, getSelection, bumpDocVersion } from '@/composables/useEditorRegistry'
+import { register, unregister, isDirty, getSelection, bumpDocVersion, stashDoc, takeStashedDoc } from '@/composables/useEditorRegistry'
 import ContextMenu from '@/components/common/ContextMenu.vue'
 import type { MenuItem } from '@/components/common/contextMenu'
 import {
@@ -319,9 +319,12 @@ function baseExtensions(editable: boolean) {
 onMounted(async () => {
   if (!host.value) return
 
-  // 读正文：草稿标签（path 以 draft: 开头）走草稿接口，其余读文件。
+  // 读正文：路由往返的暂存优先（未保存的修改在这里），其次草稿，最后读文件。
   let text = ''
-  if (props.tab.path.startsWith('draft:')) {
+  const stashed = takeStashedDoc(props.tab.id)
+  if (stashed != null) {
+    text = stashed
+  } else if (props.tab.path.startsWith('draft:')) {
     try {
       const drafts = await api.listDrafts()
       const hit = drafts.find((d) => d.path === props.tab.path)
@@ -404,6 +407,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 路由离开编辑器视图时正文会随视图销毁：脏文档先暂存，回来时找回。
+  if (view && isDirty(props.tab.id)) {
+    stashDoc(props.tab.id, view.state.doc.toString())
+  }
   unregister(props.tab.id)
   view?.destroy()
   view = null

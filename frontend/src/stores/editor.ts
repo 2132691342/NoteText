@@ -63,6 +63,8 @@ export const useEditorStore = defineStore('editor', () => {
   const activeId = ref<number | null>(null)
   /** 分屏比例（0–1）：副视图宽度占比。 */
   const splitRatio = ref(0.5)
+  /** 本次运行是否已恢复过会话：路由离开编辑器视图再回来时不能重复灌标签。 */
+  const sessionRestored = ref(false)
 
   const active = computed(() => tabs.value.find((t) => t.id === activeId.value) ?? null)
   const dirtyCount = computed(() => tabs.value.filter((t) => t.dirty).length)
@@ -295,8 +297,12 @@ export const useEditorStore = defineStore('editor', () => {
    *
    * `activeIndex` 必须用上：只恢复标签不恢复活跃项，启动后一个标签都不显示，
    * 用户看到的是欢迎页——「上次的文件全没了」这种报告就是这么来的。
+   * 恢复是整块替换：先清空再灌入，重复调用不会把同一批标签叠成两份。
    */
   function restore(dos: TabDO[], activeIndex = 0) {
+    tabs.value = []
+    activeId.value = null
+    sessionRestored.value = true
     for (const d of dos) {
       const tab: Tab = {
         id: nextId++,
@@ -376,6 +382,7 @@ export const useEditorStore = defineStore('editor', () => {
     reload,
     applyContent,
     restore,
+    sessionRestored,
     toDOs,
   }
 })

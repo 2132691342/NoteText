@@ -446,6 +446,7 @@ export default {
     previewTooLargeHint: '请用外部程序打开',
     openExternal: '用外部程序打开',
     pdfHint: '这里用的是系统内置 PDF 阅读器（支持滚动 / 缩放 / 搜索）；显示空白就点右上角「用外部程序打开」。',
+    htmlHint: '静态预览：不执行脚本；改动约 0.3 秒后自动刷新，完整效果请用外部浏览器打开。',
     backToEdit: '返回编辑',
     encodingConvertHint: '转换会立即写回当前文件。行尾与编码按上面的选择落盘，编辑器里的文本不变。',
     encodingLowConfidence: '当前编码是探测出来的、置信度不高——先确认上面「源编码」选对了再转。',

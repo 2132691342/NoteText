@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from 'vue-i18n'
 import { useToastStore } from '@/stores/toast'
 import { api, isDesktop } from '@/api'
-import { getText, commitBaseline } from '@/composables/useEditorRegistry'
+import { commitBaseline, get, takeStashedDoc } from '@/composables/useEditorRegistry'
 
 export function useQuitGuard() {
   const { t } = useI18n()
@@ -64,12 +64,22 @@ export function useQuitGuard() {
         await api.saveDraft({
           path: tab.path,
           title: tab.title,
-          content: getText(tab.id),
+          content: textOf(tab.id),
         })
       }
     } catch {
       /* 存不上也继续退出：拦着用户不让关更糟 */
     }
+  }
+
+  /**
+   * 标签正文：视图在就用视图的；视图被路由卸了（设置页 / 帮助页退出）
+   * 就退回卸载前的暂存。直接拿 getText 的空串写盘会把文件清空。
+   */
+  function textOf(tabId: number): string {
+    const v = get(tabId)
+    if (v) return v.state.doc.toString()
+    return takeStashedDoc(tabId) ?? ''
   }
 
   async function onBeforeClose() {
@@ -97,7 +107,7 @@ export function useQuitGuard() {
       // 保存：写盘失败就停在这里，不静默丢掉用户内容。
       if (!tab.path || tab.path.startsWith('draft:')) {
         const res = await api.saveFileAs(
-          getText(tab.id),
+          textOf(tab.id),
           name,
           tab.encoding,
           tab.line_ending,
@@ -114,7 +124,7 @@ export function useQuitGuard() {
         continue
       }
       try {
-        await api.writeFile(tab.path, getText(tab.id), tab.encoding, tab.line_ending, tab.has_bom)
+        await api.writeFile(tab.path, textOf(tab.id), tab.encoding, tab.line_ending, tab.has_bom)
         commitBaseline(tab.id)
         editor.markDirty(tab.id, false)
       } catch {

@@ -166,6 +166,7 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 | `legacyDoc` | `.doc` `.ppt(x)` `.odt` `.rtf` `.epub` 等无内嵌渲染器的文档 | `DocPreview.vue` → 「没有内置预览」卡片 |
 | `image` `sheet` `docx` `pdf` | 扩展名表 | `DocPreview.vue`（动态 import 对应预览器） |
 | `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
+| `html` | `.html` `.htm` `.xhtml` | `CodeEditor.vue`（可编辑）+ `DocPreview.vue` 沙箱 iframe 静态预览（`showing_preview`，不执行脚本） |
 | `text` | 其余 | `CodeEditor.vue` / `DocPreview.vue`（`showing_preview`） |
 
 **打开链路先 stat 再决定要不要读正文**：`read_file` 是「按文本解码」，

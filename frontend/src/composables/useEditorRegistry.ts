@@ -55,6 +55,24 @@ export function unregister(tabId: number) {
   dropDocVersion(tabId)
 }
 
+/**
+ * 路由离开编辑器视图时暂存的正文：设置页 / 帮助页是独立路由，
+ * 回来时编辑器从磁盘重读，未保存的修改必须从这份暂存里找回。
+ * 只存脏文档（干净的重读磁盘就是同一份）；关闭标签后的残留条目
+ * 等下次同名暂存覆盖或进程退出，量级可控。
+ */
+const stashedDocs = new Map<number, string>()
+
+/** 暂存一个标签的正文（卸载前调；同一标签的主 / 副视图内容一致，覆写无妨）。 */
+export function stashDoc(tabId: number, text: string) {
+  stashedDocs.set(tabId, text)
+}
+
+/** 取暂存的正文。不移除：分屏的主副视图挂载时各取一次，取完仍留在表里等覆写。 */
+export function takeStashedDoc(tabId: number): string | null {
+  return stashedDocs.get(tabId) ?? null
+}
+
 /** 取某个 tab 的视图。 */
 export function get(tabId: number): EditorView | undefined {
   return entries.get(tabId)?.view
