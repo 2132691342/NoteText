@@ -188,3 +188,35 @@ export function nextUntitledIndex(taken: number[]): number {
   while (taken.includes(i)) i += 1
   return i
 }
+
+/** 归档扩展名全集：与后端 `ArchiveFormat::extensions` 一一对应，改后端要同步这里。
+ *  用于右键菜单分流（压缩包给「打开 / 解压」，普通文件给「压缩」）。 */
+const ARCHIVE_EXTS = new Set([
+  '7z',
+  'zip',
+  'tar',
+  'tgz',
+  'taz',
+  'gz',
+  'gzip',
+  'bz2',
+  'bzip2',
+  'boz',
+  'zst',
+  'zstd',
+  'tzst',
+  'xz',
+  'txz',
+  'lz4',
+  'br',
+])
+
+/** 是否为可打开的归档文件（按扩展名；后端 open 时还会做魔数复核）。 */
+export function isArchivePath(path: string): boolean {
+  return ARCHIVE_EXTS.has(extName(path))
+}
+
+/** 是否为分卷序列首卷（.001）：树右键对它给「合并分卷」。 */
+export function isSplitFirstPart(path: string): boolean {
+  return /^\d{3}$/.test(extName(path))
+}

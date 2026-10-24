@@ -81,6 +81,9 @@ function localize(err: AppError): AppError {
 // ---- 按域分组的薄封装 ----
 
 import type {
+  AddEntriesReq,
+  ArchiveFormatVO,
+  ArchiveTaskVO,
   BatchFindReq,
   BatchFindVO,
   BatchRenameReq,
@@ -131,7 +134,19 @@ import type {
   TextDiffVO,
   WriteResultVO,
 } from '@/types/api'
-import type { AppConfig } from '@/types/api'
+import type {
+  AppConfig,
+  CreateArchiveReq,
+  ConvertArchiveReq,
+  DeleteEntriesReq,
+  ExtractArchiveReq,
+  JoinPartsReq,
+  OpenArchiveVO,
+  PreviewEntryReq,
+  PreviewEntryVO,
+  SplitFileReq,
+  TestArchiveReq,
+} from '@/types/api'
 
 export const api = {
   // 文件
@@ -270,6 +285,28 @@ export const api = {
   importBackup: (json: unknown) => call<number>('import_backup', { json }),
   loadConfig: () => call<AppConfig>('load_config'),
   saveConfig: (config: AppConfig) => call<void>('save_config', { config }),
+
+  // 归档 / 压缩（specs/18）：同步三件 + 长任务八件（提交队列，进度走事件）
+  archive: {
+    open: (path: string, password?: string) =>
+      call<OpenArchiveVO>('open_archive', { path, password: password ?? null }),
+    previewEntry: (req: PreviewEntryReq) =>
+      call<PreviewEntryVO>('preview_archive_entry', { req }),
+    formats: () => call<ArchiveFormatVO[]>('get_archive_formats'),
+    create: (req: CreateArchiveReq) => call<string>('create_archive', { req }),
+    extract: (req: ExtractArchiveReq) => call<string>('extract_archive', { req }),
+    test: (req: TestArchiveReq) => call<string>('test_archive', { req }),
+    convert: (req: ConvertArchiveReq) => call<string>('convert_archive', { req }),
+    add: (req: AddEntriesReq) => call<string>('add_to_archive', { req }),
+    deleteEntries: (req: DeleteEntriesReq) => call<string>('delete_archive_entries', { req }),
+    splitFile: (req: SplitFileReq) => call<string>('split_archive_file', { req }),
+    joinParts: (req: JoinPartsReq) => call<string>('join_archive_parts', { req }),
+    listTasks: () => call<ArchiveTaskVO[]>('list_archive_tasks'),
+    cancelTask: (id: string) => call<void>('cancel_archive_task', { id }),
+    pauseTask: (id: string) => call<void>('pause_archive_task', { id }),
+    resumeTask: (id: string) => call<void>('resume_archive_task', { id }),
+    clearTasks: () => call<void>('clear_archive_tasks'),
+  },
 
   // 会话
   restoreSession: () => call<SessionRestoreVO>('restore_session'),

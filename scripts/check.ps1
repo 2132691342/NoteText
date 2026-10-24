@@ -46,7 +46,12 @@ if ($List) {
     Get-ChildItem 'src-tauri/tests' -Filter '*.rs' | Sort-Object Name | ForEach-Object {
         Write-Host $_.Name -ForegroundColor Cyan
         Get-Content $_.FullName | Select-String -Pattern '^\s*fn (\w+)\(' |
-            Where-Object { $_.Matches[0].Groups[1].Value -notin @('boot', 'tab', 'roundtrip', 'batch_root') } |
+            Where-Object {
+                $_.Matches[0].Groups[1].Value -notin @(
+                    'boot', 'tab', 'roundtrip', 'batch_root',
+                    'archive_samples', 'create_req', 'extract_req'
+                )
+            } |
             ForEach-Object { '  {0}' -f $_.Matches[0].Groups[1].Value }
     }
     exit 0

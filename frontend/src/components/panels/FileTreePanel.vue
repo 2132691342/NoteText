@@ -48,9 +48,10 @@ import { ElButton } from 'element-plus'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useEditorStore } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
+import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
-import { copyText, dirName, baseName } from '@/utils'
+import { copyText, dirName, baseName, isArchivePath, isSplitFirstPart } from '@/utils'
 import ContextMenu from '@/components/common/ContextMenu.vue'
 import FileTreeNode from '@/components/panels/FileTreeNode.vue'
 import type { MenuItem } from '@/components/common/contextMenu'
@@ -60,6 +61,7 @@ const { t } = useI18n()
 const tree = useFileTreeStore()
 const editor = useEditorStore()
 const commands = useCommandStore()
+const dialogs = useDialogStore()
 const toast = useToastStore()
 
 const menu = ref<{ x: number; y: number } | null>(null)
@@ -102,6 +104,10 @@ const treeMenuItems = computed<MenuItem[]>(() => {
   const entry = menuEntry.value
   const isDir = entry?.is_dir ?? false
   const targetDir = isDir ? entry!.path : entry ? dirName(entry.path) : tree.root
+  // 压缩包节点：菜单换成归档动作（打开 / 解压 / 测试），普通压缩不再给
+  const archiveEntry = entry && !isDir && isArchivePath(entry.path) ? entry : null
+  // 分卷首卷（.001）：给「合并分卷」
+  const splitEntry = entry && !isDir && isSplitFirstPart(entry.path) ? entry : null
   return [
     {
       label: t('menu.open'),
@@ -161,6 +167,71 @@ const treeMenuItems = computed<MenuItem[]>(() => {
       run: () => void startMenuEdit('rename'),
     },
     { sep: true },
+    // 归档动作：压缩包给打开 / 解压 / 测试，分卷首卷给合并，其余给压缩 / 分卷
+    ...(archiveEntry
+      ? [
+          {
+            label: t('tree.openArchive'),
+            run: () => {
+              menu.value = null
+              dialogs.open('archiveBrowser', '', { path: archiveEntry.path })
+            },
+          },
+          {
+            label: t('tree.extractHere', { name: archiveEntry.name }),
+            run: () => void extractHere(archiveEntry.path),
+          },
+          {
+            label: t('tree.testArchive'),
+            run: () => void testArchive(archiveEntry.path),
+          },
+        ]
+      : []),
+    ...(splitEntry
+      ? [
+          {
+            label: t('tree.joinParts'),
+            run: () => {
+              menu.value = null
+              dialogs.open('splitJoin', '', { mode: 'join', path: splitEntry.path })
+            },
+          },
+        ]
+      : []),
+    ...(entry && !archiveEntry && !splitEntry
+      ? [
+          {
+            label: t('tree.compress'),
+            run: () => {
+              menu.value = null
+              dialogs.open('createArchive', '', { sources: [entry.path] })
+            },
+          },
+        ]
+      : []),
+    ...(!entry && tree.root
+      ? [
+          {
+            label: t('tree.compress'),
+            run: () => {
+              menu.value = null
+              dialogs.open('createArchive', '', { sources: [] })
+            },
+          },
+        ]
+      : []),
+    ...(!archiveEntry && !splitEntry && entry && !isDir
+      ? [
+          {
+            label: t('tree.splitFile'),
+            run: () => {
+              menu.value = null
+              dialogs.open('splitJoin', '', { mode: 'split', path: entry.path })
+            },
+          },
+        ]
+      : []),
+    { sep: true },
     {
       label: t('tab.copyPath'),
       disabled: !entry,
@@ -192,6 +263,35 @@ const treeMenuItems = computed<MenuItem[]>(() => {
     },
   ]
 })
+
+/** 解压到旁边：目标 = 压缩包同级 + 同名子目录，冲突保留两者（rename 策略）。 */
+async function extractHere(archivePath: string) {
+  menu.value = null
+  try {
+    await api.archive.extract({
+      archive: archivePath,
+      dest: dirName(archivePath),
+      entries: null,
+      password: null,
+      overwrite: 'rename',
+      create_subdir: true,
+    })
+    toast.ok(t('archive.queued'))
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  }
+}
+
+/** 测试完整性：提交队列，结果由任务面板与 toast 反馈。 */
+async function testArchive(archivePath: string) {
+  menu.value = null
+  try {
+    await api.archive.test({ archive: archivePath, password: null })
+    toast.ok(t('archive.queued'))
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  }
+}
 
 /**
  * 菜单项触发的行内编辑：菜单是全局浮层，拿不到树节点的 setup 作用域，

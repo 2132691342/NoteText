@@ -42,6 +42,20 @@ dirs = { workspace = true }
 # 这里只需要读 / 写纯文本两个命令。
 arboard = "3"
 
+# 压缩内核（specs/18）：创建 / 解压 / 浏览 / 测试 / 转换 / 追加删除 / 分卷
+sevenz-rust = { workspace = true }
+zip = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+xz2 = { workspace = true }
+bzip2 = { workspace = true }
+zstd = { workspace = true }
+lz4_flex = { workspace = true }
+brotli = { workspace = true }
+crc32fast = { workspace = true }
+walkdir = { workspace = true }
+tempfile = { workspace = true }
+
 # 壳层：Tauri 本体 + 对话框 + 单实例 + 托盘
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
@@ -52,6 +66,8 @@ tauri-plugin-opener = "2"
 tempfile = "3"
 # 集成测试里断言 JSON 出入参
 serde_json = { workspace = true }
+# 压缩链路测试要手工构造带恶意条目名的 zip（穿越用例）
+zip = { workspace = true }
 
 [features]
 # 默认特性：自定义协议（生产模式下前端资源由 Rust 服务，file:// 直开会被 CSP 挡）

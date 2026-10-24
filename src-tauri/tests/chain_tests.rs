@@ -1,4 +1,4 @@
-//! 集成测试：11 条长链路，按「文件与编码 / 会话 / 批量 / 备份」四组排列。
+//! 集成测试：13 条长链路，按「文件与编码 / 会话 / 批量 / 备份 / 压缩」分组排列。
 //! 函数名就是它守护的那件坏事；测试与坏法的完整索引见 specs/12-testing.md。
 
 // 每个测试二进制单独编译本模块，helper 未必全被用到。
@@ -75,13 +75,14 @@ fn batch_root(dir: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
 
 // ---------- 文件与编码 ----------
 
-/// CRLF / BOM 在读写链上必须无损：一次保存把全文件行尾改掉、或 BOM 没剥干净让列号全偏。
+/// 打开-保存-重开的全链路无损：行尾按原样写回、BOM 剥离又补回、
+/// 强制编码解出正确内容、不认识的编码退回探测而不是打不开。
 #[test]
-fn read_write_roundtrip_preserves_line_ending_and_bom() {
+fn read_write_roundtrip_preserves_encoding_line_ending_and_bom() {
     let (dir, state) = boot();
     let data = dir.path();
 
-    // 读：CRLF 归一成 LF；写：不指定行尾按文件原本的 CRLF 原样写回。
+    // 行尾：读时 CRLF 归一成 LF；写时不指定行尾按文件原本的 CRLF 原样写回。
     let crlf = data.join("crlf.txt");
     let read = roundtrip(&state, &crlf, b"a\r\nb\r\n");
     assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
@@ -97,7 +98,7 @@ fn read_write_roundtrip_preserves_line_ending_and_bom() {
         "应原样写回 CRLF"
     );
 
-    // 读：剥掉 BOM；写：显式 utf-8-bom 要补回。
+    // BOM：读时剥掉；显式 utf-8-bom 写回时补回。
     let bom = data.join("bom.txt");
     let read_bom = roundtrip(&state, &bom, b"\xEF\xBB\xBFhello");
     assert_eq!(read_bom.text, "hello", "读进来应剥掉 BOM");
@@ -117,16 +118,12 @@ fn read_write_roundtrip_preserves_line_ending_and_bom() {
         b"\xEF\xBB\xBFhello",
         "写回去应补回 BOM"
     );
-}
 
-/// 选了编码打开必须不再是乱码；选错编码退回探测编码而不是整个文件打不开。
-#[test]
-fn forced_encoding_read_decodes_and_falls_back_when_unsupported() {
-    let (dir, state) = boot();
-    let gbk = dir.path().join("gbk.txt");
+    // 强制编码：按 gb18030 打开 GBK 字节要解出表内符号；
+    // 不认识的编码名退回探测编码——用户选错也不能打不开文件。
+    let gbk = data.join("gbk.txt");
     let p = gbk.to_string_lossy().to_string();
     roundtrip(&state, &gbk, &[0xA1u8, 0xA1, 0xA1, 0xA2]);
-
     let forced = state
         .services
         .file
@@ -134,7 +131,6 @@ fn forced_encoding_read_decodes_and_falls_back_when_unsupported() {
         .expect("按 gb18030 读失败");
     assert_eq!(forced.text, "、。", "指定 gb18030 应解出表内符号");
     assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
-
     let fallback = state
         .services
         .file
@@ -283,10 +279,13 @@ fn delete_accounts_for_stale_paths_and_create_refuses_existing() {
 
 // ---------- 会话 ----------
 
-/// 首次启动写入默认配置；空库给出「没有标签」而不是 null（前端据此显欢迎页）。
+/// 启动与会话的完整故事：首启写默认配置、空库空列表序列化成 []（null 会白屏）、
+/// 会话往返保标签顺序与窗口尺寸、关光标签后会话行仍在。
 #[test]
-fn first_launch_writes_defaults_and_gives_empty_session() {
+fn first_launch_seeds_defaults_and_session_round_trip_restores_tabs() {
     let (_dir, state) = boot();
+
+    // 首次启动：默认配置就位；空库的会话与各用户数据列表都是「空」而不是 null。
     state
         .db
         .with(|conn| {
@@ -298,13 +297,24 @@ fn first_launch_writes_defaults_and_gives_empty_session() {
             Ok(())
         })
         .expect("数据库链路不可用");
-}
-
-/// 会话往返保持标签顺序、活跃索引、窗口尺寸；关光标签后会话行仍在，
-/// 删行会让下次启动开成默认窗口大小。
-#[test]
-fn session_round_trip_restores_tabs_and_survives_close_all() {
-    let (_dir, state) = boot();
+    let ud = &state.services.userdata;
+    for (name, json) in [
+        (
+            "书签",
+            serde_json::to_string(&ud.list_bookmarks().expect("列书签失败")).expect("序列化失败"),
+        ),
+        (
+            "片段",
+            serde_json::to_string(&ud.list_snippets(&Default::default()).expect("列片段失败"))
+                .expect("序列化失败"),
+        ),
+        (
+            "草稿",
+            serde_json::to_string(&ud.list_drafts().expect("列草稿失败")).expect("序列化失败"),
+        ),
+    ] {
+        assert_eq!(json, "[]", "空{name}列表必须序列化成 [] 而不是 null");
+    }
 
     // 带标签保存 → 恢复：顺序、活跃索引、窗口尺寸都在。
     let tabs = vec![
@@ -337,43 +347,6 @@ fn session_round_trip_restores_tabs_and_survives_close_all() {
     let empty = state.db.with(SessionRepo::load).expect("恢复空会话失败");
     assert!(empty.tabs.is_empty(), "空会话应没有标签");
     assert!(empty.session.is_some(), "会话行要留着（记窗口大小）");
-}
-
-/// 空列表序列化成 [] 而不是 null：Rust 的 nil slice 序列化成 null，前端按数组读就崩。
-#[test]
-fn empty_lists_serialize_to_array_not_null() {
-    let (_dir, state) = boot();
-    for (name, json) in [
-        (
-            "书签",
-            serde_json::to_string(
-                &state
-                    .services
-                    .userdata
-                    .list_bookmarks()
-                    .expect("列书签失败"),
-            )
-            .expect("序列化失败"),
-        ),
-        (
-            "片段",
-            serde_json::to_string(
-                &state
-                    .services
-                    .userdata
-                    .list_snippets(&Default::default())
-                    .expect("列片段失败"),
-            )
-            .expect("序列化失败"),
-        ),
-        (
-            "草稿",
-            serde_json::to_string(&state.services.userdata.list_drafts().expect("列草稿失败"))
-                .expect("序列化失败"),
-        ),
-    ] {
-        assert_eq!(json, "[]", "空{name}列表必须序列化成 [] 而不是 null");
-    }
 }
 
 // ---------- 批量操作 ----------
@@ -583,5 +556,293 @@ fn backup_round_trip_restores_user_tables_and_keeps_local_rows() {
     assert!(
         recent.iter().any(|r| r.path == "C:\\a.txt"),
         "最近文件要回来"
+    );
+}
+
+// ---------- 压缩与归档（specs/18） ----------
+
+use notetext_lib::domain::archive::{
+    AddEntriesReq, CreateArchiveReq, DeleteEntriesReq, ExtractArchiveReq, TestArchiveReq,
+};
+use notetext_lib::pkg::error::codes;
+use notetext_lib::service::archive as arch;
+use notetext_lib::service::archive::ctx::TaskCtx;
+
+/// 压缩样本目录：中文文件名 + 嵌套目录 + 二进制内容，往返要逐字节一致。
+fn archive_samples(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = dir.join("样本目录");
+    let sub = root.join("子目录");
+    fs::create_dir_all(&sub).expect("建样本目录失败");
+    fs::write(root.join("说明.txt"), b"hello note text\r\nsecond line\n").expect("写样本失败");
+    // 256KB 可压缩内容 + 不可压缩随机段：两条路都走到
+    let mut blob = Vec::with_capacity(256 * 1024);
+    for i in 0..256 * 1024 {
+        blob.push((i % 251) as u8);
+    }
+    blob.extend_from_slice(&[0xE4, 0xB8, 0xAD, 0xE6, 0x96, 0x87, 0x00, 0xFF]);
+    fs::write(sub.join("数据.bin"), &blob).expect("写样本失败");
+    (root.clone(), sub.join("数据.bin"))
+}
+
+fn create_req(sources: Vec<String>, dest: &std::path::Path, format: &str) -> CreateArchiveReq {
+    CreateArchiveReq {
+        sources,
+        dest: dest.to_string_lossy().to_string(),
+        format: format.to_string(),
+        method: None,
+        level: None,
+        password: None,
+        encrypt_filenames: false,
+        solid: false,
+        split_to: None,
+        exclude: Vec::new(),
+        comment: None,
+    }
+}
+
+fn extract_req(archive: &std::path::Path, dest: &std::path::Path) -> ExtractArchiveReq {
+    ExtractArchiveReq {
+        archive: archive.to_string_lossy().to_string(),
+        dest: dest.to_string_lossy().to_string(),
+        entries: None,
+        password: None,
+        overwrite: "overwrite".into(),
+        create_subdir: false,
+    }
+}
+
+/// 全格式往返：压缩出来的包解压后内容必须逐字节一致（含中文文件名与嵌套目录）。
+/// 坏法：某一格式解压出的文件内容变了 / 文件名乱了 / 目录层级塌了。
+#[test]
+fn archive_round_trip_all_formats_preserves_content() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let (root, bin_file) = archive_samples(dir.path());
+    let want_bin = fs::read(&bin_file).expect("回读样本");
+    let want_txt = fs::read(root.join("说明.txt")).expect("回读样本");
+    let root_str = root.to_string_lossy().to_string();
+
+    // 容器格式压整个目录；单文件格式压一个文件（多源在引擎入口直接报 9005）
+    let container: &[&str] = &["7z", "zip", "tar", "tgz"];
+    let single: &[&str] = &["gz", "bz2", "zst", "xz", "lz4", "br"];
+    let ctx = TaskCtx::new("t".into(), 0);
+
+    for fmt in container {
+        let dest = dir.path().join(format!("out.{fmt}"));
+        arch::create::create_archive(&create_req(vec![root_str.clone()], &dest, fmt), &ctx)
+            .unwrap_or_else(|e| panic!("{fmt} 创建失败: {e}"));
+        let out_dir = dir.path().join(format!("x-{fmt}"));
+        arch::extract::extract_archive(&extract_req(&dest, &out_dir), &ctx)
+            .unwrap_or_else(|e| panic!("{fmt} 解压失败: {e}"));
+        let extracted_root = out_dir.join("样本目录");
+        assert_eq!(
+            fs::read(extracted_root.join("说明.txt"))
+                .unwrap_or_else(|_| panic!("{fmt} 解压后缺 说明.txt")),
+            want_txt,
+            "{fmt} 往返后文本内容变了"
+        );
+        assert_eq!(
+            fs::read(extracted_root.join("子目录").join("数据.bin"))
+                .unwrap_or_else(|_| panic!("{fmt} 解压后缺 子目录/数据.bin（层级或中文名塌了）")),
+            want_bin,
+            "{fmt} 往返后二进制内容变了"
+        );
+    }
+
+    for fmt in single {
+        let dest = dir.path().join(format!("数据.bin.{fmt}"));
+        arch::create::create_archive(
+            &create_req(vec![bin_file.to_string_lossy().to_string()], &dest, fmt),
+            &ctx,
+        )
+        .unwrap_or_else(|e| panic!("{fmt} 创建失败: {e}"));
+        let out_dir = dir.path().join(format!("x-{fmt}"));
+        arch::extract::extract_archive(&extract_req(&dest, &out_dir), &ctx)
+            .unwrap_or_else(|e| panic!("{fmt} 解压失败: {e}"));
+        assert_eq!(
+            fs::read(out_dir.join("数据.bin"))
+                .unwrap_or_else(|_| panic!("{fmt} 单文件解压后缺产物")),
+            want_bin,
+            "{fmt} 单文件往返后内容变了"
+        );
+    }
+}
+
+/// 恶意条目（../evil.txt）必须被拒绝解压，且不往目标目录外写任何文件。
+#[test]
+fn archive_extract_rejects_path_traversal() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let evil_zip = dir.path().join("evil.zip");
+    {
+        use std::io::Write;
+        let f = std::fs::File::create(&evil_zip).expect("建恶意 zip 失败");
+        let mut w = zip::ZipWriter::new(f);
+        use zip::write::SimpleFileOptions;
+        w.start_file("../evil.txt", SimpleFileOptions::default())
+            .expect("写恶意条目失败");
+        w.write_all(b"pwned").expect("写恶意内容失败");
+        w.finish().expect("收尾失败");
+    }
+    let out_dir = dir.path().join("out");
+    fs::create_dir_all(&out_dir).expect("建解压目录失败");
+    let ctx = TaskCtx::new("t".into(), 0);
+    let err = arch::extract::extract_archive(&extract_req(&evil_zip, &out_dir), &ctx)
+        .expect_err("穿越条目必须被拒绝");
+    assert_eq!(err.code, codes::PATH_ESCAPE, "穿越必须报 1003，实际 {err}");
+    assert!(
+        !dir.path().join("evil.txt").exists(),
+        "目标目录之外不允许出现任何文件"
+    );
+    // 拒绝语义是整包失败而不是「跳过坏条目继续解」：
+    // 静默跳过会让用户以为解压完整，缺文件要到用时才发现。
+    assert!(
+        !out_dir
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false),
+        "含穿越条目的包不允许落任何文件"
+    );
+}
+
+/// 打不开的包要说清为什么：没密码报 9002、密码错报 9003（前端据此弹密码框）、
+/// 给对密码能开；损坏的包测试要报出失败条目，不能说「好」。
+#[test]
+fn archive_failures_distinguish_password_and_corruption() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let (root, _bin) = archive_samples(dir.path());
+    let ctx = TaskCtx::new("t".into(), 0);
+
+    // 密码三态（加密文件名的 7z：列表本身就要密码）。
+    let secret = dir.path().join("secret.7z");
+    let req = CreateArchiveReq {
+        password: Some("正确密码123".into()),
+        encrypt_filenames: true,
+        ..create_req(vec![root.to_string_lossy().to_string()], &secret, "7z")
+    };
+    arch::create::create_archive(&req, &ctx).expect("加密 7z 创建失败");
+    let no_pwd = arch::list::list_archive(&secret, None).expect_err("不给密码必须打不开");
+    assert_eq!(
+        no_pwd.code,
+        codes::ARCHIVE_PASSWORD_REQUIRED,
+        "实际 {no_pwd}"
+    );
+    let wrong = arch::list::list_archive(&secret, Some("错的")).expect_err("错误密码必须打不开");
+    assert_eq!(wrong.code, codes::ARCHIVE_WRONG_PASSWORD, "实际 {wrong}");
+    arch::list::list_archive(&secret, Some("正确密码123")).expect("正确密码必须能开");
+
+    // 损坏检测：正文中间翻一个字节破坏 CRC，测试必须报失败清单。
+    let pack = dir.path().join("pack.zip");
+    arch::create::create_archive(
+        &create_req(vec![root.to_string_lossy().to_string()], &pack, "zip"),
+        &ctx,
+    )
+    .expect("创建失败");
+    let mut bytes = fs::read(&pack).expect("回读");
+    let mid = bytes.len() / 2;
+    bytes[mid] ^= 0xFF;
+    fs::write(&pack, &bytes).expect("写损坏包");
+    let result = arch::test_archive::test_archive(
+        &TestArchiveReq {
+            archive: pack.to_string_lossy().to_string(),
+            password: None,
+        },
+        &ctx,
+    )
+    .expect("测试本身不该崩");
+    assert!(!result.ok, "损坏的包必须测出失败");
+    assert!(!result.failures.is_empty(), "失败清单要给出具体条目与原因");
+}
+
+/// 分卷链：.001 打开即整包；分卷合并后与原文件逐字节一致。
+#[test]
+fn archive_split_volumes_open_from_first_part_and_join_restores_bytes() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let (root, _bin) = archive_samples(dir.path());
+    let dest = dir.path().join("pack.zip");
+    let ctx = TaskCtx::new("t".into(), 0);
+    arch::create::create_archive(
+        &create_req(vec![root.to_string_lossy().to_string()], &dest, "zip"),
+        &ctx,
+    )
+    .expect("创建失败");
+    let original = fs::read(&dest).expect("回读原包");
+
+    // 每卷 1KB：原包几 KB，切出多卷
+    let parts = arch::split::split_file(&dest, 1024, &ctx).expect("分卷失败");
+    assert!(parts.len() >= 2, "必须切出多卷");
+    fs::remove_file(&dest).expect("删原包失败（验证分卷链独立可用）");
+
+    // 从 .001 打开：条目与解压都走分卷链
+    let first = std::path::PathBuf::from(&parts[0]);
+    let info = arch::list::list_archive(&first, None).expect("首卷必须能直接打开");
+    assert!(info.is_split, "分卷包要标记 is_split");
+    assert!(info.entries.iter().any(|e| e.name.contains("说明.txt")));
+    let out_dir = dir.path().join("from-parts");
+    arch::extract::extract_archive(&extract_req(&first, &out_dir), &ctx).expect("分卷解压失败");
+    assert!(out_dir.join("样本目录").join("说明.txt").exists());
+
+    // 合并回整文件：逐字节一致
+    let joined = dir.path().join("joined.zip");
+    arch::split::join_parts(&parts, &joined, &ctx).expect("合并失败");
+    assert_eq!(
+        fs::read(&joined).expect("回读合并"),
+        original,
+        "合并后必须字节级还原"
+    );
+}
+
+/// 追加 / 删除走重建：条目要真的进出归档，原有内容不动。
+#[test]
+fn archive_update_adds_and_deletes_entries() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let (root, _bin) = archive_samples(dir.path());
+    let dest = dir.path().join("pack.zip");
+    let ctx = TaskCtx::new("t".into(), 0);
+    arch::create::create_archive(
+        &create_req(vec![root.to_string_lossy().to_string()], &dest, "zip"),
+        &ctx,
+    )
+    .expect("创建失败");
+
+    // 追加
+    let extra = dir.path().join("新增.log");
+    fs::write(&extra, b"new entry").expect("写新增文件");
+    arch::update::add_entries(
+        &AddEntriesReq {
+            archive: dest.to_string_lossy().to_string(),
+            sources: vec![extra.to_string_lossy().to_string()],
+            password: None,
+            exclude: Vec::new(),
+        },
+        &ctx,
+    )
+    .expect("追加失败");
+    let info = arch::list::list_archive(&dest, None).expect("追加后列目录失败");
+    assert!(
+        info.entries.iter().any(|e| e.name == "新增.log"),
+        "追加的条目要出现在归档里"
+    );
+    assert!(
+        info.entries.iter().any(|e| e.name.ends_with("说明.txt")),
+        "原有条目不能丢"
+    );
+
+    // 删除
+    arch::update::delete_entries(
+        &DeleteEntriesReq {
+            archive: dest.to_string_lossy().to_string(),
+            entries: vec!["样本目录/说明.txt".into()],
+            password: None,
+        },
+        &ctx,
+    )
+    .expect("删除失败");
+    let info = arch::list::list_archive(&dest, None).expect("删除后列目录失败");
+    assert!(
+        !info.entries.iter().any(|e| e.name == "样本目录/说明.txt"),
+        "删除的条目必须消失"
+    );
+    assert!(
+        info.entries.iter().any(|e| e.name == "新增.log"),
+        "没删的条目必须还在"
     );
 }

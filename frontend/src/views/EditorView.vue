@@ -33,6 +33,7 @@ import AskPickDialog from '@/components/dialogs/AskPickDialog.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'
+import { useArchiveStore } from '@/stores/archive'
 import { registerCommands } from '@/composables/useCommands'
 import { useViewportScale } from '@/composables/useViewportScale'
 import { useExternalChange } from '@/composables/useExternalChange'
@@ -44,10 +45,13 @@ import { tr } from '@/i18n'
 const settings = useSettingsStore()
 const editor = useEditorStore()
 const tree = useFileTreeStore()
+const archive = useArchiveStore()
 
 const ui = computed(() => settings.config.ui)
 
 useViewportScale()
+// 压缩任务事件接线（specs/18）：挂根视图，设置页路由来回切也只 init 一次。
+void archive.init()
 // 退出守卫与全局键在 App 根层注册：路由切到设置页时编辑器视图已卸载，
 // 挂在这里会随视图一起销毁（设置页点 X 没反应就是这么来的）。
 registerCommands()

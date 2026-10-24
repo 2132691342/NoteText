@@ -99,6 +99,9 @@ const PATHS: Record<string, string[]> = {
   download: ['M12 4v10', 'M8 10l4 4 4-4', 'M5 20h14'],
   upload: ['M12 20V10', 'M8 14l4-4 4 4', 'M5 4h14'],
   external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'],
+  archive: ['M3 8h18v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M3 8V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3', 'M10 12h4'],
+  play: ['M7 5l12 7-12 7z'],
+  pause: ['M7 5v14', 'M17 5v14'],
 }
 
 const paths = computed(() => PATHS[props.name] ?? PATHS.info)

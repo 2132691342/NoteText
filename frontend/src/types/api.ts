@@ -2,7 +2,7 @@
 // 铁律：跨边界字段一律 snake_case。改字段必须同步 `src-tauri/src/domain/` 与
 
 /** 契约版本：后端改字段时 +1，前端 `api/index.ts` 在启动时校验。 */
-export const CONTRACT_VERSION = 2
+export const CONTRACT_VERSION = 3
 
 /** 后端统一错误：invoke reject 时的形状。 */
 export interface AppError {
@@ -42,6 +42,7 @@ export interface FileMeta {
   size: number
   modified_at: number
   read_only: boolean
+  is_dir: boolean
   is_binary: boolean
 }
 
@@ -590,6 +591,215 @@ export interface FileOpVO {
   results: FileOpResultVO[]
   succeeded: number
   failed: number
+}
+
+// ---- 归档域（2.0 压缩子系统，specs/18）----
+// 与 domain/archive*.rs 对应；长任务提交队列只回任务 id，进度走事件。
+
+export interface ArchiveEntryVO {
+  name: string
+  is_dir: boolean
+  size: number
+  packed_size: number
+  crc: number | null
+  modified: number | null
+  method: string | null
+  encrypted: boolean
+  ratio: number | null
+}
+
+export interface ArchiveInfoVO {
+  path: string
+  format: string
+  entries: ArchiveEntryVO[]
+  total_size: number
+  packed_size: number
+  file_count: number
+  dir_count: number
+  encrypted: boolean
+  encrypted_names: boolean
+  comment: string | null
+  is_split: boolean
+  solid: boolean
+  ratio: number | null
+}
+
+export interface OpenArchiveVO {
+  info: ArchiveInfoVO
+  parts: string[]
+}
+
+export interface CreateArchiveReq {
+  sources: string[]
+  dest: string
+  format: string
+  method?: string | null
+  level?: number | null
+  password?: string | null
+  encrypt_filenames: boolean
+  solid: boolean
+  split_to?: number | null
+  exclude: string[]
+  comment?: string | null
+}
+
+export interface ExtractArchiveReq {
+  archive: string
+  dest: string
+  entries?: string[] | null
+  password?: string | null
+  /** overwrite | skip | rename */
+  overwrite: string
+  create_subdir: boolean
+}
+
+export interface TestArchiveReq {
+  archive: string
+  password?: string | null
+}
+
+export interface AddEntriesReq {
+  archive: string
+  sources: string[]
+  password?: string | null
+  exclude: string[]
+}
+
+export interface DeleteEntriesReq {
+  archive: string
+  entries: string[]
+  password?: string | null
+}
+
+export interface ConvertArchiveReq {
+  archive: string
+  dest: string
+  format: string
+  password?: string | null
+  new_password?: string | null
+  level?: number | null
+}
+
+export interface SplitFileReq {
+  file: string
+  dest_dir: string
+  part_size: number
+}
+
+export interface JoinPartsReq {
+  parts: string[]
+  dest: string
+}
+
+export interface PreviewEntryReq {
+  archive: string
+  entry: string
+  password?: string | null
+  max_bytes?: number
+}
+
+export interface CreateArchiveVO {
+  dest: string
+  file_count: number
+  total_size: number
+  packed_size: number
+  parts: string[]
+}
+
+export interface ExtractArchiveVO {
+  dest: string
+  file_count: number
+  total_size: number
+  skipped: number
+}
+
+export interface TestArchiveVO {
+  ok: boolean
+  tested: number
+  failures: string[]
+}
+
+export interface UpdateArchiveVO {
+  archive: string
+  file_count: number
+  added: number
+  removed: number
+}
+
+export interface ConvertArchiveVO {
+  dest: string
+  file_count: number
+  total_size: number
+  packed_size: number
+}
+
+export interface JoinPartsVO {
+  dest: string
+  total_size: number
+}
+
+export interface PreviewEntryVO {
+  name: string
+  size: number
+  /** text | image | other */
+  kind: string
+  content: string | null
+  data_url: string | null
+  truncated: boolean
+  too_large: boolean
+}
+
+export interface FormatCapabilities {
+  read: boolean
+  write: boolean
+  container: boolean
+  encryption: boolean
+}
+
+export interface ArchiveFormatVO {
+  id: string
+  extensions: string[]
+  capabilities: FormatCapabilities
+  default_method: string
+}
+
+export type ArchiveTaskStatus =
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+
+export type ArchiveTaskKind =
+  | 'create'
+  | 'extract'
+  | 'test'
+  | 'convert'
+  | 'add'
+  | 'delete'
+  | 'split'
+  | 'join'
+
+export interface ArchiveTaskVO {
+  id: string
+  kind: ArchiveTaskKind
+  title: string
+  status: ArchiveTaskStatus
+  /** 0..1；-1 表示总量未知（前端画不确定态动画）。 */
+  progress: number
+  processed: number
+  total: number
+  current: string | null
+  speed: number | null
+  error: string | null
+  result: unknown
+  created_at: number
+  finished_at: number | null
+}
+
+export interface ArchiveTaskFinishedVO {
+  task: ArchiveTaskVO
 }
 
 // ---- 系统域 ----

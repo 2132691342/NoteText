@@ -14,7 +14,7 @@ pub fn init(paths: &AppPaths) {
     let log_dir = paths.log_dir.clone();
     let _ = std::fs::create_dir_all(&log_dir);
 
-    // 写盘层：滚动上限 20MB × 3 份，避免长 tail -f 会话把磁盘写满。
+    // 写盘层：滚动上限 20MB × 3 份，避免长时间的日志跟随会话把磁盘写满。
     let app_file = rolling_appender(&log_dir.join("app.log"));
     let warn_file = rolling_appender(&log_dir.join("warn.log"));
 

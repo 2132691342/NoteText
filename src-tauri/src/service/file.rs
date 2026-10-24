@@ -134,6 +134,7 @@ impl FileService {
             size: meta.len(),
             modified_at,
             read_only: meta.permissions().readonly(),
+            is_dir: meta.is_dir(),
             is_binary: self.sniff_binary(p),
         })
     }
@@ -304,7 +305,7 @@ impl FileService {
         })
     }
 
-    /// 按行区间读：日志 tail -f 用。
+    /// 按行区间读：日志跟随用。
     fn read_range_lines(&self, path: &Path, start_line: usize, lines: usize) -> AppResult<String> {
         use std::io::{BufRead, BufReader};
         let f = fs::File::open(path)?;

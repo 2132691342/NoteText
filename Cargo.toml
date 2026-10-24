@@ -5,7 +5,7 @@ resolver = "2"
 # 工作区级依赖版本收敛：各 crate 里写 `dep.workspace = true` 引用这里的版本，
 # 升级一个库只改一处。理由与边界见 AGENTS.md §1.1。
 [workspace.package]
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.80"
 authors = ["NoteText contributors"]
@@ -28,6 +28,22 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
+
+# 压缩内核（specs/18）：7z / zip 容器 + tar 系 + 六种单文件流。
+# sevenz-rust 只开压缩与 AES；zip 走 deflate-flate2 复用 flate2 后端，
+# 避免同一进程里拉两份 deflate 实现。
+sevenz-rust = { version = "0.6", default-features = false, features = ["compress", "aes256", "bzip2", "zstd"] }
+zip = { version = "2.4", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate-flate2", "zstd", "time"] }
+tar = "0.4"
+flate2 = "1"
+xz2 = "0.1"
+bzip2 = "0.6"
+zstd = "0.13"
+lz4_flex = "0.11"
+brotli = "7"
+crc32fast = "1"
+walkdir = "2"
+tempfile = "3"
 
 # 优化 profile：开发期 debug 信息单独开关，发布期做体积与速度的折中。
 # 不设 lto = true：全量 LTO 让每次 build 多等 30s+，而编辑器启动已 < 1s。

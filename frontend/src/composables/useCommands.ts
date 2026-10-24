@@ -1211,6 +1211,26 @@ export function registerCommands() {
       run: () => dialogs.open('batchRename'),
     },
 
+    // ---- 压缩 / 归档（specs/18）----
+    {
+      id: 'tools.archive',
+      group: 'tools',
+      labelKey: 'menu.archive',
+      key: 'Control+Alt+A',
+      run: () => {
+        const tab = editor.active
+        const src = tab?.path ? [tab.path] : []
+        dialogs.open('createArchive', '', { sources: src })
+      },
+    },
+    {
+      id: 'tools.archiveTasks',
+      group: 'tools',
+      labelKey: 'menu.archiveTasks',
+      key: 'Control+Alt+T',
+      run: () => dialogs.open('archiveTasks'),
+    },
+
     // ---- 书签 / 帮助 ----
     {
       id: 'bookmark.toggle',

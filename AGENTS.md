@@ -27,25 +27,26 @@
 | 文件监控 | notify | ^7.x |
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
+| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2 |
 | 测试 | testing（标准库） | 一包一入口、一个子测试一种坏法；`scripts/check.ps1` 收口全部验证 |
-| 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写 `runtime.GOOS` 大分支 |
+| 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
 ### 1.1 依赖原则
 
-标准库 → `golang.org/x/...` 等价物 → 生态库。新增依赖必须说明理由与替代方案。
+标准库 → 官方生态 → 第三方库。新增依赖必须说明理由与替代方案。
 
 **明确不引入**：
 
-- **微前端（Qiankun）**：单窗口桌面编辑器没有多团队并行开发的诉求，引入只增构建复杂度；
-- **图编排（AntV X6 / BPMN-JS）**：编辑器不做流程设计，引入 ~2MB 体积无对应功能；
-- **Axios**：前后端纯 Tauri invoke 通信，没有 HTTP 客户端的使用场景；
+- **微前端框架**：单窗口桌面编辑器没有多团队并行开发的诉求，引入只增构建复杂度；
+- **图编排 / 流程图库**：编辑器不做流程设计，引入 ~2MB 体积无对应功能；
+- **HTTP 客户端库**：前后端纯 Tauri invoke 通信，没有 HTTP 客户端的使用场景；
 - **encoding_rs**：当前只支持 12 种编码，其中 2 种（Windows-1252 / ISO-8859-1）是手写单字节表，手写表可测且可解释。
   **要扩展编码清单时优先换 encoding_rs**，别继续往表里加；
 - **regex crate**：工具箱的正则测试器只需常见语法，手写引擎省 ~1MB 体积。
   要支持 `{n,m}` 量词与命名组时换 regex crate。
-- **WangEditor**：富文本编辑器没有对应场景（NoteText 是代码 / 纯文本向的），
+- **富文本编辑器**：没有对应场景（NoteText 是代码 / 纯文本向的），
   Markdown 走 markdown-it 一条链路，不再挂第二个编辑器运行时。
-- **vue-pdf-embed / pdfjs-dist**：v1 打包 1.7MB 且要自己配 worker，配错就是白屏。
+- **PDF 渲染库**：打包 1.7MB 且要自己配 worker，配错就是白屏。
   PDF 交给 WebView2 内置阅读器（`<embed type="application/pdf">` + asset 协议）：
   流式读取、支持搜索与打印，还能绕过 `read_binary` 的 20MB 上限。
 
@@ -156,7 +157,7 @@ commands ──► service ──► repo ──► domain
 必须引用 `domain.XxxREQ/VO/DO`。内联结构体是契约漂移的起点——
 后端改了字段名，编译不报错，前端拿到 undefined。
 
-例外：GORM/rusqlite 临时查询条件允许内联（须加注释）。
+例外：rusqlite 临时查询条件允许内联（须加注释）。
 
 #### 2.3.2 空数组契约（强制）
 
@@ -187,8 +188,8 @@ Rust 的 nil slice 序列化成 `null`，前端按数组读就是
 **禁止**：新增第六个顶层 CSS；在组件里写死色值；把布局间距写成裸像素。
 布局与间距用 UnoCSS 原子类（其刻度已接到 `--nt-*` 令牌）。
 
-Tauri 生成的绑定**不入库**：`@tauri-apps/api` 是 npm 包，不需要 `wailsjs` 那种
-提交生成物的流程。前端不手写 invoke 字符串之外的绑定层。
+Tauri 生成的绑定**不入库**：`@tauri-apps/api` 是 npm 包，前端不提交
+生成物，也不手写 invoke 字符串之外的绑定层。
 
 ### 2.4 错误处理（强制 AppError）
 
@@ -221,6 +222,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 | 6000–6999 | 监控 / 文件监听 |
 | 7000–7999 | 壳层（单实例 / 托盘 / 窗口） |
 | 8000–8999 | 用户数据（书签 / 片段 / 宏 / 草稿） |
+| 9000–9999 | 压缩 / 归档（specs/18） |
 
 每个码的完整含义与处置动作见后端 `pkg/error.rs` 的 `codes` 模块（码值常量集中处）。
 
@@ -261,7 +263,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 | 行内 | 只写「为什么」，1 行 |
 
 - **最低要求就这三样**：文件有头、导出方法有签名说明、字段有注释。够了就停
-- **连续注释块 ≤ 2 行**（`go:build` / `go:embed` 指令前的分隔行除外）
+- **连续注释块 ≤ 2 行**（编译指令前的分隔行除外）
 - 注释只写**结论与边界**，不写论证：「为什么这么设计、当初踩过什么坑」属于 `docs/` 与 `specs/`
 - 禁止：过程性叙述、TODO 历史、实现细节叙事、外部项目名与「参考 / 借鉴」字样
 
@@ -270,7 +272,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 文档只回答三件事：**这个项目是什么、每个模块怎么设计实现、为什么这么选型**。
 
 - 根级：`README.md`（入口与能力全景）/ `AGENTS.md`（工程规范，唯一权威）/ `DESIGN.md`（视觉语言）
-- `specs/`：架构与子系统规格，编号 00-17，一个主题一个文件
+- `specs/`：架构与子系统规格，编号 00-18，一个主题一个文件
 - 每篇只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。**优势与代价必须写出来**
 - 表格与短段落优先；能用表就不用列表
 - **不写改动过程**：不建 CHANGELOG，不记录「本次改了什么」「之前坏在哪」，
@@ -306,7 +308,7 @@ mod dialog_win;
 mod dialog_stub;
 ```
 
-禁止一个文件里 `runtime.GOOS` 分支处理所有平台（托盘 / 消息框等系统能力必须分文件）。
+禁止一个文件里按运行时分支处理所有平台（托盘 / 消息框等系统能力必须分文件）。
 本期只发 Windows，但编译仍要过：非 Windows 给一个能编译的桩，比在调用处写两个分支干净。
 
 ### 2.10 横切关注点
@@ -433,25 +435,23 @@ mod dialog_stub;
 
 | 保留 | 删除 |
 |---|---|
-| 跨模块 / 跨进程的长链路（装配 → 建表 → 书签往返） | 单个纯函数的输入输出 |
+| 跨模块的长链路（装配 → 建表 → 会话恢复 → 关闭） | 单个纯函数的输入输出 |
 | 协议硬约束（空数组永不 null、行尾按原样写回、BOM 剥离与补回） | 简单 CRUD、字段映射、枚举转换 |
 | 安全护栏（路径穿越、原子写不留临时文件） | 幂等 setter、构造函数冒烟 |
 | 顺序语义（标签顺序、光标恢复） | 只验「不 panic」「非 nil」的弱断言 |
 | 跨边界的端到端（invoke 出入参序列化） | 同一行为在不同文件里的重复断言 |
 
-两个硬规则：
-
-1. **一个子测试只讲一种坏法**。能写成「A、B、C 都对」的子测试，失败时报文说不清坏的是哪个。
-2. **同一个行为只断言一次**。repo 自己的语义归 repo 的链，编排层的语义归 service 链。
+**一条测试讲一个完整的用户故事**（打开→改→存→重开、启动→恢复→关光标签），
+故事内的每一段有自己的断言与失败说明；同一故事的两面合并在同一条里，
+省掉重复 setup，失败消息仍能指认到段。
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），按 section 分「文件与编码 / 会话 / 批量 / 备份」四组。
-  所有长链路集中一处，编译只链接一次 lib
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），13 条测试按
+  「文件与编码 / 会话 / 批量 / 备份 / 压缩」五组排列，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
-- 不写 `-short` 隔离：当前没有依赖真实网络 / 真实 git 的链路，
-  真要加时用标准 `testing.Short()` 守卫，不另造自定义 tag
+- 全量测试亚秒级，**不设「只跑一条链」的开关**——加了省不了多少时间，却要多记一个参数
 
 ### 3.3 验证入口
 
@@ -464,32 +464,33 @@ mod dialog_stub;
 | `pwsh scripts/check.ps1 -List` | 列出全部测试名 | 不知道入口叫什么时 |
 
 - **默认安静**：失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
-- 全量测试 < 1 秒，**不设「只跑一条链」的开关**——加了省不了多少时间，却要多记一个参数
 - `scripts/i18n-audit.mjs` 可以单独跑：`node scripts/i18n-audit.mjs`
-  它查四件事——key 引用是否都有定义、zh/en 是否对齐、模板里有没有裸中文、
-  后端错误码是否两边都有文案。四类问题都是编译期抓不到的
+  它查五件事——key 引用是否都有定义、zh/en 是否对齐、模板里有没有裸中文、
+  后端错误码是否两边都有文案、提示里是否直接传了 key。
+  这五类问题都是编译期抓不到的
 
 ### 3.4 测试索引
 
-单个文件 `src-tauri/tests/chain_tests.rs`，按四组排列；每个函数名就是它守护的那句坏事，
+单个文件 `src-tauri/tests/chain_tests.rs`；每个函数名就是它守护的那句坏事，
 失败时报文直接指出坏在哪，不必对着行号往回找。简单纯函数断言不入链（工具箱的
 JSON / 哈希 / 注释这类单函数行为不设测试）；每一条都守护
-「用户文件没了 / 界面崩白屏」级别的事故。**同一条链路的两面合并成一条**
-（如批量替换的「扫描只读」与「只改勾选」），一条测试就是一条完整的用户故事。
+「用户文件没了 / 界面崩白屏」级别的事故。
 
 | 分组 | 测试 | 坏法 |
 |---|---|---|
-| 文件与编码 | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
-| | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
+| 文件与编码 | `read_write_roundtrip_preserves_encoding_line_ending_and_bom` | 行尾没按原样写回 / BOM 丢或多字节 / 强制编码打开仍是乱码 / 选错编码打不开文件 |
 | | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
 | | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
-| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
-| 会话 | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
-| | `session_round_trip_restores_tabs_and_survives_close_all` | 重启后标签顺序与窗口尺寸丢失 |
-| | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
+| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 / 新建同名清空已有内容 |
+| 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
 | 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
 | | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
 | 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
+| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 |
+| | `archive_extract_rejects_path_traversal` | 恶意条目名把文件写到目标目录之外 |
+| | `archive_failures_distinguish_password_and_corruption` | 要密码与密码错混成一个错（前端弹不出密码框）/ 损坏的包测试照样说「好」 |
+| | `archive_split_volumes_open_from_first_part_and_join_restores_bytes` | 分卷首卷打不开 / 合并还原的字节不对 |
+| | `archive_update_adds_and_deletes_entries` | 追加 / 删除条目后丢内容或丢密码 |
 
 **改这里 → 这样验**：
 

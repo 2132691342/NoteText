@@ -128,4 +128,12 @@ pub mod codes {
     pub const SNIPPET_FAILED: &str = "8002";
     pub const MACRO_FAILED: &str = "8003";
     pub const DRAFT_FAILED: &str = "8004";
+
+    // 9xxx 压缩 / 归档
+    pub const ARCHIVE_UNSUPPORTED: &str = "9001";
+    pub const ARCHIVE_PASSWORD_REQUIRED: &str = "9002";
+    pub const ARCHIVE_WRONG_PASSWORD: &str = "9003";
+    pub const ARCHIVE_CORRUPT: &str = "9004";
+    pub const ARCHIVE_BAD_REQUEST: &str = "9005";
+    pub const ARCHIVE_CANCELLED: &str = "9006";
 }

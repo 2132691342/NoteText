@@ -2,43 +2,41 @@
 
 ## 定位
 
-`src-tauri/tests/chain_tests.rs`（单文件、按 section 分四组：文件与编码 / 会话 / 批量 / 备份）
-+ `scripts/` 下两个脚本（唯一验证入口）。判据与条文见 [AGENTS.md §3](../AGENTS.md)，
-这一篇只解释「为什么这么组织」。
+`src-tauri/tests/chain_tests.rs`（单文件，13 条测试按「文件与编码 / 会话 / 批量 / 备份 / 压缩」五组排列）
++ `scripts/` 下两个脚本（唯一验证入口）。这一篇解释「为什么这么组织」，
+条文判据见 [AGENTS.md §3](../AGENTS.md)。
 
-## 为什么单文件、一个测试一种坏法
+## 组织原则：只测长链路，一条测试一个用户故事
 
-Rust 集成测试按「测试二进制」分文件，但 11 个测试收敛进一个文件，编译只链接一次 lib，
-改代码不必等 4 个二进制各自编译。**测试函数名就是它守护的那件坏事**，失败时不需要
-拿行号去文件里找第几条断言。一个函数只讲一种坏法：能写成「A、B、C 都对」的函数，
-失败时报文说不清坏的是哪个。
+单元级断言不入链：纯函数的输入输出一眼可见，单测它们不守护「用户文件没了 /
+界面崩白屏」级别的事故。链路测试必须满足「它失败时，用户界面上会出现一件
+具体的坏事」——测试函数名就是那件坏事的描述，失败报文直接指认，不用对行号。
+
+一条测试讲一个**完整的用户故事**（打开→改→存→重开、启动→用→退出→恢复、
+压缩→分卷→合并→还原），故事内的每一段有自己的断言与失败说明；同一故事的
+两面（如批量替换的「扫描不落盘」与「只改勾选」）合并在同一条里，省掉重复的
+setup，失败消息仍能指认到段。
 
 ```
 src-tauri/tests/
-└── chain_tests.rs   文件与编码(5) / 会话(3) / 批量(2) / 备份(1) = 11 个测试
+└── chain_tests.rs   文件与编码(4) / 会话(1) / 批量(2) / 备份(1) / 压缩(5) = 13 个测试
 ```
 
-| 组 | 测试 | 坏法 |
+| 组 | 测试 | 守护的坏事 |
 |---|---|---|
-| 文件与编码 | `read_write_roundtrip_preserves_line_ending_and_bom` | 行尾没记住 / BOM 丢或多字节 |
-| | `forced_encoding_read_decodes_and_falls_back_when_unsupported` | 选了编码打开的仍是乱码 |
+| 文件与编码 | `read_write_roundtrip_preserves_encoding_line_ending_and_bom` | 行尾没按原样写回 / BOM 丢或多字节 / 强制编码打开仍是乱码 / 选错编码打不开文件 |
 | | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
-| | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
-| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 |
-| 会话 | `first_launch_writes_defaults_and_gives_empty_session` | 首次启动没写默认配置 / 空库崩 |
-| | `session_round_trip_restores_tabs_and_survives_close_all` | 重启后标签顺序与窗口尺寸丢失 |
-| | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
+| | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 目录树成环 / 路径逃逸 |
+| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 / 新建同名清空已有内容 |
+| 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
 | 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
 | | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
 | 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
-
-**工具箱没有链路测试**：JSON 格式化 / 哈希 / 注释开关都是单函数、无编排、无跨层
-状态，断言的输入输出一眼可见；它们不守护「用户文件没了」级别的事故，不入链。
-
-**同一条链路的两面合并成一条**：批量替换的「扫描不落盘」与「只改勾选」是
-同一个两阶段协议的两侧；批量重命名的「冲突拒绝」与「无冲突落地」是同一个
-预览-应用故事的两种结局。分开写会有两份重复的 setup，合并后一条测试
-就是一条完整的用户故事，失败消息仍能指认到段。
+| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 |
+| | `archive_extract_rejects_path_traversal` | 恶意条目名把文件写到目标目录之外 |
+| | `archive_failures_distinguish_password_and_corruption` | 要密码与密码错混成一个错（前端弹不出密码框）/ 损坏的包测试照样说「好」 |
+| | `archive_split_volumes_open_from_first_part_and_join_restores_bytes` | 分卷首卷打不开 / 合并还原的字节不对 |
+| | `archive_update_adds_and_deletes_entries` | 追加 / 删除条目后丢内容或丢密码 |
 
 ## 隔离：测试与生产共用同一条装配链
 
@@ -66,7 +64,7 @@ pwsh scripts/check.ps1 -List    列出全部测试名
 node scripts/i18n-audit.mjs     单独跑国际化审计
 ```
 
-不设「只跑一个测试」的开关：全量测试 < 1 秒，加开关省不了多少时间，却要多记一个参数。
+不设「只跑一个测试」的开关：全量测试亚秒级，加开关省不了多少时间，却要多记一个参数。
 失败时脚本从 cargo 输出里摘出测试名与出错位置。
 
 ## 国际化审计
@@ -89,7 +87,7 @@ node scripts/i18n-audit.mjs     单独跑国际化审计
 
 | 选择 | 优势 | 代价 |
 |---|---|---|
-| 单文件收口 11 个测试 | 编译只链接一次 lib，改代码不必等 4 个二进制 | 跨域阅读顺序靠 section 注释补偿 |
-| 一个测试一种坏法（同链路两面可合并） | 失败报文直接指出坏在哪，又不留重复 setup | 合并的测试要靠断言消息区分段 |
+| 13 条长链路收进一个文件 | 编译只链接一次 lib；改代码只等一次编译 | 跨域阅读顺序靠 section 注释补偿 |
+| 一条测试一个用户故事 | 失败报文直接指出坏在哪；setup 只做一次 | 段内多个断言要靠消息区分 |
 | 不引 mock 框架 | 测试与生产共用装配链，没有替身与生产不一致的空间 | 每个测试真的建一次库（亚秒级） |
 | 断言写人话失败原因 | 失败报文直接指到哪条规则被破坏 | 断言长了几个字 |

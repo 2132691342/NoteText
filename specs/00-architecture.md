@@ -1,7 +1,7 @@
 # 00 · 总架构
 
 这一篇回答四个问题：**NoteText 是什么、由哪些模块组成、数据怎么流、每个决定换来了什么**。
-看完它再进各子系统规格（01–17），不需要先读代码。
+看完它再进各子系统规格（01–18），不需要先读代码。
 
 ## 一句话
 
@@ -83,6 +83,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。内核是 CodeMirror
 | `themes.css` + `ep-theme.css` | 视觉令牌与主题 | [11](11-visual-tokens.md) |
 | `tests/chain_tests.rs` + `scripts/` | 测试组织与验证入口 | [12](12-testing.md) |
 | `service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](13-batch-operations.md) |
+| `service/archive/` | 压缩 / 解压引擎、任务队列、格式能力表 | [18](18-archive.md) |
 | `commands/` ↔ `api/index.ts` | invoke 命令契约 | [14](14-api-contract.md) |
 | `pkg/error.rs` | 错误码分段 | [15](15-error-codes.md) |
 | `tauri.conf.json` + workflows | 构建与分发 | [17](17-deployment.md) |
@@ -97,7 +98,7 @@ main.rs
        ├─ app::bootstrap::build(&paths)
        │    ├─ Db::open(&paths.db_path)  WAL + busy_timeout + migrate
        │    ├─ SettingsRepo::load        没有则写默认配置
-       │    └─ Services::new(db)         file / editor / tools / userdata
+       │    └─ Services::new(db)         file / editor / tools / userdata / batch / archive
        ├─ tauri::Builder
        │    ├─ plugin(single_instance)   二次启动转交
        │    ├─ plugin(dialog)            原生打开 / 保存对话框
@@ -179,6 +180,8 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 | `app:open-file` | 文件路径 | `useShellIntent`：切回编辑器页并打开 |
 | `app:new-document` | 无 | 托盘「新建文档」 |
 | `fs:changed` | 路径数组 | `useExternalChange` + 文件树刷新 |
+| `archive:task-update` | 任务快照数组 | `stores/archive`：压缩任务队列的进度 |
+| `archive:task-finished` | 终态任务 | `stores/archive`：终态 toast 与结果负载 |
 
 事件不缓冲给后注册的监听器（Tauri 的 `listen` 在注册后才收到），
 所以「启动时带来的文件」用 `useShellIntent` 的意图队列兜底。

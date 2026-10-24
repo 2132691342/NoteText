@@ -26,6 +26,10 @@ export type DialogKind =
   | 'colorPicker'
   | 'logViewer'
   | 'drafts'
+  | 'createArchive'
+  | 'archiveBrowser'
+  | 'archiveTasks'
+  | 'splitJoin'
 
 export const useDialogStore = defineStore('dialogs', () => {
   const active = ref<DialogKind | null>(null)

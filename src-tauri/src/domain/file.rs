@@ -24,6 +24,8 @@ pub struct FileMeta {
     pub size: u64,
     pub modified_at: i64,
     pub read_only: bool,
+    /// 是否目录：前端按它选图标与动作（压缩对话框的源清单用）。
+    pub is_dir: bool,
     /// 是否疑似二进制（含 NUL 且不可解码比例高）。
     pub is_binary: bool,
 }
@@ -36,7 +38,7 @@ pub enum ReadMode {
     Full,
     /// 只读前 N 字节（超大文件，前端提示用户）。
     Head,
-    /// 按行区间读（日志 tail -f 场景）。
+    /// 按行区间读（日志跟随场景）。
     Range { start_line: usize, lines: usize },
 }
 

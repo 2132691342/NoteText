@@ -21,6 +21,11 @@ export function nextStep(err: AppError): string {
   if (c === '6001') return tr('next.6001')
   if (c === '7001') return tr('next.7001')
   if (c.startsWith('8')) return tr('next.8000')
+  if (c === '9001') return tr('next.9001')
+  if (c === '9002') return tr('next.9002')
+  if (c === '9003') return tr('next.9003')
+  if (c === '9004') return tr('next.9004')
+  if (c === '9005') return tr('next.9005')
   return ''
 }
 

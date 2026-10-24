@@ -1,6 +1,7 @@
 //! command 层：Tauri 的 invoke 入口。
 //! handler 薄：解析参数、调 service、返回；函数名与前端 invoke 字符串一一对应。
 
+pub mod archive;
 pub mod batch;
 pub mod clipboard;
 pub mod dialog;
@@ -62,6 +63,23 @@ macro_rules! command_handlers {
             commands::batch::batch_apply_replace,
             commands::batch::batch_plan_rename,
             commands::batch::batch_apply_rename,
+            // 压缩 / 归档（specs/18）
+            commands::archive::open_archive,
+            commands::archive::preview_archive_entry,
+            commands::archive::get_archive_formats,
+            commands::archive::create_archive,
+            commands::archive::extract_archive,
+            commands::archive::test_archive,
+            commands::archive::convert_archive,
+            commands::archive::add_to_archive,
+            commands::archive::delete_archive_entries,
+            commands::archive::split_archive_file,
+            commands::archive::join_archive_parts,
+            commands::archive::list_archive_tasks,
+            commands::archive::cancel_archive_task,
+            commands::archive::pause_archive_task,
+            commands::archive::resume_archive_task,
+            commands::archive::clear_archive_tasks,
             // 用户数据
             commands::userdata::list_bookmarks,
             commands::userdata::list_file_bookmarks,

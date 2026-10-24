@@ -1,6 +1,7 @@
 //! 业务编排层：事务边界所在。
 //! service 不 import commands 与 tauri，也不知道窗口与托盘的存在。
 
+pub mod archive;
 pub mod batch;
 pub mod editor;
 pub mod encoding;
@@ -13,6 +14,8 @@ pub mod userdata;
 use std::sync::Arc;
 
 use crate::db::Db;
+use crate::service::archive::queue::EventSink;
+use crate::service::archive::ArchiveService;
 use crate::service::batch::BatchService;
 use crate::service::file::FileService;
 use crate::service::file_ops::FileOpsService;
@@ -29,6 +32,7 @@ pub struct Services {
     pub tools: Arc<ToolsService>,
     pub userdata: Arc<UserDataService>,
     pub batch: Arc<BatchService>,
+    pub archive: Arc<ArchiveService>,
 }
 
 impl Services {
@@ -40,6 +44,13 @@ impl Services {
             tools: Arc::new(ToolsService::new()),
             userdata: Arc::new(UserDataService::new(db.clone())),
             batch: Arc::new(BatchService::new(db.clone())),
+            archive: Arc::new(ArchiveService::new()),
         }
+    }
+
+    /// 把压缩队列事件接到 Tauri emit（lib.rs setup 调一次）。
+    /// service 层不引 tauri，这里收一个闭包完成接线。
+    pub fn attach_archive_events(&self, emit: EventSink) {
+        self.archive.attach_event_sink(emit);
     }
 }

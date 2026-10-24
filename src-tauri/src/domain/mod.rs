@@ -1,6 +1,9 @@
 //! 域模型：一个聚合根一个文件，DO / REQ / VO 同居一处。
 //! 跨边界的时间一律 i64 毫秒（见 AGENTS.md 2.8）。
 
+pub mod archive;
+pub mod archive_format;
+pub mod archive_task;
 pub mod batch;
 pub mod bookmark;
 pub mod config;
@@ -18,6 +21,16 @@ pub mod regex;
 pub mod session;
 pub mod snippet;
 
+pub use archive::{
+    AddEntriesReq, ArchiveEntryVO, ArchiveInfoVO, ConvertArchiveReq, ConvertArchiveVO,
+    CreateArchiveReq, CreateArchiveVO, DeleteEntriesReq, ExtractArchiveReq, ExtractArchiveVO,
+    JoinPartsReq, JoinPartsVO, OpenArchiveVO, PreviewEntryReq, PreviewEntryVO, SplitFileReq,
+    TestArchiveReq, TestArchiveVO, UpdateArchiveVO,
+};
+pub use archive_format::{
+    ArchiveFormat, ArchiveFormatVO, CompressLevel, CompressMethod, FormatCapabilitiesVO,
+};
+pub use archive_task::{ArchiveTaskFinishedVO, ArchiveTaskVO, TaskKind, TaskStatus};
 pub use batch::{
     BatchFailure, BatchFileHits, BatchFindReq, BatchFindVO, BatchRenameReq, BatchRenameVO,
     BatchReplaceReq, BatchReplaceVO, FindMode, RenameApplyReq, RenameMode, RenamePair,

@@ -17,6 +17,7 @@ pub const APP_ID: &str = "NoteText";
 /// 应用版本：构建期由 build.rs 从 Cargo.toml 注入，界面「关于」用它。
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+use std::sync::Arc;
 use tauri::Manager;
 
 /// 失败模式（见 specs/04）：数据与日志目录不可用时 fail-fast，
@@ -54,6 +55,7 @@ pub fn run() {
         }
     };
 
+    let services = state.services.clone();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // 二次启动转交：把命令行里的文件路径丢给已有实例的窗口。
@@ -64,12 +66,19 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(state)
         .invoke_handler(commands::command_handlers!())
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
             crate::platform::set_app_handle(handle.clone());
             shell::tray::install(&handle)?;
             app::lifecycle::on_ready(&handle);
             crate::shell::close_policy::sync_from_config(&handle);
+            // 压缩队列事件接线：service 层不引 tauri，这里把 emit 包成 sink 注进去。
+            services.attach_archive_events({
+                let emit_handle = handle.clone();
+                Arc::new(move |name: &str, payload: serde_json::Value| {
+                    let _ = tauri::Emitter::emit(&emit_handle, name, payload);
+                })
+            });
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -150,6 +150,8 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'tools.hex': 'Control+Alt+H',
   'tools.batchFindReplace': 'Control+Shift+B',
   'tools.batchRename': 'Control+Alt+R',
+  'tools.archive': 'Control+Alt+A',
+  'tools.archiveTasks': 'Control+Alt+T',
   'bookmark.toggle': 'F2',
   'bookmark.next': 'Shift+F2',
   'macro.record': 'Control+Shift+M',

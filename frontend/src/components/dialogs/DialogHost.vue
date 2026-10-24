@@ -39,6 +39,10 @@ const COMPONENTS = {
   colorPicker: () => import('@/components/dialogs/ColorPickerDialog.vue'),
   logViewer: () => import('@/components/dialogs/LogViewerDialog.vue'),
   drafts: () => import('@/components/dialogs/DraftsDialog.vue'),
+  createArchive: () => import('@/components/dialogs/CreateArchiveDialog.vue'),
+  archiveBrowser: () => import('@/components/dialogs/ArchiveBrowserDialog.vue'),
+  archiveTasks: () => import('@/components/dialogs/ArchiveTasksDialog.vue'),
+  splitJoin: () => import('@/components/dialogs/SplitJoinDialog.vue'),
 } as const
 
 const current = computed(() => dialogs.active)
@@ -77,6 +81,10 @@ const currentTitle = computed(() => {
     colorPicker: 'viewer.colorPicker',
     logViewer: 'viewer.logViewer',
     drafts: 'dialog.drafts',
+    createArchive: 'archive.createTitle',
+    archiveBrowser: 'archive.browserTitle',
+    archiveTasks: 'archive.tasksTitle',
+    splitJoin: 'archive.splitTitle',
   }
   return t(map[key] ?? key)
 })

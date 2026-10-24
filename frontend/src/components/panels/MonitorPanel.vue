@@ -1,5 +1,5 @@
-// 文件监控面板：tail -f 当前文件，外部追加即时显示。
-// 轮询而不是 notify：notify 的事件不含「追加了多少行」，而 tail -f
+// 文件监控面板：实时跟踪当前文件的新增内容，外部追加即时显示。
+// 轮询而不是 notify：notify 的事件不含「追加了多少行」，轮询取行数差才知道追加了什么。
 <template>
   <div class="nt-panel">
     <div class="nt-panel-head">

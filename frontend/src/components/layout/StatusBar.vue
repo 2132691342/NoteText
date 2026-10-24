@@ -22,6 +22,13 @@
 
     <div class="nt-statusbar-spacer" />
 
+    <!-- 压缩任务指示：有活动任务才出现，点击开任务面板 -->
+    <button v-if="archive.activeCount > 0" class="nt-status-btn nt-status-archive"
+      :title="t('menu.archiveTasks')" @click="dialogs.open('archiveTasks')">
+      <NtIcon name="archive" size="sm" />
+      {{ archive.activeCount }}
+    </button>
+
     <template v-if="visible('language')">
       <button class="nt-status-btn" @click="commands.run('view.language')">{{ langLabel }}</button>
     </template>
@@ -75,6 +82,9 @@ import { useI18n } from 'vue-i18n'
 import { useEditorStore } from '@/stores/editor'
 import { useSettingsStore } from '@/stores/settings'
 import { useCommandStore } from '@/stores/commands'
+import { useArchiveStore } from '@/stores/archive'
+import { useDialogStore } from '@/stores/dialogs'
+import NtIcon from '@/components/common/NtIcon.vue'
 import { getPosition } from '@/composables/useEditorRegistry'
 import { getText } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
@@ -85,6 +95,8 @@ const { t } = useI18n()
 const editor = useEditorStore()
 const settings = useSettingsStore()
 const commands = useCommandStore()
+const archive = useArchiveStore()
+const dialogs = useDialogStore()
 
 const tab = computed(() => editor.active)
 
@@ -267,6 +279,14 @@ watch(() => editor.activeId, () => syncFromEditor())
 
 .nt-status-btn.is-warn {
   color: var(--nt-warning);
+}
+
+/* 压缩任务进行中：给一个有动作的指示（点击开面板），主色让它跳出来 */
+.nt-status-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nt-sp-1);
+  color: var(--nt-primary);
 }
 
 .nt-status-readonly {

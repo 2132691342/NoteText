@@ -117,6 +117,38 @@
 - 正则模式目前是**整行替换**：迷你引擎不支持按匹配段替换，
   前端在正则模式下提示用户。要完整语义需换 `regex` crate（AGENTS §1.1）。
 
+## 归档 / 压缩
+
+域模型见 `domain/archive.rs`（REQ/VO）、`domain/archive_format.rs`（格式能力）、
+`domain/archive_task.rs`（任务快照）；子系统设计见 [18](18-archive.md)。
+
+| 命令 | 入参 | 出参 |
+|---|---|---|
+| `open_archive` | `path`, `password?` | `OpenArchiveVO`（同步） |
+| `preview_archive_entry` | `req: PreviewEntryReq` | `PreviewEntryVO`（同步） |
+| `get_archive_formats` | — | `ArchiveFormatVO[]` |
+| `create_archive` | `req: CreateArchiveReq` | `string`（任务 id） |
+| `extract_archive` | `req: ExtractArchiveReq` | `string`（任务 id） |
+| `test_archive` | `req: TestArchiveReq` | `string`（任务 id） |
+| `convert_archive` | `req: ConvertArchiveReq` | `string`（任务 id） |
+| `add_to_archive` | `req: AddEntriesReq` | `string`（任务 id） |
+| `delete_archive_entries` | `req: DeleteEntriesReq` | `string`（任务 id） |
+| `split_archive_file` | `req: SplitFileReq` | `string`（任务 id） |
+| `join_archive_parts` | `req: JoinPartsReq` | `string`（任务 id） |
+| `list_archive_tasks` | — | `ArchiveTaskVO[]` |
+| `cancel_archive_task` | `id` | `()` |
+| `pause_archive_task` | `id` | `()` |
+| `resume_archive_task` | `id` | `()` |
+| `clear_archive_tasks` | — | `()` |
+
+**长任务只回任务 id**：进度经 `archive:task-update` / `archive:task-finished`
+两个事件推（见下），前端不再轮询。`CreateArchiveVO` / `ExtractArchiveVO` /
+`TestArchiveVO` / `ConvertArchiveVO` / `UpdateArchiveVO` / `JoinPartsVO` /
+分卷清单作为事件 `result` 负载到达，结构化字段供完成提示与「打开目标」使用。
+
+`ArchiveTaskVO.progress` 为 `-1` 表示总量未知（前端画不确定态）；终态时队列把它
+收敛到 1。`ArchiveInfoVO.entries` 恒为数组（空数组契约对归档条目同样生效）。
+
 ## 用户数据
 
 | 命令 | 入参 | 出参 |
@@ -201,6 +233,8 @@
 | `app:open-file` | `string`（路径） | 单实例转交、命令行参数 |
 | `app:new-document` | — | 托盘「新建文档」 |
 | `fs:changed` | `string[]`（路径） | `service::file` 的 notify watcher |
+| `archive:task-update` | `ArchiveTaskVO[]`（全量快照） | 队列状态变化 + 250ms 心跳 |
+| `archive:task-finished` | `{ task: ArchiveTaskVO }` | 任务到达终态（done/failed/cancelled） |
 
 `fs:changed` 只报 `is_modify` / `is_create` / `is_remove` 三类，
 访问时间之类的噪音事件丢掉。
