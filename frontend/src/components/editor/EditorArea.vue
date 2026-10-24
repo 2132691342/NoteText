@@ -135,46 +135,19 @@ function startSplitDrag(e: MouseEvent) {
   document.addEventListener('mouseup', onUp)
 }
 
-// ---- 拖放打开 ----
-// 拖进来由前端接管（Tauri 的 dragDropEnabled=false），否则 WebView 会当导航跳走。
+// ---- 拖放提示层 ----
+// 外部拖放的监听与打开链路在 useFileDrop（WebView 原生 drop 事件），这里只消费它的开关信号。
 const dragging = ref(false)
-let depth = 0
 
-function onDragEnter(e: DragEvent) {
-  if (!e.dataTransfer?.types.includes('Files')) return
-  depth += 1
-  dragging.value = true
-}
-function onDragOver(e: DragEvent) {
-  if (!e.dataTransfer?.types.includes('Files')) return
-  e.preventDefault()
-}
-function onDragLeave() {
-  depth -= 1
-  if (depth <= 0) {
-    depth = 0
-    dragging.value = false
-  }
-}
-
-/** 拖放事件由 useFileDrop 派发到这里：它拿到路径后走统一打开链路。 */
 function onDragState(e: Event) {
-  const d = (e as CustomEvent).detail as { active: boolean }
-  dragging.value = !!d?.active
-  if (!d?.active) depth = 0
+  dragging.value = !!(e as CustomEvent).detail?.active
 }
 
 onMounted(() => {
   void loadRecent()
-  window.addEventListener('dragenter', onDragEnter)
-  window.addEventListener('dragover', onDragOver)
-  window.addEventListener('dragleave', onDragLeave)
   document.addEventListener('nt-drag-state', onDragState)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('dragenter', onDragEnter)
-  window.removeEventListener('dragover', onDragOver)
-  window.removeEventListener('dragleave', onDragLeave)
   document.removeEventListener('nt-drag-state', onDragState)
 })
 </script>

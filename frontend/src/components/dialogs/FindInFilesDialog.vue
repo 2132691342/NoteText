@@ -103,7 +103,7 @@ function stop() {
 /**
  * 遍历 + 搜索。
  *
- * 并发上限 4：全并发会把 IO 打满，而编辑器还要响应用户操作。
+ * 逐目录扫描，文件按 4 个一批并发读：全并发会把 IO 打满，编辑器还要响应用户操作；
  * 每 200 个文件让出一帧，进度数字才更新得了。
  */
 async function run() {
@@ -124,6 +124,8 @@ async function run() {
 
   const stack = [dir.value]
   const MAX_RESULTS = 5000
+  const READ_PARALLEL = 4
+  let lastYield = 0
 
   while (stack.length && !cancelled && hits.value.length < MAX_RESULTS) {
     const cur = stack.pop()!
@@ -134,33 +136,38 @@ async function run() {
       continue
     }
     for (const e of entries) {
-      if (cancelled) break
-      if (e.is_dir) {
-        if (!shouldSkipDir(e.name)) stack.push(e.path)
-        continue
-      }
-      if (!shouldInclude(e.name)) continue
-      if (e.size > 8 * 1024 * 1024) continue // 超大文件跳过：读它会把界面卡死
-      try {
-        const c = await api.readFile(e.path)
+      if (e.is_dir && !shouldSkipDir(e.name)) stack.push(e.path)
+    }
+    const files = entries.filter(
+      (e) => !e.is_dir && shouldInclude(e.name) && e.size <= 8 * 1024 * 1024,
+    )
+    for (let i = 0; i < files.length; i += READ_PARALLEL) {
+      if (cancelled || hits.value.length >= MAX_RESULTS) break
+      const batch = files.slice(i, i + READ_PARALLEL)
+      const contents = await Promise.all(
+        batch.map((e) => api.readFile(e.path).catch(() => null)),
+      )
+      for (let b = 0; b < batch.length; b += 1) {
+        const e = batch[b]
+        const c = contents[b]
+        scanned.value += 1
+        if (!c) continue
         const lines = c.text.split('\n')
-        for (let i = 0; i < lines.length; i += 1) {
+        for (let li = 0; li < lines.length; li += 1) {
           re.lastIndex = 0
-          if (re.test(lines[i])) {
+          if (re.test(lines[li])) {
             hits.value.push({
               path: e.path,
               rel: e.path.slice(dir.value.length + 1),
-              line: lines[i].slice(0, 200),
-              lineNo: i + 1,
+              line: lines[li].slice(0, 200),
+              lineNo: li + 1,
             })
             if (hits.value.length >= MAX_RESULTS) break
           }
         }
-      } catch {
-        /* 读不了的文件跳过（权限 / 二进制） */
       }
-      scanned.value += 1
-      if (scanned.value % 200 === 0) {
+      if (scanned.value - lastYield >= 200) {
+        lastYield = scanned.value
         await new Promise((r) => setTimeout(r, 0))
       }
     }

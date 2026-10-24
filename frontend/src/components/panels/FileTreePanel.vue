@@ -10,11 +10,13 @@
       </ElButton>
     </div>
     <template v-else>
+      <!-- 根目录本身是第一层：与资源管理器一致，树从「skill」开始而不是它的内容。
+           key 绑根路径：换文件夹时重挂载，新树默认展开。 -->
       <FileTreeNode
-        v-for="e in tree.children.get(tree.root) ?? []"
-        :key="e.path"
-        :entry="e"
+        :key="tree.root"
+        :entry="rootEntry"
         :depth="0"
+        :initially-expanded="true"
         @contextmenu="onNodeMenu"
       />
     </template>
@@ -48,7 +50,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
-import { copyText, dirName } from '@/utils'
+import { copyText, dirName, baseName } from '@/utils'
 import ContextMenu from '@/components/common/ContextMenu.vue'
 import FileTreeNode from '@/components/panels/FileTreeNode.vue'
 import type { MenuItem } from '@/components/common/contextMenu'
@@ -62,6 +64,16 @@ const toast = useToastStore()
 
 const menu = ref<{ x: number; y: number } | null>(null)
 const menuEntry = ref<DirEntry | null>(null)
+
+/** 根节点：把打开的文件夹本身合成一个 DirEntry，树从它开始。 */
+const rootEntry = computed<DirEntry>(() => ({
+  name: baseName(tree.root),
+  path: tree.root,
+  is_dir: true,
+  size: 0,
+  modified_at: 0,
+  read_only: false,
+}))
 
 /** 节点右键冒泡上来的意图：统一在这里开菜单。 */
 function onNodeMenu(payload: { x: number; y: number; entry: DirEntry }) {
@@ -96,19 +108,24 @@ const treeMenuItems = computed<MenuItem[]>(() => {
       disabled: !entry,
       run: async () => {
         if (!entry) return
-        if (entry.is_dir) await tree.refresh(entry.path)
-        else await editor.openPath(entry.path)
+        if (entry.is_dir) {
+          await tree.refresh(entry.path)
+          expandDir(entry.path)
+        } else {
+          await editor.openPath(entry.path)
+        }
       },
     },
     { sep: true },
     {
       label: t('tree.newFile'),
-      disabled: !entry || !isDir,
+      // 空白处右键 = 在根目录建；建在文件下没意义，只有目录（含根）可用。
+      disabled: !!entry && !isDir,
       run: () => void startMenuEdit('new-file'),
     },
     {
       label: t('tree.newFolder'),
-      disabled: !entry || !isDir,
+      disabled: !!entry && !isDir,
       run: () => void startMenuEdit('new-dir'),
     },
     { sep: true },
@@ -129,8 +146,8 @@ const treeMenuItems = computed<MenuItem[]>(() => {
       },
     },
     {
-      label: t('tree.pasteTo', { name: entry ? entry.name : '' }),
-      disabled: !tree.clipboard || !entry,
+      label: t('tree.pasteTo', { name: entry ? entry.name : baseName(tree.root) }),
+      disabled: !tree.clipboard,
       run: () => void paste(targetDir),
     },
     {
@@ -140,7 +157,6 @@ const treeMenuItems = computed<MenuItem[]>(() => {
     },
     {
       label: t('common.rename'),
-      hint: 'F2',
       disabled: !entry,
       run: () => void startMenuEdit('rename'),
     },
@@ -180,12 +196,18 @@ const treeMenuItems = computed<MenuItem[]>(() => {
 /**
  * 菜单项触发的行内编辑：菜单是全局浮层，拿不到树节点的 setup 作用域，
  * 所以这里用事件把意图传下去，节点自己在监听里开输入框。
+ * 空白处触发的动作落根目录（menuEntry 为 null 时 path 取 tree.root）。
  */
 function startMenuEdit(mode: 'rename' | 'new-file' | 'new-dir') {
   menu.value = null
-  const path = menuEntry.value?.path
+  const path = menuEntry.value?.path ?? tree.root
   if (!path) return
   window.dispatchEvent(new CustomEvent('nt-tree-edit', { detail: { path, mode } }))
+}
+
+/** 让某个目录节点展开：菜单触发，节点在监听里翻自己的展开态。 */
+function expandDir(path: string) {
+  window.dispatchEvent(new CustomEvent('nt-tree-expand', { detail: { path } }))
 }
 
 /** 粘贴：剪切 = 移动，复制 = 复制，「创建副本」= 复制到同目录并加序号。 */
@@ -240,10 +262,6 @@ const dropTarget = computed(() => {
 
 function cssEscape(s: string): string {
   return s.replace(/["\\]/g, '\\$&')
-}
-
-function baseName(p: string): string {
-  return p.split(/[\\/]/).pop() ?? p
 }
 </script>
 

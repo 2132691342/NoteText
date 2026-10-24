@@ -36,7 +36,7 @@
 | 函数列表 | 侧栏按语言正则提取符号，点击跳转 |
 | 列编辑 | `Alt+C` 切列模式，矩形选区逐行同列插入 |
 | 小地图 | 配置开关；canvas 只画轮廓不画字，虚拟滚动跟随 |
-| 剪贴板历史 | 编辑器内复制 / 剪切攒 50 条，点击回插 |
+| 剪贴板历史 | 复制 / 剪切攒 50 条（编辑器事件与命令表都收集），点击回插 |
 | Hex 查看 | 16 字节一行（偏移 / hex / ASCII），只渲染可视区 |
 | 文档预览 | 按扩展名分流 xlsx / docx / pdf / 图片 / Markdown / 纯文本 |
 | 批量查找替换 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
@@ -109,7 +109,7 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id / text
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/chain_tests.rs   # 13 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
+│   └── tests/chain_tests.rs   # 10 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
@@ -170,13 +170,13 @@ NoteText/
 
 ## 测试
 
-13 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按四类长链路分组
-（文件与编码 / 会话 / 批量操作 / 工具箱）。**每个测试函数名就是它守护的那件坏事**，
+10 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按三类长链路分组
+（文件与编码 / 会话 / 批量操作）。**每个测试函数名就是它守护的那件坏事**，
 失败时报文直接指出坏在哪。全量 < 1 秒；同一条链路的两面合并成一条，
 一条测试就是一条完整的用户故事。
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --lib --test chain_tests
 pwsh scripts/check.ps1 -List        # 列出全部测试名
 ```
 
@@ -188,7 +188,6 @@ pwsh scripts/check.ps1 -List        # 列出全部测试名
 | 文件与编码 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；原子写不留临时文件、不替你造目录；重命名拒绝覆盖 / 成环 / 路径逃逸 |
 | 会话 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null` |
 | 批量 | 扫描阶段不落盘、应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
-| 工具箱 | 坏 JSON 给行列号；哈希对已知向量；注释切换往返且半注释块补齐 |
 
 ## 许可证
 

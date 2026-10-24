@@ -21,8 +21,20 @@ impl SessionService {
     }
 
     /// 读上次会话。库空时返回空恢复体（前端显示欢迎页）。
+    /// 顺带探测缺失文件：路径非空且磁盘上已不存在的标签进 missing，前端提示用。
     pub fn restore(&self) -> AppResult<SessionRestoreVO> {
-        self.db.with(SessionRepo::load)
+        let mut vo = self.db.with(SessionRepo::load)?;
+        vo.missing = vo
+            .tabs
+            .iter()
+            .filter(|t| {
+                !t.path.is_empty()
+                    && !t.path.starts_with("draft:")
+                    && !std::path::Path::new(&t.path).exists()
+            })
+            .map(|t| t.path.clone())
+            .collect();
+        Ok(vo)
     }
 
     /// 保存会话。前端在关闭前与标签布局变化时调。

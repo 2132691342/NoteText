@@ -2,7 +2,7 @@
 // 铁律：跨边界字段一律 snake_case。改字段必须同步 `src-tauri/src/domain/` 与
 
 /** 契约版本：后端改字段时 +1，前端 `api/index.ts` 在启动时校验。 */
-export const CONTRACT_VERSION = 1
+export const CONTRACT_VERSION = 2
 
 /** 后端统一错误：invoke reject 时的形状。 */
 export interface AppError {

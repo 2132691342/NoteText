@@ -307,6 +307,13 @@ const seeded = !!dialogs.seedText
 const matchCase = ref(seeded ? false : prevQuery.matchCase)
 const wholeWord = ref(seeded ? false : prevQuery.wholeWord)
 const regex = ref(seeded ? false : prevQuery.regex)
+// 浮窗已经开着时再次 Ctrl+F（比如刚选中新词）：命令层会更新 seedText，查询词要跟上。
+watch(
+  () => dialogs.seedText,
+  (s) => {
+    if (s) query.value = s
+  },
+)
 const extended = ref(false)
 const inSelection = ref(false)
 const backward = ref(false)

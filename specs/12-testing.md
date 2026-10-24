@@ -2,20 +2,20 @@
 
 ## 定位
 
-`src-tauri/tests/chain_tests.rs`（单文件、按 section 分四组：文件与编码 / 会话 / 批量 / 工具箱）
+`src-tauri/tests/chain_tests.rs`（单文件、按 section 分三组：文件与编码 / 会话 / 批量）
 + `scripts/` 下两个脚本（唯一验证入口）。判据与条文见 [AGENTS.md §3](../AGENTS.md)，
 这一篇只解释「为什么这么组织」。
 
 ## 为什么单文件、一个测试一种坏法
 
-Rust 集成测试按「测试二进制」分文件，但 13 个测试收敛进一个文件，编译只链接一次 lib，
+Rust 集成测试按「测试二进制」分文件，但 10 个测试收敛进一个文件，编译只链接一次 lib，
 改代码不必等 4 个二进制各自编译。**测试函数名就是它守护的那件坏事**，失败时不需要
 拿行号去文件里找第几条断言。一个函数只讲一种坏法：能写成「A、B、C 都对」的函数，
 失败时报文说不清坏的是哪个。
 
 ```
 src-tauri/tests/
-└── chain_tests.rs   文件与编码(5) / 会话(3) / 批量(2) / 工具箱(3) = 13 个测试
+└── chain_tests.rs   文件与编码(5) / 会话(3) / 批量(2) = 10 个测试
 ```
 
 | 组 | 测试 | 坏法 |
@@ -30,9 +30,9 @@ src-tauri/tests/
 | | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
 | 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
 | | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
-| 工具箱 | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
-| | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
-| | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
+
+**工具箱没有链路测试**：JSON 格式化 / 哈希 / 注释开关都是单函数、无编排、无跨层
+状态，断言的输入输出一眼可见；它们不守护「用户文件没了」级别的事故，不入链。
 
 **同一条链路的两面合并成一条**：批量替换的「扫描不落盘」与「只改勾选」是
 同一个两阶段协议的两侧；批量重命名的「冲突拒绝」与「无冲突落地」是同一个
@@ -88,7 +88,7 @@ node scripts/i18n-audit.mjs     单独跑国际化审计
 
 | 选择 | 优势 | 代价 |
 |---|---|---|
-| 单文件收口 13 个测试 | 编译只链接一次 lib，改代码不必等 4 个二进制 | 跨域阅读顺序靠 section 注释补偿 |
+| 单文件收口 10 个测试 | 编译只链接一次 lib，改代码不必等 4 个二进制 | 跨域阅读顺序靠 section 注释补偿 |
 | 一个测试一种坏法（同链路两面可合并） | 失败报文直接指出坏在哪，又不留重复 setup | 合并的测试要靠断言消息区分段 |
 | 不引 mock 框架 | 测试与生产共用装配链，没有替身与生产不一致的空间 | 每个测试真的建一次库（亚秒级） |
 | 断言写人话失败原因 | 失败报文直接指到哪条规则被破坏 | 断言长了几个字 |

@@ -303,6 +303,9 @@ export const api = {
   showConfirm: (title: string, message: string) =>
     call<boolean>('show_confirm', { title, message }),
   openPath: (path: string) => call<void>('open_path', { path }),
+  // 剪贴板：WebView2 不给渲染层 clipboard-read 权限，读写都走壳层
+  readClipboard: () => call<string>('read_clipboard'),
+  writeClipboard: (text: string) => call<void>('write_clipboard', { text }),
 }
 
 /** ReadMode 序列化成 Rust 的 tagged enum（`#[serde(tag = "mode")]`）。 */

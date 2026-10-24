@@ -19,7 +19,7 @@ list_by_file(path)            编辑器打开文件时画行号槽
 clear(path?) / clear_all()
 ```
 
-**唯一索引 `(path, line)`**：同行重复加时报「已存在」而不是插两行，
+**唯一索引 `(path, line)`**：同行重复加是幂等更新（只刷新别名），不会插两行，
 否则面板里会出现两条长得一样的条目，用户分不清删哪条。
 
 **后端返回该行正文**（`BookmarkVO.line_text`）：面板不自己读文件——
@@ -35,16 +35,19 @@ remove(id)
 languages()                   去重后的语言清单（面板筛选下拉）
 ```
 
-**列表查询不带 `content`**：片段正文可能几十 KB，
-面板滚动时不至于把几十条全拉进内存再过 IPC。`SnippetVO.lines` 给规模。
+**列表查询直接带 `content`**：片段是几十 KB 级的小文本，列表一次拉全
+省掉一次详情请求；`SnippetVO.lines` 另给行数规模，列表渲染用。
 
 **名字与内容不能为空**：面板按名字排序，空名字会排最前且看不出是什么。
 
 ### 宏
 
 ```
-list() / get(id) / save(id?, name, steps) / remove(id) / import_all(macros)
+list() / save(id?, name, steps) / remove(id)
 ```
+
+命令面没有单条读取与批量导入：`MacroRepo::import_all` 只在备份导入内部用，
+读单条宏的场景由列表兜住。
 
 **`id` 是 UUID 字符串**（`pkg::id::uuid_v4()`）：宏要导入导出，
 自增整数在导入时会与本地已存在的撞车。
@@ -58,8 +61,11 @@ list() / get(id) / save(id?, name, steps) / remove(id) / import_all(macros)
 ### 草稿
 
 ```
-list() / get(id) / save(path, title, content) -> bool / remove(id)
+list() / save(path, title, content) -> bool / remove(id)
 ```
+
+命令面没有单条读取：草稿正文随标签恢复走 `draft:<id>` 伪路径整读，
+repo 层的 `get(id)` 供内部用，不开命令。
 
 **只存「关闭时的快照」**：正文实时权威在前端编辑器，
 过 IPC 同步每个按键会把主线程与 WebView 之间的通道占满。
@@ -86,7 +92,9 @@ set_pinned(path, pinned) / remove(path) / clear()
 ### 备份
 
 导出含五个表 + session，**不含 settings**（那是本机偏好，换机器不一定要带）。
-导入只覆盖「备份里有的表」，其余不动——用户在本机新加的书签
+导入覆盖备份里的五个表，**session 不导入**（会话是本机窗口状态，带着走反而乱）。
+不整库替换、按表合并：书签按（路径，行）幂等合并，宏与草稿按 UUID 同 id 覆盖，
+片段按 id 覆盖，最近文件按导出顺序重放记账——用户在本机新加的书签
 不该被一份旧备份抹掉。
 
 ## 约束

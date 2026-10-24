@@ -14,8 +14,9 @@
 |---|---|
 | CodeMirror 实例 | 正文、撤销栈、选区、滚动 |
 | `stores/editor` | 标签元数据（路径 / 编码 / 光标 / 脏标记 / 分屏） |
-| `service/editor.rs` | 语言清单、注释切换、行编辑、行列换算 |
+| `service/editor.rs` | 语言清单、注释切换、行编辑 |
 | `service/encoding.rs` | 编码与行尾转换 |
+| `pkg/text.rs` | 行列换算（`line_col_at` / `offset_at_line_col`） |
 
 **为什么正文不进 store**：每次按键都同步进 store 会让 Vue 的响应式系统
 处理整篇文档的 diff，几百 KB 的日志文件直接卡死。需要正文的地方
@@ -24,7 +25,11 @@
 ### 语言清单
 
 31 个语言条目（28 种带语法包），每种带：id、显示名、关联扩展名、行注释符、块注释起止。
-与前端 `stores/editor.ts` 的 `EXT_LANG` 表同构。
+前端 `stores/editor.ts` 的 `EXT_LANG` 表是它的对位表：同一个语言 id，
+按扩展名查出后去选 CodeMirror 高亮包。两张表**按语言 id 对齐、不按扩展名逐条相等**——
+少数扩展名两边各有归属：`vue` 前端进 vue 高亮包、后端用 html 的注释符（`<!-- -->`）；
+`ps1` 前端进 powershell 高亮包、后端归 shell（注释符同为 `#`）；
+`csproj` 前端当纯文本、后端用 xml 的注释符。改扩展名归属时两边要一起看。
 
 **为什么两边各一份**：后端按扩展名判语言用于会话恢复时记 `language` 字段，
 前端按同一张表选 CodeMirror 高亮。合成一份要引入共享模块，
@@ -41,8 +46,8 @@ toggle_line_comment(language, text)
   └─ 空行不动（注释空行只会让 diff 多噪音）
 ```
 
-三个边界都有测试守护（`toggle_comment_round_trips_and_fills_half_commented_blocks`，
-见 [12](12-testing.md)）：全注释块去掉、半注释块补齐、空行不动。
+注释切换没有链路测试：它是单函数行为，输入输出一眼可见，不入
+[12](12-testing.md) 的长链路索引。
 **「未注释」的判定只看非空行**：空行没有注释可言，
 把它算进分母会让「注释掉一大半 + 夹一个空行」的块被判成已全注释，
 结果越点注释越多。
@@ -138,11 +143,18 @@ offset_at_line_col(text, line, col) -> Option<usize>
 画字必掉帧，而缩略图本来就只看形状。刷新按 rAF 节流，
 滚动事件每秒几十次，每次重画没有意义。
 
-### 剪贴板历史
+### 剪贴板
 
-`composables/useClipboardHistory.ts`。从编辑器的 `copy` / `cut` 事件收集，
-上限 50 条，**不碰系统剪贴板**（Webview 里读系统剪贴板要权限，
-而用户要的是「刚才复制过的那几段」，自己攒就够了）。
+**编辑器内 Ctrl+C/X/V 是 WebView 原生行为**（`useGlobalKeys` 放行）：
+paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题。
+
+**菜单 / 命令表的复制与粘贴走后端命令**：WebView2 不给渲染层
+`clipboard-read` 权限，`navigator.clipboard.readText()` 恒失败——
+`commands/clipboard.rs` 用 `arboard` 在壳层读 / 写，
+前端 `utils` 的 `copyText` / `readClipboard` 先走命令、失败再回退 Web API
+（浏览器开发态）。剪贴板历史从 `copy` / `cut` 事件与命令表的复制 / 剪切
+两处收集（只记文本，不记来源），上限 50 条，不碰系统剪贴板——
+用户要的是「刚才复制过的那几段」，自己攒就够了。
 
 ### 视图分流
 

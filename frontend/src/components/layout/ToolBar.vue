@@ -47,16 +47,16 @@
       class="nt-icon-btn"
       :class="{ 'is-on': editorCfg.word_wrap }"
       :title="tip('toolbar.wordWrap')"
-      @click="toggleWrap"
+      @click="commands.run('view.toggleWordWrap')"
     >
       <NtIcon name="wrap" />
     </button>
     <span class="nt-toolbar-sep" />
-    <button class="nt-icon-btn" :title="tip('toolbar.zoomOut')" @click="zoom(-10)">
+    <button class="nt-icon-btn" :title="tip('toolbar.zoomOut')" @click="commands.run('view.zoomOut')">
       <NtIcon name="zoom-out" />
     </button>
     <span class="nt-readout nt-toolbar-zoom">{{ ui.zoom_level }}%</span>
-    <button class="nt-icon-btn" :title="tip('toolbar.zoomIn')" @click="zoom(10)">
+    <button class="nt-icon-btn" :title="tip('toolbar.zoomIn')" @click="commands.run('view.zoomIn')">
       <NtIcon name="zoom-in" />
     </button>
     <span class="nt-toolbar-sep" />
@@ -138,9 +138,25 @@ function onHistory(e: Event) {
   syncHistory()
 }
 
+/** 工具栏按钮的 i18n key → 命令 id：按钮名与命令 labelKey 不同名，按命令查键位。 */
+const TIP_CMD: Record<string, string> = {
+  'toolbar.new': 'file.new',
+  'toolbar.open': 'file.open',
+  'toolbar.save': 'file.save',
+  'toolbar.undo': 'edit.undo',
+  'toolbar.redo': 'edit.redo',
+  'toolbar.find': 'edit.find',
+  'toolbar.replace': 'edit.replace',
+  'toolbar.wordWrap': 'view.toggleWordWrap',
+  'toolbar.zoomIn': 'view.zoomIn',
+  'toolbar.zoomOut': 'view.zoomOut',
+  'menu.splitView': 'view.splitView',
+}
+
 /** 标题带快捷键：工具栏图标没有文字，快捷键是最有用的补充信息。 */
 function tip(key: string): string {
-  const cmd = [...commands.registry.values()].find((c) => c.labelKey === key)
+  const id = TIP_CMD[key]
+  const cmd = id ? commands.registry.get(id) : undefined
   const text = t(key)
   return cmd?.key ? `${text} (${cmd.key.replace('Control', 'Ctrl')})` : text
 }
@@ -173,15 +189,6 @@ async function onSave() {
   } finally {
     saving.value = false
   }
-}
-
-function toggleWrap() {
-  settings.updateEditor({ word_wrap: !editorCfg.value.word_wrap })
-}
-
-function zoom(delta: number) {
-  const next = Math.min(200, Math.max(50, ui.value.zoom_level + delta))
-  settings.updateUI({ zoom_level: next })
 }
 
 function onTool(cmd: string) {

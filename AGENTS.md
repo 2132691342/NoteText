@@ -26,6 +26,7 @@
 | 数据库 | SQLite via rusqlite | `bundled`（WAL；无 CGO 依赖链） |
 | 文件监控 | notify | ^7.x |
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
+| 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 测试 | testing（标准库） | 一包一入口、一个子测试一种坏法；`scripts/check.ps1` 收口全部验证 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写 `runtime.GOOS` 大分支 |
 
@@ -212,7 +213,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 
 | 段位 | 域 |
 |---|---|
-| 1000–1999 | 通用 / 文件 / 路径 |
+| 1000–1999 | 通用 / 文件 / 路径 / 剪贴板 |
 | 2000–2999 | 配置 / 持久化 / DB |
 | 3000–3999 | 编码 / 文本检测 |
 | 4000–4999 | 编辑器域（标签 / 注释 / 行号） |
@@ -445,7 +446,7 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），按 section 分「文件与编码 / 会话 / 批量 / 工具箱」四组。
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），按 section 分「文件与编码 / 会话 / 批量」三组。
   所有长链路集中一处，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
@@ -470,8 +471,9 @@ mod dialog_stub;
 
 ### 3.4 测试索引
 
-单个文件 `src-tauri/tests/chain_tests.rs`，按四组排列；每个函数名就是它守护的那句坏事，
-失败时报文直接指出坏在哪，不必对着行号往回找。简单纯函数断言不入链；每一条都守护
+单个文件 `src-tauri/tests/chain_tests.rs`，按三组排列；每个函数名就是它守护的那句坏事，
+失败时报文直接指出坏在哪，不必对着行号往回找。简单纯函数断言不入链（工具箱的
+JSON / 哈希 / 注释这类单函数行为不设测试）；每一条都守护
 「用户文件没了 / 界面崩白屏」级别的事故。**同一条链路的两面合并成一条**
 （如批量替换的「扫描只读」与「只改勾选」），一条测试就是一条完整的用户故事。
 
@@ -487,9 +489,6 @@ mod dialog_stub;
 | | `empty_lists_serialize_to_array_not_null` | 前端按数组读拿到 null 白屏 |
 | 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
 | | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
-| 工具箱 | `bad_json_reports_line_and_column` | 只说「格式错误」用户找不到在哪 |
-| | `hashes_match_known_vectors` | 哈希算错，用户误判文件损坏 |
-| | `toggle_comment_round_trips_and_fills_half_commented_blocks` | Ctrl+/ 把代码注释坏 |
 
 **改这里 → 这样验**：
 

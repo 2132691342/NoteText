@@ -41,7 +41,7 @@ function Invoke-Step {
 }
 
 if ($List) {
-    # 测试文件顶部的 `//!` 注释就是这份清单的说明，函数名就是它守护的那件坏事。
+    # 测试与坏法的对应表在 specs/12-testing.md，函数名就是它守护的那件坏事。
     # 排除名单是测试文件里的 helper（boot / tab / roundtrip / batch_root）。
     Get-ChildItem 'src-tauri/tests' -Filter '*.rs' | Sort-Object Name | ForEach-Object {
         Write-Host $_.Name -ForegroundColor Cyan
@@ -84,7 +84,10 @@ if ($Full) {
 }
 
 Invoke-Step 'cargo test' {
-    cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath $TestLog | Out-Null
+    # 只跑 lib 与 chain_tests 两个目标：没有测试文件的包不喂给 cargo test，
+    # 免得空跑一遍编译（类型错误已由 cargo check --all-targets 兜住）。
+    cargo test --manifest-path src-tauri/Cargo.toml --lib --test chain_tests 2>&1 |
+        Tee-Object -FilePath $TestLog | Out-Null
 }
 
 Write-Host ''

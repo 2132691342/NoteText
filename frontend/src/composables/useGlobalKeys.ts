@@ -77,19 +77,24 @@ function isReadonlySurface(target: EventTarget | null): boolean {
   return !!el?.closest?.('.nt-md-preview, .nt-md-doc, .nt-doc-host, .nt-hex-body')
 }
 
+/** 文本编辑组合：剪贴板 + 全选 + 撤销重做。 */
+const TEXT_EDIT_RE = /^(Control|Super)\+[CVXAZY]$/
+
 function editorOwns(accel: string): boolean {
-  // 单键（无修饰）：全部交给编辑器
+  // 单键（无修饰）：全部交给编辑器，功能键（F1~F12）除外——
+  // F3 / F2 / F1 这类最常按的键归命令表，不特例就会被这条规则整块吃掉。
   if (!accel.includes('+')) {
-    // F1~F12 例外：编辑器不给功能键绑动作，而 F3 / Shift+F3 是最常按的，
-    // 不特例就会被这条规则整块吃掉。
-    if (/^F\d{1,2}$/.test(accel) || /^Shift\+F\d{1,2}$/.test(accel)) return false
+    if (/^F\d{1,2}$/.test(accel)) return false
     return true
   }
-  // 纯 Shift 组合也是编辑器的（Shift+方向选词）
-  if (/^Shift\+/.test(accel)) return true
-  // Alt+上下 是「移动当前行」（编辑器自己的动作），但 Alt+左右 是
-  // 「上一个 / 下一个位置」（光标跳转历史）。左右留给命令表分发。
-  if (/^Alt\+Arrow(Up|Down)$/.test(accel)) return true
+  // Shift+方向 / Shift+字母是编辑器的（选词选行）；Shift+F3 是「上一个命中」，归命令表。
+  if (/^Shift\+/.test(accel)) return !/^Shift\+F\d{1,2}$/.test(accel)
+  // 剪贴板与全选放行给 WebView 原生行为：paste/copy 事件自带数据，
+  // 不经过需要权限的 clipboard.readText，被命令表拦下反而贴不进来。
+  if (TEXT_EDIT_RE.test(accel)) return true
+  // Alt+上下 是「移动当前行」（编辑器自己的动作，CodeMirror 默认键位同键），
+  // 但 Alt+左右 是「上一个 / 下一个位置」（光标跳转历史），左右留给命令表分发。
+  if (/^Alt\+(Up|Down)$/.test(accel)) return true
   if (/^(Alt\+)?Tab$/.test(accel)) return true
   if (/^(Control|Super)\+\[$/.test(accel) || /^(Control|Super)\+\]$/.test(accel)) return true
   if (/^(Control|Super)\+Alt\+\\$/.test(accel)) return true
@@ -131,10 +136,11 @@ export function useGlobalKeys() {
     // 原生复制就被掐掉，而命令只会去操作看不见的编辑器。
     if (isReadonlySurface(e.target) && /^(Control|Super)\+[CXAV]$/.test(accel)) return
 
-    // 原生输入框里只放行「到不了文本」的组合（Ctrl+S 这类）；
-    // 单键与非 Ctrl 组合留在输入框里（否则侧栏搜索框打不了字）。
-    if (isNativeInput(e.target)) {
+    // 原生输入框：单键、非 Ctrl 组合与文本编辑组合留在输入框；CodeMirror 的正文
+    // 不算输入框——F3 / F2 / Alt+Z 这些命令表的键必须能在编辑器里用。
+    if (isNativeInput(e.target) && !isInEditor(e.target)) {
       if (!e.ctrlKey && !e.metaKey) return
+      if (TEXT_EDIT_RE.test(accel)) return
     }
 
     // 阻止默认：Ctrl+S 会被 WebView 当成「保存网页」，必须拦。

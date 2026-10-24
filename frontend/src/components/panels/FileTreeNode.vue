@@ -52,7 +52,7 @@
 </template>
 
 <script lang="ts" setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
@@ -64,6 +64,8 @@ import type { DirEntry, FileOpVO } from '@/types/api'
 const props = defineProps<{
   entry: DirEntry
   depth: number
+  /** 挂载即展开：树的根节点用（子项由 open() 预先读好）。 */
+  initiallyExpanded?: boolean
 }>()
 
 const { t } = useI18n()
@@ -75,14 +77,20 @@ const emit = defineEmits<{
   (e: 'contextmenu', payload: { x: number; y: number; entry: DirEntry }): void
 }>()
 
-const expanded = ref(false)
+const expanded = ref(props.initiallyExpanded ?? false)
 const loading = ref(false)
 /** 行内新建 / 重命名的输入框状态。 */
 const editing = ref<null | { mode: 'rename' | 'new-file' | 'new-dir'; draft: string }>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
 
-onMounted(() => window.addEventListener('nt-tree-edit', onTreeEdit))
-onBeforeUnmount(() => window.removeEventListener('nt-tree-edit', onTreeEdit))
+onMounted(() => {
+  window.addEventListener('nt-tree-edit', onTreeEdit)
+  window.addEventListener('nt-tree-expand', onTreeExpand)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('nt-tree-edit', onTreeEdit)
+  window.removeEventListener('nt-tree-expand', onTreeExpand)
+})
 
 async function toggle() {
   if (!props.entry.is_dir) {
@@ -118,6 +126,13 @@ function onTreeEdit(e: Event) {
   }
   if (d.path !== props.entry.path) return
   startEdit(d.mode)
+}
+
+/** 菜单里的「打开」对目录是展开：节点自己翻展开态（面板只发意图）。 */
+function onTreeExpand(e: Event) {
+  const d = (e as CustomEvent).detail as { path: string }
+  if (d?.path !== props.entry.path) return
+  if (props.entry.is_dir && !expanded.value) void toggle()
 }
 
 function startEdit(mode: 'rename' | 'new-file' | 'new-dir') {
@@ -234,9 +249,4 @@ function report(res: FileOpVO, onOk?: () => void) {
   }
   if (bad.length > 0) toast.bad(bad.map((r) => r.message).join('\n'))
 }
-
-// 外部（FS 事件 / 拖拽移动）重读后本节点可能被卸载；这里只在还活着时兜住 loading 态。
-watch(loading, (v) => {
-  if (!v) return
-})
 </script>

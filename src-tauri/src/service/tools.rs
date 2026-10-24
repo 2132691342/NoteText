@@ -179,6 +179,12 @@ impl ToolsService {
         let b = norm(&req.right);
 
         let ops = lcs_ops(&a, &b);
+
+        // 行内高亮：相邻的删 / 改行配对后标出字符级差异段。
+        let mut spans_left = vec![Vec::new(); a.len()];
+        let mut spans_right = vec![Vec::new(); b.len()];
+        fill_inline_spans(&a, &b, &ops, &mut spans_left, &mut spans_right);
+
         let mut lines = Vec::with_capacity(ops.len());
         let (mut added, mut removed) = (0usize, 0usize);
         for op in ops {
@@ -194,14 +200,14 @@ impl ToolsService {
                 }),
                 LcsOp::Del(i) => {
                     removed += 1;
-                    // 找最近的插入行做行内对比：纯删除行没有对端，span 为空。
+                    // 纯删除行没有对端：span 在配对阶段已算好，没配上就是空。
                     lines.push(crate::domain::diff::DiffLineVO {
                         op: crate::domain::diff::DiffOp::Removed,
                         left_no: i + 1,
                         right_no: 0,
                         left_text: a[i].clone(),
                         right_text: String::new(),
-                        left_spans: vec![],
+                        left_spans: spans_left[i].clone(),
                         right_spans: vec![],
                     });
                 }
@@ -214,7 +220,7 @@ impl ToolsService {
                         left_text: String::new(),
                         right_text: b[j].clone(),
                         left_spans: vec![],
-                        right_spans: vec![],
+                        right_spans: spans_right[j].clone(),
                     });
                 }
             }
@@ -757,6 +763,64 @@ fn lcs_ops(a: &[String], b: &[String]) -> Vec<LcsOp> {
         j += 1;
     }
     ops
+}
+
+/// 行内差异区间：比较两行，前缀 / 后缀相同的部分不标，只标中间变化段。
+/// 偏移按 UTF-16 码元（前端 `String.slice` 的下标口径），不是字节。
+fn inline_spans(left: &str, right: &str) -> (Vec<[usize; 2]>, Vec<[usize; 2]>) {
+    let l: Vec<char> = left.chars().collect();
+    let r: Vec<char> = right.chars().collect();
+    let mut p = 0;
+    while p < l.len() && p < r.len() && l[p] == r[p] {
+        p += 1;
+    }
+    let mut s = 0;
+    while s < l.len() - p && s < r.len() - p && l[l.len() - 1 - s] == r[r.len() - 1 - s] {
+        s += 1;
+    }
+    let off = |chars: &[char], n: usize| chars[..n].iter().map(|c| c.len_utf16()).sum::<usize>();
+    let ls = if p < l.len() - s {
+        vec![[off(&l, p), off(&l, l.len() - s)]]
+    } else {
+        vec![]
+    };
+    let rs = if p < r.len() - s {
+        vec![[off(&r, p), off(&r, r.len() - s)]]
+    } else {
+        vec![]
+    };
+    (ls, rs)
+}
+
+/// 给相邻的删除 / 插入段配行内 span：第 k 个删除行对第 k 个插入行（同一替换块
+/// 内的行顺序天然对应），没有对端的行不加 span。两个 hunk 之间必有 Equal 收口。
+fn fill_inline_spans(
+    a: &[String],
+    b: &[String],
+    ops: &[LcsOp],
+    left: &mut [Vec<[usize; 2]>],
+    right: &mut [Vec<[usize; 2]>],
+) {
+    let mut dels: Vec<usize> = Vec::new();
+    let mut inss: Vec<usize> = Vec::new();
+    let mut pair = |dels: &mut Vec<usize>, inss: &mut Vec<usize>| {
+        let n = dels.len().min(inss.len());
+        for k in 0..n {
+            let (ls, rs) = inline_spans(&a[dels[k]], &b[inss[k]]);
+            left[dels[k]] = ls;
+            right[inss[k]] = rs;
+        }
+        dels.clear();
+        inss.clear();
+    };
+    for op in ops {
+        match op {
+            LcsOp::Equal(..) => pair(&mut dels, &mut inss),
+            LcsOp::Del(i) => dels.push(*i),
+            LcsOp::Ins(j) => inss.push(*j),
+        }
+    }
+    pair(&mut dels, &mut inss);
 }
 
 // ---- 结构体生成 ----

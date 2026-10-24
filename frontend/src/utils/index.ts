@@ -1,5 +1,7 @@
-// 通用工具函数：纯函数，可单测。
+// 通用工具函数：纯函数为主，可单测。
 // 放这里的判据：不依赖 Vue、不依赖 store、输入输出都是基础类型。
+
+import { api } from '@/api'
 
 /** 延迟执行（防抖）。 */
 export function debounce<A extends unknown[]>(
@@ -104,8 +106,14 @@ export function globMatch(pattern: string, name: string): boolean {
   return re.test(name)
 }
 
-/** 剪贴板：WebView2 下 navigator.clipboard 需要焦点，兜底走 execCommand。 */
+/** 写剪贴板：优先走后端命令（WebView2 可能拒掉 writeText），浏览器开发态回退 Web API。 */
 export async function copyText(text: string): Promise<boolean> {
+  try {
+    await api.writeClipboard(text)
+    return true
+  } catch {
+    /* 无后端（浏览器 dev）或剪贴板被占：继续试 Web API */
+  }
   try {
     await navigator.clipboard.writeText(text)
     return true
@@ -126,8 +134,14 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** 读剪贴板。读权限比写权限严，失败返回空串由调用方提示。 */
+/** 读剪贴板。读权限比写权限严（WebView2 直接不给渲染层），走后端命令；
+ *  失败返回空串由调用方提示。 */
 export async function readClipboard(): Promise<string> {
+  try {
+    return await api.readClipboard()
+  } catch {
+    /* 无后端（浏览器 dev）：继续试 Web API */
+  }
   try {
     return await navigator.clipboard.readText()
   } catch {

@@ -1,23 +1,5 @@
-//! 集成测试：13 条长链路，按四组排列。
-//!
-//! 只守护「用户的文件没了 / 界面无声崩溃」级别的事故，函数名就是那件坏事；
-//! 失败报文直接指认坏在哪，不必对着行号往回找。纯单元逻辑不在此处。
-//!
-//! | 组 | 测试 | 坏法 |
-//! |---|---|---|
-//! | 文件与编码 | read_write_roundtrip_preserves_line_ending_and_bom | 行尾没记住 / BOM 丢或多字节 |
-//! | | forced_encoding_read_decodes_and_falls_back_when_unsupported | 选了编码打开的仍是乱码 |
-//! | | atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs | 临时文件堆积 / 打错路径在磁盘留痕 |
-//! | | rename_rejects_overwrite_cycles_and_escapes | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
-//! | | delete_accounts_for_stale_paths_and_create_refuses_existing | 一个陈旧路径让整批删除失败 |
-//! | 会话 | first_launch_writes_defaults_and_gives_empty_session | 首次启动没写默认配置 / 空库崩 |
-//! | | session_round_trip_restores_tabs_and_survives_close_all | 重启后标签顺序与窗口尺寸丢失 |
-//! | | empty_lists_serialize_to_array_not_null | 前端按数组读拿到 null 白屏 |
-//! | 批量 | batch_replace_scans_readonly_and_applies_only_checked | 扫描就落盘 / 改掉没勾选的文件 |
-//! | | batch_rename_blocks_conflicts_and_lands_clean_plans | 重命名覆盖已有文件 / 该落地的没落地 |
-//! | 工具箱 | bad_json_reports_line_and_column | 只说「格式错误」用户找不到在哪 |
-//! | | hashes_match_known_vectors | 哈希算错，用户误判文件损坏 |
-//! | | toggle_comment_round_trips_and_fills_half_commented_blocks | Ctrl+/ 把代码注释坏 |
+//! 集成测试：10 条长链路，按「文件与编码 / 会话 / 批量」三组排列。
+//! 函数名就是它守护的那件坏事；测试与坏法的完整索引见 specs/12-testing.md。
 
 // 每个测试二进制单独编译本模块，helper 未必全被用到。
 #![allow(dead_code)]
@@ -32,14 +14,10 @@ use notetext_lib::domain::batch::{
 use notetext_lib::domain::config::AppConfig;
 use notetext_lib::domain::file::{FileContentVO, ReadMode};
 use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
-use notetext_lib::domain::hash::{HashAlgo, HashReq};
-use notetext_lib::domain::json::{JsonFormat, JsonFormatReq};
 use notetext_lib::domain::session::{SessionDO, TabDO};
 use notetext_lib::pkg::paths::AppPaths;
 use notetext_lib::repo::session::SessionRepo;
 use notetext_lib::repo::settings::SettingsRepo;
-use notetext_lib::service::editor;
-use notetext_lib::service::tools::ToolsService;
 
 // ---------- 公共设施 ----------
 
@@ -503,59 +481,4 @@ fn batch_rename_blocks_conflicts_and_lands_clean_plans() {
     assert_eq!(ok.changed, 1, "应改成一个文件");
     assert!(root.join("d.txt").exists(), "新名字要存在");
     assert!(!a.exists(), "旧名字要消失");
-}
-
-// ---------- 工具箱 ----------
-
-/// 坏 JSON 必须给行号列号：只说「格式错误」在几千行文件里等于没提示。
-#[test]
-fn bad_json_reports_line_and_column() {
-    let bad = ToolsService::new().json_format(&JsonFormatReq {
-        text: "{\"a\": }".into(),
-        format: JsonFormat::Pretty,
-        indent: None,
-        sort_keys: false,
-    });
-    assert!(!bad.ok, "坏 JSON 不应判 ok");
-    assert!(bad.error_line.is_some(), "坏 JSON 要给行号");
-    assert!(bad.error_col.is_some(), "坏 JSON 要给列号");
-}
-
-/// 哈希值要与 certutil / Get-FileHash 对得上：算错会让用户误判文件损坏。
-#[test]
-fn hashes_match_known_vectors() {
-    for (algo, expected) in [
-        (HashAlgo::Md5, "5d41402abc4b2a76b9719d911017c592"),
-        (HashAlgo::Sha1, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"),
-        (
-            HashAlgo::Sha256,
-            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
-        ),
-    ] {
-        let vo = ToolsService::new().hash(&HashReq {
-            path: None,
-            text: Some("hello".into()),
-            algo,
-            upper: false,
-        });
-        assert!(vo.ok, "{algo:?} 应成功");
-        assert_eq!(vo.hex, expected, "{algo:?}(\"hello\") 应为 {expected}");
-    }
-}
-
-/// 注释加 / 去往返必须还原；半注释块统一补齐；纯文本静默返回原文会让用户以为生效了。
-#[test]
-fn toggle_comment_round_trips_and_fills_half_commented_blocks() {
-    let src = "let a = 1;\nlet b = 2;";
-    let commented = editor::toggle_line_comment("rust", src).expect("加注释失败");
-    assert_eq!(commented, "// let a = 1;\n// let b = 2;", "两行都应被注释");
-    let back = editor::toggle_line_comment("rust", &commented).expect("去注释失败");
-    assert_eq!(back, src, "再去注释应还原");
-    let filled =
-        editor::toggle_line_comment("rust", "// let a = 1;\nlet b = 2;").expect("补注释失败");
-    assert_eq!(filled, "// let a = 1;\n// let b = 2;", "半注释块应补齐");
-    assert!(
-        editor::toggle_line_comment("text", "x").is_err(),
-        "纯文本应报不支持"
-    );
 }

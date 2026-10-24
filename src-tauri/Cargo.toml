@@ -37,6 +37,11 @@ tracing-subscriber = { workspace = true }
 # 平台路径：%APPDATA% 解析（dirs 比手拼 env::var 可靠，含漫游场景）
 dirs = { workspace = true }
 
+# 剪贴板：WebView2 不给渲染层 clipboard-read 权限，粘贴链路必须在壳层兜底。
+# 替代方案 tauri-plugin-clipboard-manager 会把插件权限清单一起带进来，
+# 这里只需要读 / 写纯文本两个命令。
+arboard = "3"
+
 # 壳层：Tauri 本体 + 对话框 + 单实例 + 托盘
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }

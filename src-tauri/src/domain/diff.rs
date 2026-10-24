@@ -45,7 +45,8 @@ pub struct DiffLineVO {
     pub right_no: usize,
     pub left_text: String,
     pub right_text: String,
-    /// 行内差异片段：`[start, end)` 字节区间，前端按它上高亮。
+    /// 行内差异片段：`[start, end)` 区间，偏移按 UTF-16 码元（前端 `String.slice`
+    /// 的下标口径），删 / 改行标在 left_spans，增 / 改行标在 right_spans。
     pub left_spans: Vec<[usize; 2]>,
     pub right_spans: Vec<[usize; 2]>,
 }
@@ -56,7 +57,7 @@ pub struct TextDiffVO {
     pub lines: Vec<DiffLineVO>,
     pub added: usize,
     pub removed: usize,
-    /// 忽略空白后仍存在差异的行数：目录对比里用来标记「有实质差异」。
+    /// 有内容变化的行数（Added + Removed）。
     pub changed: usize,
     pub error_message: Option<String>,
 }

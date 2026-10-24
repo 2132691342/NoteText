@@ -1,5 +1,5 @@
 //! 代码片段持久化。
-//! 列表查询不取 content，避免把几十个模板全文拉过 IPC。
+//! 列表查询直接带 content：片段量级小，省一次详情请求比省这点流量值钱。
 
 use rusqlite::{params, Connection, OptionalExtension};
 

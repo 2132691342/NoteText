@@ -2,6 +2,7 @@
 //! handler 薄：解析参数、调 service、返回；函数名与前端 invoke 字符串一一对应。
 
 pub mod batch;
+pub mod clipboard;
 pub mod dialog;
 pub mod editor;
 pub mod file;
@@ -105,6 +106,9 @@ macro_rules! command_handlers {
             commands::system::show_message,
             commands::system::show_confirm,
             commands::dialog::open_path,
+            // 剪贴板（WebView2 不给渲染层读写权限，走壳层）
+            commands::clipboard::read_clipboard,
+            commands::clipboard::write_clipboard,
         ]
     };
 }

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use crate::app::bootstrap::now_ms;
 use crate::db::Db;
 use crate::domain::bookmark::{BookmarkAddReq, BookmarkDO, BookmarkVO};
-use crate::domain::draft::{DraftSaveReq, DraftVO};
-use crate::domain::macro_def::{MacroSaveReq, MacroVO};
+use crate::domain::draft::{DraftDO, DraftSaveReq, DraftVO};
+use crate::domain::macro_def::{MacroDO, MacroSaveReq, MacroVO};
 use crate::domain::snippet::{SnippetSaveReq, SnippetVO};
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::repo::bookmark::BookmarkRepo;
@@ -240,13 +240,38 @@ impl UserDataService {
         crate::app::bootstrap::export_backup(&self.db)
     }
 
-    /// 导入备份：只覆盖「备份里有的表」，其余不动。不整库替换：用户在本机新加的书签不该被一份旧备份抹掉。
+    /// 导入备份：只覆盖「备份里有的表」，其余不动（会话不导入——那是本机窗口状态）。
+    /// 不整库替换：用户在本机新加的书签不该被一份旧备份抹掉。
+    /// 合并语义按表各取所需：书签按（路径，行）幂等合并；宏与草稿按 UUID 同 id 覆盖；
+    /// 最近文件按导出顺序重放记账，还原排序。
     pub fn import_backup(&self, json: &serde_json::Value) -> AppResult<usize> {
         let mut n = 0usize;
+        let now = now_ms();
+
+        // 书签：(路径, 行) 已存在时只更新别名。
+        if let Some(arr) = json.get("bookmarks").and_then(|v| v.as_array()) {
+            for item in arr {
+                if let Ok(d) = serde_json::from_value::<BookmarkDO>(item.clone()) {
+                    self.db.with(|conn| {
+                        BookmarkRepo::add(
+                            conn,
+                            &BookmarkAddReq {
+                                path: d.path,
+                                line: d.line,
+                                label: Some(d.label),
+                            },
+                            now,
+                        )
+                    })?;
+                    n += 1;
+                }
+            }
+        }
+
+        // 片段：按 id 覆盖。
         if let Some(arr) = json.get("snippets").and_then(|v| v.as_array()) {
             for item in arr {
                 if let Ok(vo) = serde_json::from_value::<SnippetVO>(item.clone()) {
-                    let now = now_ms();
                     self.db.with(|conn| {
                         SnippetRepo::save(
                             conn,
@@ -264,6 +289,54 @@ impl UserDataService {
                 }
             }
         }
+
+        // 宏：UUID 同 id 覆盖（宏要跨机迁移，不能用本机自增 id）。
+        if let Some(v) = json.get("macros") {
+            if let Ok(macros) = serde_json::from_value::<Vec<MacroDO>>(v.clone()) {
+                n += self.db.with(|conn| MacroRepo::import_all(conn, &macros))?;
+            }
+        }
+
+        // 草稿：UUID 同 id 覆盖；单条超限跳过（与自动备份同一策略，不阻断导入）。
+        if let Some(arr) = json.get("drafts").and_then(|v| v.as_array()) {
+            for item in arr {
+                if let Ok(d) = serde_json::from_value::<DraftDO>(item.clone()) {
+                    let saved = self.db.with(|conn| {
+                        DraftRepo::save(
+                            conn,
+                            &DraftSaveReq {
+                                path: format!("draft:{}", d.id),
+                                title: d.title,
+                                content: d.content,
+                            },
+                            now,
+                        )
+                    })?;
+                    if saved {
+                        n += 1;
+                    }
+                }
+            }
+        }
+
+        // 最近文件：导出列表是「最近在前」，倒序重放 touch 让时间戳还原出同一排序；
+        // 上限沿用当前配置。
+        if let Some(arr) = json.get("recent_files").and_then(|v| v.as_array()) {
+            let limit = self
+                .db
+                .with(|conn| Ok::<u32, AppError>(SettingsRepo::load(conn)?.ui.recent_limit))
+                .unwrap_or(20);
+            for item in arr.iter().rev() {
+                if let Ok(d) =
+                    serde_json::from_value::<crate::domain::recent::RecentFileDO>(item.clone())
+                {
+                    self.db
+                        .with(|conn| RecentRepo::touch(conn, &d.path, now, limit))?;
+                    n += 1;
+                }
+            }
+        }
+
         Ok(n)
     }
 }

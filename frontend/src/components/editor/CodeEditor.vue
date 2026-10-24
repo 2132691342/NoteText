@@ -113,7 +113,7 @@ import {
 } from '@/composables/useEditorActions'
 import { useCommandStore } from '@/stores/commands'
 import { useDialogStore } from '@/stores/dialogs'
-import { copyText, readClipboard } from '@/utils'
+import { copyText } from '@/utils'
 import { i18n } from '@/i18n'
 import { useEditorTheme } from '@/composables/useEditorTheme'
 import { useEditorLanguage } from '@/composables/useEditorLanguage'
@@ -733,14 +733,8 @@ function buildMenuItems(): MenuItem[] {
       label: tr('menu.paste'),
       hint: 'Ctrl+V',
       disabled: ro,
-      run: async () => {
-        const text = await readClipboard()
-        if (!text) {
-          toast.warn(tr('toast.clipboardEmpty'))
-          return
-        }
-        commands.run('edit.paste')
-      },
+      // 空剪贴板的提示由 edit.paste 命令统一给，这里不再预读一次。
+      run: () => commands.run('edit.paste'),
     },
     {
       label: tr('menu.selectAll'),

@@ -57,7 +57,7 @@ pub struct TabDO {
 pub struct SessionRestoreVO {
     pub session: Option<SessionDO>,
     pub tabs: Vec<TabDO>,
-    /// 仍存在的标签（路径有效的）数量：前端提示「N 个文件已不存在」。
+    /// 已不存在的文件路径：前端提示「N 个文件已不存在」。
     pub missing: Vec<String>,
 }
 

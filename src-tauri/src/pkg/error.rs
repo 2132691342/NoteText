@@ -95,11 +95,12 @@ pub type AppResult<T> = Result<T, AppError>;
 
 /// 模块级错误常量：调用点写 `Err(ErrPathEmpty)?` 比 new() 短，且文案只此一处。
 pub mod codes {
-    // 1xxx 文件 / 路径
+    // 1xxx 文件 / 路径 / 剪贴板（系统通用）
     pub const PATH_EMPTY: &str = "1000";
     pub const PATH_ESCAPE: &str = "1003";
     pub const FILE_TOO_LARGE: &str = "1004";
     pub const FILE_NOT_FOUND: &str = "1005";
+    pub const CLIPBOARD_FAILED: &str = "1006";
 
     // 2xxx 配置 / DB
     pub const DB_FAILED: &str = "2001";

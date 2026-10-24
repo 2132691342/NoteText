@@ -31,6 +31,7 @@ import {
   doReplaceDoc,
 } from '@/composables/useEditorActions'
 import { baseName, nextUntitledIndex, readClipboard, dirName, joinPath, extName } from '@/utils'
+import { pushClip } from '@/composables/useClipboardHistory'
 import { askText, confirmText } from '@/components/common/askText'
 import { askPick } from '@/components/common/askPick'
 import { goBack, goForward } from '@/composables/useNavHistory'
@@ -144,7 +145,7 @@ export function registerCommands() {
       key: 'Control+N',
       run: () => {
         const taken = editor.tabs
-          .map((x) => new RegExp(`^(?:${t('tab.untitled')}|Untitled)-(\d+)$`).exec(x.title))
+          .map((x) => new RegExp(`^(?:${t('tab.untitled')}|Untitled)-(\\d+)$`).exec(x.title))
           .filter(Boolean)
           .map((m) => Number(m![1]))
         editor.newTab({
@@ -260,7 +261,10 @@ export function registerCommands() {
       run: () => {
         const id = targetId()
         if (id == null) return
+        // 脏标签会被跳过（不替用户丢修改），留几个要说一声，否则像没点上。
+        const kept = editor.tabs.filter((t) => t.dirty && t.id !== id).length
         editor.closeOthers(id)
+        if (kept > 0) toast.warn(t('toast.dirtyTabsKept', { n: kept }))
       },
     },
     {
@@ -273,7 +277,11 @@ export function registerCommands() {
       },
       run: () => {
         const id = targetId()
-        if (id != null) editor.closeLeft(id)
+        if (id == null) return
+        const i = editor.tabs.findIndex((t) => t.id === id)
+        const kept = editor.tabs.filter((t, idx) => t.dirty && idx < i).length
+        editor.closeLeft(id)
+        if (kept > 0) toast.warn(t('toast.dirtyTabsKept', { n: kept }))
       },
     },
     {
@@ -287,7 +295,11 @@ export function registerCommands() {
       },
       run: () => {
         const id = targetId()
-        if (id != null) editor.closeRight(id)
+        if (id == null) return
+        const i = editor.tabs.findIndex((t) => t.id === id)
+        const kept = editor.tabs.filter((t, idx) => t.dirty && idx > i).length
+        editor.closeRight(id)
+        if (kept > 0) toast.warn(t('toast.dirtyTabsKept', { n: kept }))
       },
     },
     {
@@ -409,7 +421,10 @@ export function registerCommands() {
         const sel = getSelection(id ?? -1)
         if (!sel) return
         void import('@/utils').then(async ({ copyText }) => {
-          if (await copyText(sel)) doInsert(id, '')
+          if (await copyText(sel)) {
+            pushClip(sel)
+            doInsert(id, '')
+          }
         })
       },
     },
@@ -423,7 +438,10 @@ export function registerCommands() {
         const sel = getSelection(targetId() ?? -1)
         if (!sel) return
         void import('@/utils').then(async ({ copyText }) => {
-          if (await copyText(sel)) toast.ok(t('common.copied'))
+          if (await copyText(sel)) {
+            pushClip(sel)
+            toast.ok(t('common.copied'))
+          }
         })
       },
     },

@@ -20,7 +20,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 | 工作流 | 触发 | 做什么 |
 |---|---|---|
 | `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 跑 `pwsh scripts/check.ps1 -Full`；失败时脚本把「哪条链坏了、错在哪一行」写进 job summary |
-| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 静态门禁（rustfmt / check / clippy）+ `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
+| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 跑 `pwsh scripts/check.ps1 -Full`（rustfmt / check / clippy / 测试 / i18n 审计 / 前端构建）→ `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
 
 **「推 main 不发版、只有推 tag 才发版」是靠两个工作流各自的触发条件锁死的**：
 
@@ -34,8 +34,9 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 
 其余约定，改动流水线前要知道：
 
-- **门禁与出包分层**：日常质量门禁集中在 `ci.yml`；`release.yml` 只做静态编译门禁，
-  不重跑已由 main 门过的测试（`tauri build` 自己会跑前端构建）
+- **门禁与出包分层**：日常质量门禁集中在 `ci.yml`；`release.yml` 出包前
+  整套 `-Full` 重跑一遍——发版是低频动作，多花几分钟换「tag 上的产物
+  一定是全绿代码构建的」
 - **两个 job 都跑 `windows-latest`**：目标平台只有 Windows amd64，
   门禁与出包必须在同一套系统调用上验
 - **tauri-cli 用 npm 版**：`frontend/package.json` 的 devDependencies 已锁
@@ -77,13 +78,14 @@ release profile 设了 `strip = "symbols"` 与 `panic = "abort"`，
 
 ## 安装器
 
-`tauri.conf.json` 的 `bundle.windows.nsis` 配置：
+`tauri.conf.json` 的 `bundle` 配置（`installMode` / `languages` 在
+`bundle.windows.nsis` 下，`fileAssociations` 与 `bundle.windows` 平级）：
 
 | 项 | 值 | 理由 |
 |---|---|---|
 | `installMode` | `currentUser` | 不需要管理员权限；多用户机器不互相干扰 |
 | `languages` | `SimpChinese`, `English` | 目标用户是中英双语 |
-| `fileAssociations` | txt / md / log / json / yml / toml / ini / csv / xml | 常见的纯文本类型 |
+| `fileAssociations` | txt / md / log / json / yml / yaml / toml / ini / csv / xml | 常见的纯文本类型 |
 
 **文件关联用 `role: "Viewer"`**：出现在「打开方式」列表里，
 不抢占用户已有的默认程序。抢占默认是安装器最招人骂的行为之一。

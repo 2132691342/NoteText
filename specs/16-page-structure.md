@@ -25,7 +25,7 @@ App.vue
     └── EditorView.vue
 ├── MenuBar.vue           菜单栏 32px：十个一级菜单（数据来自命令表）
 ├── ToolBar.vue           工具栏 34px：高频图标钮 + 「更多」下拉
-├── SideBar.vue           侧栏：五个面板的容器，宽度可拖
+├── SideBar.vue           侧栏：六个面板的容器，宽度可拖
 ├── TabBar.vue            标签栏 32px：标签 + 脏标记 + 关闭钮
 ├── EditorArea.vue        编辑区：按 view_type 分发 + 分屏 + 拖放提示
 │   └── CodeEditor.vue    CodeMirror 容器（compartments）
@@ -75,14 +75,15 @@ App.vue
 「查找」从「编辑」里拆出来、「编码」「语言」「对比」从「视图」「工具」里拆出来，
 是为了让最高频的几类操作各自成家——一个菜单挂 30 项时，用户每次都要从头扫一遍。
 
-## 侧栏五个面板
+## 侧栏六个面板
 
 | 面板 | 组件 | 数据 |
 |---|---|---|
-| 文件 | `panels/FileTreePanel.vue` | `read_dir` + 懒展开；递归组件自引用 |
+| 文件 | `panels/FileTreePanel.vue` | `read_dir` + 懒展开；递归渲染在 `FileTreeNode.vue`（自引用）；**第一层是打开的文件夹本身**（与资源管理器一致），子项由 `open()` 预读 |
 | 书签 | `panels/BookmarkPanel.vue` | `list_bookmarks`（后端带该行正文） |
 | 片段 | `panels/SnippetPanel.vue` | `list_snippets`（语言 + 关键字在后端过滤） |
 | 函数 | `panels/FunctionPanel.vue` | 前端正则提取符号（不引 tree-sitter） |
+| 查找结果 | `panels/FindResultsPanel.vue` | 复用「在文件中查找」写入的 `findResults` store，浮窗关掉后结果仍在 |
 | 监控 | `panels/MonitorPanel.vue` | `read_file` 行区间增量轮询（800ms） |
 
 ## 工具箱浮窗
@@ -105,8 +106,10 @@ App.vue
 | 批量查找替换 | `dialogs/BatchFindReplaceDialog.vue` | 先扫描预览再勾选应用，扫完才允许写盘 |
 | 批量重命名 | `dialogs/BatchRenameDialog.vue` | 三种模式；冲突项标红且不可选 |
 | 最近文件 | `dialogs/RecentFilesDialog.vue` | 可钉住、显示所在目录、右键移除 / 显位置 |
+| 草稿箱 | `dialogs/DraftsDialog.vue` | `draft:<id>` 伪路径的标签在这里找回正文 |
+| 文本输入 / 下拉问答 | `dialogs/AskTextDialog.vue`、`dialogs/AskPickDialog.vue` | 命令层的 `askText` / `askPick` 共用浮窗（重命名 / 跳语言选择等） |
 | 格式转换 | `dialogs/ConvertDialog.vue` | JSON / YAML / TOML / XML 互转；**带选区进来即自动载入并转换**；「应用」写回选区（没选区写回全文）；一键互换 |
-| 目录对比 | `dialogs/DirDiffDialog.vue` | 递归比较两目录；四态分类；差异排前；点行用系统程序打开 |
+| 目录对比 | `dialogs/DirDiffDialog.vue` | 一层目录逐文件比较；四态分类；差异排前；点行用系统程序打开 |
 | 取色器 | `dialogs/ColorPickerDialog.vue` | EyeDropper 屏幕取色；HEX / RGB / HSL 三种表示分别可复制 |
 | 日志查看器 | `dialogs/LogViewerDialog.vue` | 读应用日志；按级别着色与过滤；只取末 2000 行 |
 | 关于 | `dialogs/AboutDialog.vue` | 版本 / 数据目录 / 日志目录（排障第一步） |
@@ -179,13 +182,13 @@ CodeEditor.vue
 | 文件 | 职责 |
 |---|---|
 | `composables/useCommands.ts` | 命令表（菜单 / 工具栏 / 快捷键 / 右键菜单的唯一来源） |
-| `composables/useGlobalKeys.ts` | 组合键 → 命令 id。**编辑器内也生效**：只把 CodeMirror 真绑过的组合让给它 |
+| `composables/useGlobalKeys.ts` | 组合键 → 命令 id。**编辑器内也生效**：把 CodeMirror 真绑过的组合、以及剪贴板 / 全选 / 撤销（Ctrl+C/X/V/A/Z/Y）放行给 WebView 原生行为（paste 事件自带数据，不经需要权限的 `clipboard.readText`）；原生输入框（查找 / 重命名）里同样放行文本编辑组合，但 CodeMirror 正文不算输入框——功能键（F3/F2/F1/F11）、Alt+Z/C、Alt+左右在编辑器里照走命令表 |
 | `composables/useEditorActions.ts` | 对正文的原子动作（撤销 / 行操作 / 插入 / 替换 / 跳转），按 tabId 定位视图 |
 | `composables/useEditorRegistry.ts` | tabId → EditorView + 保存基线；脏标记按「与基线是否相同」判 |
 | `composables/useCloseTab.ts` | 关闭标签的唯一入口：保存 / 另存为 / 未保存确认 |
 | `composables/useAutoSave.ts` | 按配置间隔自动保存「已命名的脏标签」（未命名的不弹另存为） |
 | `composables/useExternalChange.ts` | 外部变更：干净标签重载正文，脏标签只提示（每路径 600ms 去抖） |
-| `composables/useFileDrop.ts` | 拖入文件开标签、拖入目录设为工作区（走 Tauri `onDragDropEvent`） |
+| `composables/useFileDrop.ts` | 拖入文件开标签、拖入目录设为工作区。走 WebView 原生 `drop` 事件（`dragDropEnabled=false`，Tauri 接管会连页内 HTML5 拖拽一起掐掉）：路径取 `File.path`（Chromium 扩展），拿不到就降级读文本开无路径标签；`drop` 必拦，否则 WebView 把文件当导航目标顶掉整个界面 |
 | `composables/useQuitGuard.ts` | 退出前存会话 + 草稿，逐个处理未保存标签 |
 | `composables/useEditorTheme.ts` | CodeMirror 主题与语法高亮（色值一律引用 `--nt-*`） |
 | `composables/useEditorLanguage.ts` | 语言包：静态 + 动态按需加载 |

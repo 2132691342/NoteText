@@ -131,7 +131,7 @@
 | `save_snippet` | `SnippetSaveReq` | `SnippetVO` |
 | `remove_snippet` | `id` | `()` |
 | `get_snippet_languages` | — | `string[]` |
-| `snippet_by_abbrev` | `abbrev` | `SnippetDO \| null` |
+| `snippet_by_abbrev` | `abbrev` | `SnippetVO \| null` |
 | `list_macros` | — | `MacroVO[]` |
 | `save_macro` | `MacroSaveReq` | `MacroVO` |
 | `remove_macro` | `id` | `()` |
@@ -181,6 +181,12 @@
 | `show_message` | `title`, `message`, `kind?` | `()` |
 | `show_confirm` | `title`, `message` | `bool` |
 | `open_path` | `path` | `()` |
+| `read_clipboard` | — | `string`（非文本内容为空串） |
+| `write_clipboard` | `text` | `()` |
+
+`read_clipboard` / `write_clipboard` 存在的原因：WebView2 不给渲染层
+`clipboard-read` 权限，粘贴链路必须在壳层做（`arboard`）。
+非文本内容（图片等）不算错误——返回空串，前端按「剪贴板为空」提示。
 
 `window_close` **不直接调 `close()`**：那会绕过「关闭到托盘」与「未保存检查」。
 它只广播事件，真正的关在 `shell::close_policy` 的 `CloseRequested` 里决定。
