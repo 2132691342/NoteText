@@ -18,8 +18,7 @@ pub fn quit_confirmed() -> bool {
 }
 
 /// 本次关闭请求是否直接收托盘：开关开、窗口可见、托盘在。
-/// 窗口已藏着时不再拦——再拦一次用户永远唤不回；
-/// 托盘没就绪时也不拦——藏进一个不存在的托盘同样找不回来。
+/// 已藏着的不再拦（再拦一次永远唤不回），托盘没就绪也不拦（同样找不回）。
 pub fn should_hide_to_tray(app: &AppHandle) -> bool {
     if !CLOSE_TO_TRAY.load(Ordering::SeqCst) || app.tray_by_id("main").is_none() {
         return false;

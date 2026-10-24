@@ -175,7 +175,7 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 | 事件 | 载荷 | 消费方 |
 |---|---|---|
 | `app:ready` | 无 | 前端确认后端就绪 |
-| `app:before-close` | 无 | `useQuitGuard`：存会话 → 弹确认 → 置放行位 |
+| `app:before-close` | 无 | `useQuitGuard`：关到托盘开 → 存布局后收托盘；否则存会话 → 弹确认 → 置放行位 |
 | `app:open-file` | 文件路径 | `useShellIntent`：切回编辑器页并打开 |
 | `app:new-document` | 无 | 托盘「新建文档」 |
 | `fs:changed` | 路径数组 | `useExternalChange` + 文件树刷新 |

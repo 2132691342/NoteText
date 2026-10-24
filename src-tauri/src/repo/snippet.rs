@@ -116,11 +116,16 @@ impl SnippetRepo {
         }
         match req.id {
             Some(id) => {
+                // 带 id 也要能落库（备份导入到空表时行还不存在），所以是 upsert；
+                // 正常编辑路径行必然已在，走的自然是 UPDATE 分支。
                 conn.execute(
-                    "UPDATE snippets SET name = ?1, language = ?2, content = ?3, abbrev = ?4,
-                                        updated_at = ?5
-                     WHERE id = ?6",
-                    params![req.name, req.language, req.content, req.abbrev, now, id],
+                    "INSERT INTO snippets (id, name, language, content, abbrev, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+                     ON CONFLICT(id) DO UPDATE SET
+                        name = excluded.name, language = excluded.language,
+                        content = excluded.content, abbrev = excluded.abbrev,
+                        updated_at = excluded.updated_at",
+                    params![id, req.name, req.language, req.content, req.abbrev, now],
                 )
                 .map_err(|e| AppError::wrap(codes::SNIPPET_FAILED, "更新片段失败", e))?;
                 Ok(SnippetDO {

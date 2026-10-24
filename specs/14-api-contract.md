@@ -172,6 +172,7 @@
 | `window_minimize` | —（注入 `Window`） | `()` |
 | `window_toggle_maximize` | — | `()` |
 | `window_close` | — | `()`（只广播 `app:before-close`，不直接关） |
+| `hide_to_tray` | — | `()`（「关闭到托盘」路径的落点，前端提示后调用） |
 | `window_is_maximized` | — | `bool` |
 | `confirm_quit` | — | `()` |
 | `cancel_quit` | — | `()` |

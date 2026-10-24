@@ -240,10 +240,8 @@ impl UserDataService {
         crate::app::bootstrap::export_backup(&self.db)
     }
 
-    /// 导入备份：只覆盖「备份里有的表」，其余不动（会话不导入——那是本机窗口状态）。
-    /// 不整库替换：用户在本机新加的书签不该被一份旧备份抹掉。
-    /// 合并语义按表各取所需：书签按（路径，行）幂等合并；宏与草稿按 UUID 同 id 覆盖；
-    /// 最近文件按导出顺序重放记账，还原排序。
+    /// 导入备份：五表按各自语义合并（书签幂等合并、宏/草稿按 UUID 覆盖、
+    /// 片段按 id 覆盖、最近文件重放记账），会话不导入；不整库替换。
     pub fn import_backup(&self, json: &serde_json::Value) -> AppResult<usize> {
         let mut n = 0usize;
         let now = now_ms();

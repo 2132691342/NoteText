@@ -10,7 +10,10 @@ pub struct DraftDO {
     pub id: String,
     pub title: String,
     pub content: String,
+    /// 备份导出的是不含光标的 VO：缺字段时补零，导入路径本就不还原光标。
+    #[serde(default)]
     pub cursor_line: i32,
+    #[serde(default)]
     pub cursor_col: i32,
     pub updated_at: i64,
 }

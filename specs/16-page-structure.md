@@ -185,7 +185,7 @@ CodeEditor.vue
 | `composables/useQuitGuard.ts` | 退出前存会话 + 草稿，逐个处理未保存标签。**注册在 App 根层**（编辑器视图随路由卸载，挂那里设置页点 X 就没人应答）；取正文按「视图 → 卸载前暂存」兜底，视图不在时不能拿空串写盘 |
 | `composables/useGlobalKeys.ts` | 组合键 → 命令 id，**注册在 App 根层**（路由切页不失灵）。**编辑器内也生效**：把 CodeMirror 真绑过的组合、以及剪贴板 / 全选 / 撤销（Ctrl+C/X/V/A/Z/Y）放行给 WebView 原生行为（paste 事件自带数据，不经需要权限的 `clipboard.readText`）；原生输入框（查找 / 重命名）里同样放行文本编辑组合，但 CodeMirror 正文不算输入框——功能键（F3/F2/F1/F11）、Alt+Z/C、Alt+左右在编辑器里照走命令表 |
 | `composables/useEditorActions.ts` | 对正文的原子动作（撤销 / 行操作 / 插入 / 替换 / 跳转），按 tabId 定位视图 |
-| `composables/useEditorRegistry.ts` | tabId → EditorView + 保存基线；脏标记按「与基线是否相同」判 |
+| `composables/useEditorRegistry.ts` | tabId → EditorView + 保存基线；脏标记按「与基线是否相同」判。路由卸载编辑器视图前把脏正文暂存在这里，重挂载优先取暂存——设置页往返不丢未保存修改 |
 | `composables/useCloseTab.ts` | 关闭标签的唯一入口：保存 / 另存为 / 未保存确认 |
 | `composables/useAutoSave.ts` | 按配置间隔自动保存「已命名的脏标签」（未命名的不弹另存为） |
 | `composables/useExternalChange.ts` | 外部变更：干净标签重载正文，脏标签只提示（每路径 600ms 去抖） |

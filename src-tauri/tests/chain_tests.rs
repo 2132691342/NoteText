@@ -1,4 +1,4 @@
-//! 集成测试：10 条长链路，按「文件与编码 / 会话 / 批量」三组排列。
+//! 集成测试：11 条长链路，按「文件与编码 / 会话 / 批量 / 备份」四组排列。
 //! 函数名就是它守护的那件坏事；测试与坏法的完整索引见 specs/12-testing.md。
 
 // 每个测试二进制单独编译本模块，helper 未必全被用到。
@@ -11,10 +11,14 @@ use notetext_lib::app::bootstrap::{self, AppState};
 use notetext_lib::domain::batch::{
     BatchFindReq, BatchRenameReq, BatchReplaceReq, FindMode, RenameApplyReq, RenameMode, RenamePair,
 };
+use notetext_lib::domain::bookmark::BookmarkAddReq;
 use notetext_lib::domain::config::AppConfig;
+use notetext_lib::domain::draft::DraftSaveReq;
 use notetext_lib::domain::file::{FileContentVO, ReadMode};
 use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
+use notetext_lib::domain::macro_def::{MacroSaveReq, MacroStep};
 use notetext_lib::domain::session::{SessionDO, TabDO};
+use notetext_lib::domain::snippet::SnippetSaveReq;
 use notetext_lib::pkg::paths::AppPaths;
 use notetext_lib::repo::session::SessionRepo;
 use notetext_lib::repo::settings::SettingsRepo;
@@ -481,4 +485,103 @@ fn batch_rename_blocks_conflicts_and_lands_clean_plans() {
     assert_eq!(ok.changed, 1, "应改成一个文件");
     assert!(root.join("d.txt").exists(), "新名字要存在");
     assert!(!a.exists(), "旧名字要消失");
+}
+
+// ---------- 备份 ----------
+
+/// 备份导出再导入，五个用户数据表都要回来——只导出不导入等于换机即丢数据。
+/// 合并语义一并守护：不在备份里的本机数据必须原样保留。
+#[test]
+fn backup_round_trip_restores_user_tables_and_keeps_local_rows() {
+    let (_dir, state) = boot();
+    let ud = &state.services.userdata;
+
+    // 造五类数据：书签、片段、宏、草稿、最近文件。
+    ud.add_bookmark(BookmarkAddReq {
+        path: "C:\\a.txt".into(),
+        line: 3,
+        label: Some("checkpoint".into()),
+    })
+    .expect("加书签失败");
+    let snippet = ud
+        .save_snippet(SnippetSaveReq {
+            id: None,
+            name: "模板".into(),
+            language: "json".into(),
+            content: "{\"a\":1}".into(),
+            abbrev: "tpl".into(),
+        })
+        .expect("存片段失败");
+    let macro_vo = ud
+        .save_macro(MacroSaveReq {
+            id: None,
+            name: "格式化三连".into(),
+            steps: vec![
+                MacroStep::Text {
+                    text: "hello".into(),
+                },
+                MacroStep::Pause,
+            ],
+        })
+        .expect("存宏失败");
+    let draft_id = "11111111-1111-1111-1111-111111111111";
+    ud.save_draft(DraftSaveReq {
+        path: format!("draft:{draft_id}"),
+        title: "草稿".into(),
+        content: "未保存的想法".into(),
+    })
+    .expect("存草稿失败");
+    ud.touch_recent("C:\\a.txt".into()).expect("记最近文件失败");
+
+    let backup = ud.export_backup().expect("导出失败");
+
+    // 清场模拟换机：备份里有的数据全删，再补一条不在备份里的本机书签。
+    ud.clear_bookmarks(None).expect("清书签失败");
+    ud.remove_snippet(snippet.id).expect("删片段失败");
+    ud.remove_macro(macro_vo.id.clone()).expect("删宏失败");
+    ud.remove_draft(draft_id.into()).expect("删草稿失败");
+    ud.remove_recent("C:\\a.txt".into()).expect("删最近失败");
+    ud.add_bookmark(BookmarkAddReq {
+        path: "C:\\local.txt".into(),
+        line: 1,
+        label: None,
+    })
+    .expect("加本机书签失败");
+
+    let n = ud.import_backup(&backup).expect("导入失败");
+    assert_eq!(n, 5, "五类数据各记一条");
+
+    let bookmarks = ud.list_bookmarks().expect("列书签失败");
+    assert!(
+        bookmarks
+            .iter()
+            .any(|b| b.path == "C:\\a.txt" && b.line == 3),
+        "备份里的书签要回来"
+    );
+    assert!(
+        bookmarks.iter().any(|b| b.path == "C:\\local.txt"),
+        "不在备份里的本机书签必须保留（合并语义）"
+    );
+    let snippets = ud.list_snippets(&Default::default()).expect("列片段失败");
+    assert!(
+        snippets.iter().any(|s| s.content == "{\"a\":1}"),
+        "片段正文要回来"
+    );
+    let macros = ud.list_macros().expect("列宏失败");
+    assert!(
+        macros
+            .iter()
+            .any(|m| m.id == macro_vo.id && m.name == "格式化三连"),
+        "宏按 UUID 原样回来"
+    );
+    let drafts = ud.list_drafts().expect("列草稿失败");
+    assert!(
+        drafts.iter().any(|d| d.content == "未保存的想法"),
+        "草稿正文要回来"
+    );
+    let recent = ud.list_recent().expect("列最近失败");
+    assert!(
+        recent.iter().any(|r| r.path == "C:\\a.txt"),
+        "最近文件要回来"
+    );
 }

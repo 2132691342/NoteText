@@ -39,6 +39,11 @@ save_session(req)
 restore_session() -> SessionRestoreVO { session, tabs, missing }
 ```
 
+**恢复只在本次运行里发生一次**：设置页 / 帮助页是独立路由，回到编辑器视图会重挂载，
+再灌一遍会话就是把同一批标签叠几层。前端用 `editor.sessionRestored` 守门，
+`restore()` 本身也是整块替换（先清空再灌入），双保险。
+
+`missing` 由后端在 restore 时探测：路径非空且磁盘上已不存在的标签进列表。
 前端拿到后：
 
 1. 有 path 的标签 → `read_file` 读正文 + 按 `cursor_line` 滚动选中；
