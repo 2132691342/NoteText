@@ -85,10 +85,25 @@ release profile 设了 `strip = "symbols"` 与 `panic = "abort"`，
 |---|---|---|
 | `installMode` | `currentUser` | 不需要管理员权限；多用户机器不互相干扰 |
 | `languages` | `SimpChinese`, `English` | 目标用户是中英双语 |
-| `fileAssociations` | txt / md / log / json / yml / yaml / toml / ini / csv / xml | 常见的纯文本类型 |
+| `fileAssociations` | 文本组：txt / md / log / json / yml / yaml / toml / ini / csv / xml；压缩组：zip / 7z / tar / tgz / gz / bz2 / xz / zst / lz4 / br | 常见的纯文本与压缩类型（与 `domain/file_assoc.rs` 的分组清单同步） |
 
 **文件关联用 `role: "Viewer"`**：出现在「打开方式」列表里，
 不抢占用户已有的默认程序。抢占默认是安装器最招人骂的行为之一。
+
+### 运行时关联与「设为默认」（设置 → 系统与关联）
+
+安装器只挂「打开方式」；接管默认是**用户在应用里主动发起**的动作：
+
+| 动作 | 落点 |
+|---|---|
+| 开一组关联（文本 / 压缩包） | `HKCU\Software\Classes\NoteText.<Group>` ProgId（类型名 + 图标 + `"exe" "%1"`）+ 每扩展 `OpenWithProgids` + `Software\NoteText\Capabilities` + `RegisteredApplications` |
+| 设为默认 | 打开 `ms-settings:defaultapps` 引导用户选——Win10 起应用不允许直接写 UserChoice 抢默认 |
+| 关一组关联 | 摘 OpenWithProgids 值、整树删本组 ProgId；指向本组的 UserChoice 一并清掉（悬空默认比没有默认更糟）；能力注册按剩余量收缩，两组都关才整块撤 |
+| 状态查询 | 每扩展两问：在不在「打开方式」（OpenWithProgids）、是不是默认（UserChoice ProgId 是否指向我们） |
+
+全部键在 HKCU（无管理员）；写入后 `SHChangeNotify(SHCNE_ASSOCCHANGED)`
+广播一次，资源管理器立刻刷新「打开方式」与图标。扩展清单唯一来源是
+`domain/file_assoc.rs`，前端徽标读 `get_file_assoc_status`，不自己写死。
 
 ### 卸载与数据
 
@@ -115,5 +130,6 @@ release profile 设了 `strip = "symbols"` 与 `panic = "abort"`，
 - **只发 Windows amd64**：单平台让托盘、WebView2、路径分隔符都不必抽象；
   代价是其他平台完全不可用。Tauri 本身支持 mac / linux，
   真要扩平台时先扩 `platform/` 的平台分文件，再处理菜单快捷键差异。
+- **运行时关联只在 HKCU、不碰 UserChoice 的哈希**：合规（微软从 Win10 起封了程序抢默认的路）、不需要管理员；代价是「设为默认」必须引导用户去系统设置点一次，不能一键完成。
 - **NSIS 而不是 MSI**：NSIS 支持 currentUser 安装（不需要管理员），
   且脚本可读可改；MSI 的每用户安装要额外工具链。

@@ -23,6 +23,7 @@
         <AppearancePanel v-if="current === 'appearance'" />
         <EditorPanel v-else-if="current === 'editor'" />
         <FilePanel v-else-if="current === 'file'" />
+        <SystemPanel v-else-if="current === 'system'" />
         <KeybindingsPanel v-else-if="current === 'keybindings'" />
         <AboutPanel v-else-if="current === 'about'" />
         <GeneralPanel v-else />
@@ -40,6 +41,7 @@ import { useSettingsStore } from '@/stores/settings'
 import AppearancePanel from '@/components/settings/AppearancePanel.vue'
 import EditorPanel from '@/components/settings/EditorPanel.vue'
 import FilePanel from '@/components/settings/FilePanel.vue'
+import SystemPanel from '@/components/settings/SystemPanel.vue'
 import KeybindingsPanel from '@/components/settings/KeybindingsPanel.vue'
 import AboutPanel from '@/components/settings/AboutPanel.vue'
 import GeneralPanel from '@/components/settings/GeneralPanel.vue'
@@ -54,6 +56,7 @@ const TABS = [
   { id: 'appearance', labelKey: 'settings.appearance' },
   { id: 'editor', labelKey: 'settings.editor' },
   { id: 'file', labelKey: 'settings.file' },
+  { id: 'system', labelKey: 'settings.system' },
   { id: 'keybindings', labelKey: 'settings.keybindings' },
   { id: 'about', labelKey: 'settings.about' },
 ] as const

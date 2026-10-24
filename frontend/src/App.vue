@@ -24,6 +24,7 @@ import TitleBar from '@/components/layout/TitleBar.vue'
 import UnsavedDialog from '@/components/dialogs/UnsavedDialog.vue'
 import { useQuitGuard } from '@/composables/useQuitGuard'
 import { useGlobalKeys } from '@/composables/useGlobalKeys'
+import { useShellIntent } from '@/composables/useShellIntent'
 
 // inject 必须在 setup 顶层同步调用；放进 computed getter 会每次求值都告警。
 // main.ts 注入的就是 computed，直接交给 EP 即可。
@@ -33,6 +34,8 @@ const locale = inject<ComputedRef<Language>>('epLocale')
 // 会随路由卸载——设置页点 X 就没人应答，等于「点了关闭没反应」。
 useQuitGuard()
 useGlobalKeys()
+// 壳意图（外部打开文件 / 托盘新建）挂根上：编辑器页卸载后事件也要有人接。
+useShellIntent()
 </script>
 
 <style scoped>

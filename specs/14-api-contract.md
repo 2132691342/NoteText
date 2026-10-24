@@ -211,9 +211,13 @@
 | `force_quit` | —（注入 `AppHandle`） | `()` |
 | `start_drag` | — | `()` |
 | `get_app_info` | — | `AppInfoVO` |
+| `take_launch_intent` | — | `Option<string>`（冷启动命令行文件路径，拉取一次） |
 | `show_message` | `title`, `message`, `kind?` | `()` |
 | `show_confirm` | `title`, `message` | `bool` |
 | `open_path` | `path` | `()` |
+| `get_file_assoc_status` | — | `FileAssocStatusVO`（两组扩展各自在不在「打开方式」/ 是不是默认） |
+| `set_file_assoc_group` | `req: FileAssocSetReq` | `()`（注册 / 注销一组，见 specs/17） |
+| `open_default_apps_settings` | — | `()`（拉起 ms-settings:defaultapps） |
 | `read_clipboard` | — | `string`（非文本内容为空串） |
 | `write_clipboard` | `text` | `()` |
 
@@ -230,7 +234,7 @@
 |---|---|---|
 | `app:ready` | — | `app::lifecycle::on_ready` |
 | `app:before-close` | — | `commands::window::window_close` |
-| `app:open-file` | `string`（路径） | 单实例转交、命令行参数 |
+| `app:open-file` | `string`（路径） | 单实例转交（冷启动走 `take_launch_intent` 拉取，不发事件） |
 | `app:new-document` | — | 托盘「新建文档」 |
 | `fs:changed` | `string[]`（路径） | `service::file` 的 notify watcher |
 | `archive:task-update` | `ArchiveTaskVO[]`（全量快照） | 队列状态变化 + 250ms 心跳 |

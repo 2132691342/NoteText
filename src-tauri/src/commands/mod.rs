@@ -7,6 +7,7 @@ pub mod clipboard;
 pub mod dialog;
 pub mod editor;
 pub mod file;
+pub mod file_assoc;
 pub mod file_ops;
 pub mod session;
 pub mod system;
@@ -122,6 +123,11 @@ macro_rules! command_handlers {
             commands::window::force_quit,
             commands::window::start_drag,
             commands::system::get_app_info,
+            commands::system::take_launch_intent,
+            // 系统文件关联（specs/17）
+            commands::file_assoc::get_file_assoc_status,
+            commands::file_assoc::set_file_assoc_group,
+            commands::file_assoc::open_default_apps_settings,
             commands::system::show_message,
             commands::system::show_confirm,
             commands::dialog::open_path,

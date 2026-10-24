@@ -2637,6 +2637,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "windows-sys 0.61.2",
+ "winreg",
  "xz2",
  "zip",
  "zstd",

@@ -177,14 +177,15 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 |---|---|---|
 | `app:ready` | 无 | 前端确认后端就绪 |
 | `app:before-close` | 无 | `useQuitGuard`：关到托盘开 → 存布局后收托盘；否则存会话 → 弹确认 → 置放行位 |
-| `app:open-file` | 文件路径 | `useShellIntent`：切回编辑器页并打开 |
+| `app:open-file` | 文件路径 | `useShellIntent`（挂 App 根）：压缩包开浏览浮窗，其余切回编辑器页打开 |
 | `app:new-document` | 无 | 托盘「新建文档」 |
 | `fs:changed` | 路径数组 | `useExternalChange` + 文件树刷新 |
 | `archive:task-update` | 任务快照数组 | `stores/archive`：压缩任务队列的进度 |
 | `archive:task-finished` | 终态任务 | `stores/archive`：终态 toast 与结果负载 |
 
 事件不缓冲给后注册的监听器（Tauri 的 `listen` 在注册后才收到），
-所以「启动时带来的文件」用 `useShellIntent` 的意图队列兜底。
+所以「启动时带来的文件」不走事件：后端定格在 OnceLock，前端挂载后经
+`take_launch_intent` 命令拉取一次（无竞态）。
 
 ## 前端状态归属
 
@@ -223,7 +224,7 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-全部 13 条长链路测试在 `src-tauri/tests/chain_tests.rs` 一个文件里
+全部 9 条长链路测试在 `src-tauri/tests/chain_tests.rs` 一个文件里
 （组织方式见 [12](12-testing.md)）。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。

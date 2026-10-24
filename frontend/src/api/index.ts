@@ -3,7 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { tr } from '@/i18n'
-import type { AppError, AppInfoVO } from '@/types/api'
+import type { AppError, AppInfoVO, FileAssocStatusVO } from '@/types/api'
 
 export { CONTRACT_VERSION } from '@/types/api'
 export type { AppError } from '@/types/api'
@@ -336,11 +336,17 @@ export const api = {
   forceQuit: () => call<void>('force_quit'),
   startDrag: () => call<void>('start_drag'),
   appInfo: () => call<AppInfoVO>('get_app_info'),
+  takeLaunchIntent: () => call<string | null>('take_launch_intent'),
   showMessage: (title: string, message: string, kind?: string) =>
     call<void>('show_message', { title, message, kind: kind ?? null }),
   showConfirm: (title: string, message: string) =>
     call<boolean>('show_confirm', { title, message }),
   openPath: (path: string) => call<void>('open_path', { path }),
+  // 系统文件关联（specs/17）：注册进「打开方式」与默认应用候选
+  fileAssocStatus: () => call<FileAssocStatusVO>('get_file_assoc_status'),
+  setFileAssocGroup: (group: string, enable: boolean) =>
+    call<void>('set_file_assoc_group', { req: { group, enable } }),
+  openDefaultAppsSettings: () => call<void>('open_default_apps_settings'),
   // 剪贴板：WebView2 不给渲染层 clipboard-read 权限，读写都走壳层
   readClipboard: () => call<string>('read_clipboard'),
   writeClipboard: (text: string) => call<void>('write_clipboard', { text }),

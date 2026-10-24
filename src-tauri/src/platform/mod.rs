@@ -1,4 +1,4 @@
-//! 平台相关：原生消息框与 AppHandle 存取。
+//! 平台相关：原生消息框、系统文件关联与 AppHandle 存取。
 //! 按平台分文件实现，不在一个文件里写 cfg 大分支。
 
 mod app_handle;
@@ -7,6 +7,13 @@ mod app_handle;
 mod dialog_stub;
 #[cfg(windows)]
 mod dialog_win;
+
+#[cfg(not(windows))]
+mod file_assoc_stub;
+#[cfg(windows)]
+mod file_assoc_win;
+
+pub mod file_assoc;
 
 pub use app_handle::{app_handle, set_app_handle};
 

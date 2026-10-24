@@ -33,6 +33,12 @@ pub fn get_app_info(state: State<'_, AppState>) -> AppInfoVO {
     }
 }
 
+/// 冷启动意图：双击关联文件启动时的文件路径，前端就绪后拉取一次。
+#[tauri::command]
+pub fn take_launch_intent() -> Option<String> {
+    crate::shell::single_instance::take_launch_intent()
+}
+
 /// 消息框：`kind` 取 `info` / `warning` / `error`。
 #[tauri::command]
 pub async fn show_message(

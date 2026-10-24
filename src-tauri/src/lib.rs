@@ -36,6 +36,9 @@ pub fn run() {
 
     pkg::log::init(&paths);
 
+    // 冷启动意图（关联双击 / 拖到 exe 上）先定格：前端就绪远晚于进程启动。
+    shell::single_instance::capture_launch_intent();
+
     tracing::info!(
         version = APP_VERSION,
         data_dir = %paths.data_dir.display(),

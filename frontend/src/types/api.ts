@@ -2,7 +2,7 @@
 // 铁律：跨边界字段一律 snake_case。改字段必须同步 `src-tauri/src/domain/` 与
 
 /** 契约版本：后端改字段时 +1，前端 `api/index.ts` 在启动时校验。 */
-export const CONTRACT_VERSION = 3
+export const CONTRACT_VERSION = 4
 
 /** 后端统一错误：invoke reject 时的形状。 */
 export interface AppError {
@@ -812,4 +812,25 @@ export interface AppInfoVO {
   os: string
   arch: string
   debug_build: boolean
+}
+
+// ---- 系统文件关联（specs/17）----
+
+export interface FileAssocExtVO {
+  /** 扩展名，不带点。 */
+  extension: string
+  /** 是否已进「打开方式」列表。 */
+  in_open_with: boolean
+  /** 是否已是系统默认。 */
+  is_default: boolean
+}
+
+export interface FileAssocGroupVO {
+  /** 分组标识：text / archive。 */
+  group: string
+  extensions: FileAssocExtVO[]
+}
+
+export interface FileAssocStatusVO {
+  groups: FileAssocGroupVO[]
 }

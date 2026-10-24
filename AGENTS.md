@@ -29,6 +29,7 @@
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2 |
 | 测试 | testing（标准库） | 一包一入口、一个子测试一种坏法；`scripts/check.ps1` 收口全部验证 |
+| 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
 ### 1.1 依赖原则
@@ -220,7 +221,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 | 4000–4999 | 编辑器域（标签 / 注释 / 行号） |
 | 5000–5999 | 工具箱（JSON / diff / 哈希 / 正则） |
 | 6000–6999 | 监控 / 文件监听 |
-| 7000–7999 | 壳层（单实例 / 托盘 / 窗口） |
+| 7000–7999 | 壳层（单实例 / 托盘 / 窗口 / 文件关联） |
 | 8000–8999 | 用户数据（书签 / 片段 / 宏 / 草稿） |
 | 9000–9999 | 压缩 / 归档（specs/18） |
 
@@ -447,8 +448,8 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），13 条测试按
-  「文件与编码 / 会话 / 批量 / 备份 / 压缩」五组排列，编译只链接一次 lib
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），9 条测试按
+  「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」六组排列，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
 - 全量测试亚秒级，**不设「只跑一条链」的开关**——加了省不了多少时间，却要多记一个参数
@@ -478,19 +479,15 @@ JSON / 哈希 / 注释这类单函数行为不设测试）；每一条都守护
 
 | 分组 | 测试 | 坏法 |
 |---|---|---|
-| 文件与编码 | `read_write_roundtrip_preserves_encoding_line_ending_and_bom` | 行尾没按原样写回 / BOM 丢或多字节 / 强制编码打开仍是乱码 / 选错编码打不开文件 |
-| | `atomic_write_leaves_no_temp_file_and_never_creates_missing_dirs` | 临时文件堆积 / 打错路径在磁盘留痕 |
-| | `rename_rejects_overwrite_cycles_and_escapes` | 重命名无声销毁文件 / 树成环 / 路径逃逸 |
-| | `delete_accounts_for_stale_paths_and_create_refuses_existing` | 一个陈旧路径让整批删除失败 / 新建同名清空已有内容 |
+| 文件 | `file_read_write_roundtrip_preserves_encoding_and_atomic_write` | 行尾没按原样写回 / BOM 丢或多字节 / 强制编码打开仍是乱码 / 选错编码打不开 / 临时文件堆积 / 打错路径在磁盘留痕 |
+| | `file_tree_ops_reject_destructive_requests` | 重命名无声覆盖文件 / 树成环 / 路径逃逸 / 陈旧路径让整批删除失败 / 新建同名清空已有内容 |
 | 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
-| 批量 | `batch_replace_scans_readonly_and_applies_only_checked` | 扫描就落盘 / 改掉没勾选的文件 |
-| | `batch_rename_blocks_conflicts_and_lands_clean_plans` | 重命名覆盖已有文件 / 该落地的没落地 |
+| 批量 | `batch_two_phase_applies_only_confirmed_plans` | 扫描就落盘 / 改掉没勾选的文件 / 重命名覆盖已有文件 / 该落地的没落地 |
 | 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
 | 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 |
-| | `archive_extract_rejects_path_traversal` | 恶意条目名把文件写到目标目录之外 |
-| | `archive_failures_distinguish_password_and_corruption` | 要密码与密码错混成一个错（前端弹不出密码框）/ 损坏的包测试照样说「好」 |
-| | `archive_split_volumes_open_from_first_part_and_join_restores_bytes` | 分卷首卷打不开 / 合并还原的字节不对 |
-| | `archive_update_adds_and_deletes_entries` | 追加 / 删除条目后丢内容或丢密码 |
+| | `archive_update_split_join_preserve_bytes` | 追加 / 删除条目后丢内容 / 分卷首卷打不开 / 合并还原的字节不对 |
+| | `archive_rejects_traversal_and_distinguishes_password_and_corruption` | 恶意条目把文件写到目标目录之外 / 要密码与密码错混成一个错 / 损坏的包测试照样说「好」 |
+| 系统关联 | `file_assoc_register_round_trip_lands_open_with_and_default` | 双击关联文件打不开（open 命令丢引号 / ProgId 挂错键）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：
 

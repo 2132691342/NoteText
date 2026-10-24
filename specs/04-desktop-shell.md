@@ -90,9 +90,9 @@ app:before-close
 
 **不带文件也唤起**：只想再开一个窗口时，双击图标像没反应会很困惑。
 
-首次启动时命令行里的文件路径由 `app::lifecycle` 在 ready 之后发——
-立即发会丢（Vue 还没挂载，事件没人听）。前端用 `composables/useShellIntent.ts`
-的意图队列兜底：事件早于视图挂载也存得下，视图挂载时消费一次。
+冷启动（双击关联文件 / 拖到 exe 上启动）的命令行路径不走事件——立即发会丢
+（Vue 还没挂载，事件没人听）。启动早期 `capture_launch_intent` 把它定格在
+OnceLock，前端挂载后经 `take_launch_intent` 命令拉取一次，无竞态。
 
 ## 生命周期
 

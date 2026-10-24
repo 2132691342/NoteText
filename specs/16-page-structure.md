@@ -11,7 +11,7 @@ NoteText 是单窗口应用，只有一个常驻视图（编辑器）+ 两个路
 | 路径 | 视图 | 说明 |
 |---|---|---|
 | `/` | `views/EditorView.vue` | 编辑器主界面，唯一的常驻视图 |
-| `/settings/:tab?` | `views/SettingsView.vue` | 六个分页：general / appearance / editor / file / keybindings / about |
+| `/settings/:tab?` | `views/SettingsView.vue` | 七个分页：general / appearance / editor / file / system / keybindings / about（system 是系统文件关联） |
 | `/help/:name?` | `views/HelpView.vue` | 内置手册（`assets/docs/*.md` 按需加载） |
 
 **hash 模式**：Tauri 的 asset 协议下没有服务端做重写，history 模式刷新会 404。
@@ -136,7 +136,7 @@ App.vue
 
 ## 设置页
 
-左栏六个分页按钮 + 右栏表单。每个面板只管一类配置，
+左栏七个分页按钮 + 右栏表单。每个面板只管一类配置，
 改动即时生效 + 防抖 400ms 回写（`stores/settings` 的 `scheduleSave`）。
 
 | 面板 | 管什么 |
@@ -204,7 +204,7 @@ CodeEditor.vue
 | `composables/useEditorGuides.ts` | 缩进参考线 / 括号配色 / 行尾标记三件视觉辅助 |
 | `composables/useLastQuery.ts` | 上次查找条件：F3 / Shift+F3 复用，浮窗预填 |
 | `composables/useQuickActions.ts` | 一键快操作：选中即用、结果原地替换（格式化 / 压缩 / 转义 / 格式互转） |
-| `composables/useShellIntent.ts` | 托盘 / 二次启动的文件打开意图 |
+| `composables/useShellIntent.ts` | 托盘新建 / 外部打开文件（含冷启动拉取与压缩包分流），挂 App 根 |
 | `composables/useClipboardHistory.ts` | 编辑器内复制文本的本地历史 |
 
 ## 取舍

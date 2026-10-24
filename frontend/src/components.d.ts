@@ -62,6 +62,7 @@ declare module 'vue' {
     SnippetPanel: typeof import('./components/panels/SnippetPanel.vue')['default']
     SplitJoinDialog: typeof import('./components/dialogs/SplitJoinDialog.vue')['default']
     StatusBar: typeof import('./components/layout/StatusBar.vue')['default']
+    SystemPanel: typeof import('./components/settings/SystemPanel.vue')['default']
     TabBar: typeof import('./components/layout/TabBar.vue')['default']
     TitleBar: typeof import('./components/layout/TitleBar.vue')['default']
     ToastHost: typeof import('./components/common/ToastHost.vue')['default']

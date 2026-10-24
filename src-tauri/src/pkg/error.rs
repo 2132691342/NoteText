@@ -122,6 +122,7 @@ pub mod codes {
 
     // 7xxx 壳层
     pub const SHELL_FAILED: &str = "7001";
+    pub const FILE_ASSOC_FAILED: &str = "7002";
 
     // 8xxx 用户数据
     pub const BOOKMARK_FAILED: &str = "8001";

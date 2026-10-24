@@ -45,6 +45,11 @@ crc32fast = "1"
 walkdir = "2"
 tempfile = "3"
 
+# Windows 注册表（specs/17 文件关联）：winreg 已在依赖图里（tauri 传递依赖），
+# 直接引用零新增；windows-sys 只开 Shell 一个 feature，用于 SHChangeNotify 广播关联变更。
+winreg = "0.56"
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
+
 # 优化 profile：开发期 debug 信息单独开关，发布期做体积与速度的折中。
 # 不设 lto = true：全量 LTO 让每次 build 多等 30s+，而编辑器启动已 < 1s。
 [profile.release]

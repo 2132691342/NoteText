@@ -12,6 +12,7 @@ pub mod draft;
 pub mod editor;
 pub mod encoding;
 pub mod file;
+pub mod file_assoc;
 pub mod file_ops;
 pub mod hash;
 pub mod json;

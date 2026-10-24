@@ -37,7 +37,6 @@ import { useArchiveStore } from '@/stores/archive'
 import { registerCommands } from '@/composables/useCommands'
 import { useViewportScale } from '@/composables/useViewportScale'
 import { useExternalChange } from '@/composables/useExternalChange'
-import { useShellIntent } from '@/composables/useShellIntent'
 import { useFileDrop } from '@/composables/useFileDrop'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { tr } from '@/i18n'
@@ -56,7 +55,6 @@ void archive.init()
 // 挂在这里会随视图一起销毁（设置页点 X 没反应就是这么来的）。
 registerCommands()
 useExternalChange()
-useShellIntent()
 useFileDrop()
 useAutoSave()
 
