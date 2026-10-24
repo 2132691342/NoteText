@@ -561,6 +561,7 @@ export default {
     fileChangedDirty: '{name} 已在外部修改（本地有未保存的改动，未覆盖）',
     fileReloaded: '已重新载入 {name}',
     folderOpened: '已打开文件夹 {name}',
+    minimizedToTray: '已最小化到托盘，点击托盘图标恢复',
     saveFirstForEncoding: '这个标签还没有文件路径，请先「另存为」再转编码',
     clipboardEmpty: '剪贴板里没有可粘贴的文本',
     dirtyTabsKept: '有 {n} 个含未保存修改的标签已保留',

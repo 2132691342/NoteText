@@ -97,6 +97,7 @@ macro_rules! command_handlers {
             commands::window::window_minimize,
             commands::window::window_toggle_maximize,
             commands::window::window_close,
+            commands::window::hide_to_tray,
             commands::window::window_is_maximized,
             commands::window::confirm_quit,
             commands::window::cancel_quit,

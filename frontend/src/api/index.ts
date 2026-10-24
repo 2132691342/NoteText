@@ -292,6 +292,7 @@ export const api = {
   windowMinimize: () => call<void>('window_minimize'),
   windowToggleMaximize: () => call<void>('window_toggle_maximize'),
   windowClose: () => call<void>('window_close'),
+  hideToTray: () => call<void>('hide_to_tray'),
   windowIsMaximized: () => call<boolean>('window_is_maximized'),
   confirmQuit: () => call<void>('confirm_quit'),
   cancelQuit: () => call<void>('cancel_quit'),

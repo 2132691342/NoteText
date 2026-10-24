@@ -30,30 +30,34 @@ Tauri 只负责「窗口 + 系统能力」，业务全部走 invoke。
 **Tauri 的 `CloseRequested` 里 `api.prevent_close()` 一调，这次关闭就被拦下。
 前端不置放行位，窗口会「点了 X 没反应」。**
 
-| 来源 | 条件 | `should_prevent` | 结果 |
+| 来源 | 条件 | 处理 | 结果 |
 |---|---|---|---|
-| 用户点 X / Alt+F4 | 已确认退出 | false | 真正退出 |
-| 用户点 X / Alt+F4 | 关闭到托盘开、窗口可见 | true + hide | 收进托盘 |
-| 用户点 X / Alt+F4 | 其余 | true + 广播 `app:before-close` | 等前端裁决 |
-| 托盘「退出」 | 先置确认位 | false | 真正退出 |
+| Alt+F4 / 任务栏关闭 | 已确认退出 | 放行 | 真正退出 |
+| Alt+F4 / 任务栏关闭 | 关闭到托盘开、窗口可见、托盘在 | 拦下 + `close_policy::hide` | 收进托盘 |
+| Alt+F4 / 任务栏关闭 | 其余 | 拦下 + 广播 `app:before-close` | 等前端裁决 |
+| 点 X（自绘标题栏） | —— | `window_close` 只广播 `app:before-close`，不产生真正的关闭请求 | 前端裁决 |
+| 托盘「退出」 | 先置确认位 | 放行 | 真正退出 |
 
 前端链路（`composables/useQuitGuard.ts`）：
 
 ```
-点 X → invoke('window_close')
-     → 后端广播 app:before-close
-     → 前端：存会话 + 存草稿
-     → 有未保存？弹原生确认
-     →   取消 → invoke('cancel_quit')，窗口保持打开
-     →   确认 → 逐个保存 → invoke('confirm_quit') → invoke('force_quit')
-     → force_quit 先置 QUIT_CONFIRMED 再 app.exit(0)
+app:before-close
+  ├─ 「关闭到托盘」开 → 存会话 + 存草稿 → 提示「已最小化到托盘」
+  │                    → 约 1.2s 后 invoke('hide_to_tray')（提示要先能看见，窗口不能立刻藏）
+  └─ 关 → 存会话 + 存草稿 → 有未保存？弹原生确认
+        →   取消 → invoke('cancel_quit')，窗口保持打开
+        →   确认 → 逐个保存 → invoke('confirm_quit') → invoke('force_quit')
+        → force_quit 先置 QUIT_CONFIRMED 再 app.exit(0)
 ```
 
 **`force_quit` 必须先置位再 exit**：`exit` 内部会触发 `CloseRequested`，
 不置位会被自己拦回去，进程退不掉。
 
-**收托盘前先提示**：窗口「凭空消失」最让用户困惑。
-托盘没就绪时不拦截——藏进一个还不存在的托盘，用户再也找不回来。
+**「关闭到托盘」的开关是后端内存标志（`CLOSE_TO_TRAY`）**：启动时 `sync_from_config`
+读一次，`save_config` 落库后再同步一次——设置页切换立刻生效，不用重启。
+收托盘前的三重护栏：窗口必须可见（已藏着的再拦一次就永远唤不回）、
+托盘必须就绪（藏进不存在的托盘同样找不回）、Alt+F4 直藏的路径给不了
+界面提示，由点 X 的路径负责提示。
 
 ## 托盘
 

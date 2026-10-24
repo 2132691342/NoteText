@@ -73,12 +73,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 关闭按钮的去向由「关闭到托盘」设置决定：拦截时隐藏窗口，放行时才真退出。
-            // 返回 true 表示事件已处理（不放行）。
+            // 未确认的关闭请求一律先拦下：「关闭到托盘」开着且托盘在就直接藏，
+            // 否则广播 app:before-close 交前端裁决（未保存内容 / 取消）。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if shell::close_policy::should_prevent(window.app_handle()) {
-                    api.prevent_close();
-                    shell::close_policy::hide(window.app_handle());
+                let app = window.app_handle();
+                if shell::close_policy::quit_confirmed() {
+                    return;
+                }
+                api.prevent_close();
+                if shell::close_policy::should_hide_to_tray(app) {
+                    shell::close_policy::hide(app);
+                } else {
+                    let _ = tauri::Emitter::emit(app, "app:before-close", ());
                 }
             }
         })

@@ -12,22 +12,21 @@ static QUIT_CONFIRMED: AtomicBool = AtomicBool::new(false);
 /// 关闭到托盘开关：由设置驱动，`set_close_to_tray` 改。
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
-/// 是否拦截本次关闭请求。
-pub fn should_prevent(app: &AppHandle) -> bool {
-    // 已确认退出：放行。
-    if QUIT_CONFIRMED.load(Ordering::SeqCst) {
+/// 已确认退出的关闭请求直接放行（真退出）。
+pub fn quit_confirmed() -> bool {
+    QUIT_CONFIRMED.load(Ordering::SeqCst)
+}
+
+/// 本次关闭请求是否直接收托盘：开关开、窗口可见、托盘在。
+/// 窗口已藏着时不再拦——再拦一次用户永远唤不回；
+/// 托盘没就绪时也不拦——藏进一个不存在的托盘同样找不回来。
+pub fn should_hide_to_tray(app: &AppHandle) -> bool {
+    if !CLOSE_TO_TRAY.load(Ordering::SeqCst) || app.tray_by_id("main").is_none() {
         return false;
     }
-    // 关闭到托盘开且窗口在：收托盘。
-    if CLOSE_TO_TRAY.load(Ordering::SeqCst) {
-        if let Some(w) = app.get_webview_window("main") {
-            if w.is_visible().unwrap_or(true) {
-                return true;
-            }
-        }
-    }
-    // 否则交给前端裁决（未保存内容）。
-    true
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false)
 }
 
 /// 隐藏窗口到托盘。

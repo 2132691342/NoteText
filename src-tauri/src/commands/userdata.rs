@@ -164,8 +164,15 @@ pub fn load_config(state: State<'_, AppState>) -> AppResult<AppConfig> {
 }
 
 #[tauri::command]
-pub fn save_config(state: State<'_, AppState>, config: AppConfig) -> AppResult<()> {
-    state.services.userdata.save_config(&config)
+pub fn save_config(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    config: AppConfig,
+) -> AppResult<()> {
+    state.services.userdata.save_config(&config)?;
+    // 「关闭到托盘」这类壳层开关要即时生效，不能等下次启动再同步。
+    crate::shell::close_policy::sync_from_config(&app);
+    Ok(())
 }
 
 /// 最近文件（供文件命令复用，避免前端多调一个模块）。

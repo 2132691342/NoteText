@@ -560,6 +560,7 @@ export default {
     fileChangedDirty: '{name} changed on disk (unsaved local edits kept)',
     fileReloaded: 'Reloaded {name}',
     folderOpened: 'Opened folder {name}',
+    minimizedToTray: 'Minimized to tray — click the tray icon to restore',
     saveFirstForEncoding: 'Save the file first, then change its encoding',
     clipboardEmpty: 'Nothing to paste',
     dirtyTabsKept: '{n} tab(s) with unsaved changes were kept open',

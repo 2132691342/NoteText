@@ -28,6 +28,12 @@ pub fn window_close(app: tauri::AppHandle) {
     let _ = tauri::Emitter::emit(&app, "app:before-close", ());
 }
 
+/// 收进托盘：「关闭到托盘」路径的落点，前端提示后调用。
+#[tauri::command]
+pub fn hide_to_tray(app: tauri::AppHandle) {
+    crate::shell::close_policy::hide(&app);
+}
+
 /// 前端确认退出：置位后所有关闭请求放行。
 #[tauri::command]
 pub fn confirm_quit() {

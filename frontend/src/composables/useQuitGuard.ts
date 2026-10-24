@@ -73,6 +73,15 @@ export function useQuitGuard() {
   }
 
   async function onBeforeClose() {
+    // 「关闭到托盘」开：不打扰未保存检查（内容还在内存里），存一份布局后收托盘。
+    // 提示先给、窗口缓一拍再藏——否则用户只看到界面凭空消失。
+    if (settings.config.ui.close_to_tray) {
+      await persistLayout()
+      toast.info(t('toast.minimizedToTray'))
+      window.setTimeout(() => void api.hideToTray(), 1200)
+      return
+    }
+
     await persistLayout()
 
     // 逐个处理脏标签：保存 / 不保存 / 取消。
