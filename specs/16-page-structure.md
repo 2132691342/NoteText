@@ -114,9 +114,9 @@ App.vue
 | 目录对比 | `dialogs/DirDiffDialog.vue` | 一层目录逐文件比较；四态分类；差异排前；点行用系统程序打开 |
 | 取色器 | `dialogs/ColorPickerDialog.vue` | EyeDropper 屏幕取色；HEX / RGB / HSL 三种表示分别可复制 |
 | 日志查看器 | `dialogs/LogViewerDialog.vue` | 读应用日志；按级别着色与过滤；只取末 2000 行 |
-| 创建压缩包 | `dialogs/CreateArchiveDialog.vue` | 十种格式；加密 / 固实 / 分卷选项按后端能力表显隐；提交进任务队列 |
-| 解压压缩包 | `dialogs/ExtractArchiveDialog.vue` | 条目勾选（默认全解）+ 密码行 + 覆盖策略；只管「把包解开」，增删转换在浏览浮窗 |
-| 压缩包浏览 | `dialogs/ArchiveBrowserDialog.vue` | 条目表 + 增删 / 解压 / 测试 / 转换 / 预览；密码错误不关窗，原窗重试 |
+| 创建压缩包 | `dialogs/CreateArchiveDialog.vue` | 十五种格式；加密 / 固实 / 分卷选项按后端能力表显隐；提交进任务队列 |
+| 解压压缩包 | `dialogs/ExtractArchiveDialog.vue` | 条目勾选（默认全解）+ 密码行 + 覆盖策略；条目表虚拟滚动，大包不冻窗；只管「把包解开」，增删转换在浏览浮窗 |
+| 压缩包浏览 | `dialogs/ArchiveBrowserDialog.vue` | 条目表（虚拟滚动）+ 增删 / 解压 / 测试 / 转换 / 预览；密码错误不关窗，原窗重试 |
 | 压缩任务 | `dialogs/ArchiveTasksDialog.vue` | 队列快照 + 暂停 / 继续 / 取消 / 清除；数据事件驱动不轮询 |
 | 文件分卷 / 合并 | `dialogs/SplitJoinDialog.vue` | 一个浮窗两种模式；合并选 `.001` 自动扫齐同目录全部卷 |
 | 关于 | `dialogs/AboutDialog.vue` | 版本 / 数据目录 / 日志目录（排障第一步） |

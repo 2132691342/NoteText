@@ -108,7 +108,7 @@ function update(patch: Partial<AppConfig>) {
 | `show_sidebar` | bool | true | 侧栏显隐 |
 | `sidebar_width` | u32 | 260 | 侧栏宽度（px，180–480） |
 | `toolbar_icon_size` | u32 | 24 | 工具栏图标尺寸 |
-| `zoom_level` | u32 | 100 | 界面缩放百分比（50–200） |
+| `zoom_level` | u32 | 100 | 界面缩放百分比（80–140） |
 | `close_to_tray` | bool | false | 关闭到托盘 |
 | `restore_session` | bool | true | 启动恢复上次会话 |
 | `recent_limit` | u32 | 20 | 最近文件保留条数 |

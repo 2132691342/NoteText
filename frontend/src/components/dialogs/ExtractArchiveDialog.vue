@@ -42,7 +42,7 @@
           </span>
         </div>
 
-        <!-- 条目表：默认全解，勾选后只解勾中的 -->
+        <!-- 条目表：虚拟滚动，几万条目也只渲染可见行；默认全解，勾选后只解勾中的 -->
         <div class="nt-field">
           <div class="nt-xarch-entryhead">
             <label class="nt-xarch-check">
@@ -52,18 +52,25 @@
             <ElInput v-model="filter" size="small" :placeholder="t('archive.filterPlaceholder')"
               class="nt-xarch-filter" clearable />
           </div>
-          <div class="nt-xarch-table">
-            <label v-for="e in visibleEntries" :key="e.name" class="nt-xarch-tr" :title="e.name">
-              <span class="nt-xarch-check">
-                <input type="checkbox" :checked="checked.has(e.name)" @change="toggle(e.name)" />
-              </span>
-              <span class="nt-xarch-entry">
-                <NtIcon :name="e.is_dir ? 'folder' : 'file'" size="sm" />
-                <span class="nt-xarch-ename">{{ shortName(e.name) }}</span>
-                <span v-if="e.encrypted" class="nt-xarch-dot" :title="t('archive.encryptedBadge')" />
-              </span>
-              <span class="nt-xarch-num">{{ e.is_dir ? '—' : formatSize(e.size) }}</span>
-            </label>
+          <div v-if="opening && !info" class="nt-xarch-loading">
+            {{ t('archive.opening') }}
+          </div>
+          <div v-else ref="host" class="nt-vlist nt-xarch-table" @scroll.passive="onScroll">
+            <div class="nt-vlist-pad" :style="{ height: `${totalHeight}px` }"></div>
+            <div class="nt-vlist-window" :style="{ transform: `translateY(${offset}px)` }">
+              <label v-for="e in windowItems" :key="e.name" class="nt-xarch-tr"
+                :style="{ height: `${rowHeight}px` }" :title="e.name">
+                <span class="nt-xarch-check">
+                  <input type="checkbox" :checked="checked.has(e.name)" @change="toggle(e.name)" />
+                </span>
+                <span class="nt-xarch-entry">
+                  <NtIcon :name="e.is_dir ? 'folder' : 'file'" size="sm" />
+                  <span class="nt-xarch-ename">{{ shortName(e.name) }}</span>
+                  <span v-if="e.encrypted" class="nt-xarch-dot" :title="t('archive.encryptedBadge')" />
+                </span>
+                <span class="nt-xarch-num">{{ e.is_dir ? '—' : formatSize(e.size) }}</span>
+              </label>
+            </div>
             <div v-if="visibleEntries.length === 0" class="nt-xarch-empty">
               {{ filter ? t('common.empty') : t('archive.emptyArchive') }}
             </div>
@@ -109,6 +116,7 @@ import { useI18n } from 'vue-i18n'
 import { ElButton, ElCheckbox, ElInput, ElOption, ElSelect } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
+import { useVirtualList } from '@/composables/useVirtualList'
 import { api, normalizeError } from '@/api'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
@@ -138,6 +146,10 @@ const visibleEntries = computed(() => {
   const q = filter.value.trim().toLowerCase()
   return q ? list.filter((e) => e.name.toLowerCase().includes(q)) : list
 })
+const { host, totalHeight, windowItems, offset, onScroll, rowHeight } = useVirtualList(
+  visibleEntries,
+  28,
+)
 const allChecked = computed(
   () => visibleEntries.value.length > 0 && visibleEntries.value.every((e) => checked.value.has(e.name)),
 )
@@ -189,10 +201,27 @@ async function open() {
   }
 }
 
+/** 已知压缩扩展名集合：剥「同名子文件夹」名用（a.tar.gz → a），清单来自后端不写死。 */
+const archiveExts = ref<Set<string>>(new Set())
+void api.archive.formats().then((fs) => {
+  archiveExts.value = new Set((fs ?? []).flatMap((f) => f.extensions))
+})
+
+/** 剥掉末尾最多两层压缩后缀（.tar.gz 两层 / .tgz 一层）。 */
+function stripArchiveExt(name: string): string {
+  let s = name
+  for (let i = 0; i < 2; i++) {
+    const m = s.match(/\.([^.\\/]+)$/)
+    if (!m || !archiveExts.value.has(m[1].toLowerCase())) break
+    s = s.slice(0, -m[0].length)
+  }
+  return s || name
+}
+
 /** 默认目标：包同级目录；勾「同名子文件夹」时再往里一层。 */
 function resetDest() {
   const dir = dirName(path.value)
-  const stem = baseName(path.value).replace(/\.[^.\\/]+$/, '')
+  const stem = stripArchiveExt(baseName(path.value))
   extractDir.value = createSubdir.value ? joinPath(dir, stem) : dir
   destAuto.value = true
 }
@@ -349,10 +378,7 @@ async function test() {
 }
 
 .nt-xarch-table {
-  display: flex;
-  flex-direction: column;
   max-height: 30vh;
-  overflow: auto;
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-sm);
 }
@@ -362,13 +388,31 @@ async function test() {
   grid-template-columns: 24px minmax(200px, 1fr) 80px;
   align-items: center;
   gap: var(--nt-sp-2);
-  padding: 2px var(--nt-sp-2);
+  width: 100%;
+  padding: 0 var(--nt-sp-2);
+  box-sizing: border-box;
   font-size: var(--nt-fs-sm);
   cursor: pointer;
 }
 
 .nt-xarch-tr:hover {
   background: var(--nt-surface-hover);
+}
+
+.nt-xarch-loading {
+  padding: var(--nt-sp-6);
+  text-align: center;
+  color: var(--nt-ink-3);
+  font-size: var(--nt-fs-sm);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-sm);
+}
+
+.nt-xarch-empty {
+  padding: var(--nt-sp-6);
+  text-align: center;
+  color: var(--nt-ink-muted);
+  font-size: var(--nt-fs-sm);
 }
 
 .nt-xarch-entry {
@@ -397,13 +441,6 @@ async function test() {
   font-variant-numeric: tabular-nums;
   color: var(--nt-ink-2);
   text-align: right;
-}
-
-.nt-xarch-empty {
-  padding: var(--nt-sp-6);
-  text-align: center;
-  color: var(--nt-ink-muted);
-  font-size: var(--nt-fs-sm);
 }
 
 .nt-xarch-owsel {

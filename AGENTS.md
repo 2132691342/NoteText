@@ -27,7 +27,7 @@
 | 文件监控 | notify | ^7.x |
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
-| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2 |
+| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
 | 测试 | testing（标准库） | 一包一入口、一个子测试一种坏法；`scripts/check.ps1` 收口全部验证 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
@@ -484,7 +484,7 @@ JSON / 哈希 / 注释这类单函数行为不设测试）；每一条都守护
 | 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
 | 批量 | `batch_two_phase_applies_only_confirmed_plans` | 扫描就落盘 / 改掉没勾选的文件 / 重命名覆盖已有文件 / 该落地的没落地 |
 | 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
-| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 |
+| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 / 改名后的 .tar.xz .tar.br 认不出 tar 家族 |
 | | `archive_update_split_join_preserve_bytes` | 追加 / 删除条目后丢内容 / 分卷首卷打不开 / 合并还原的字节不对 |
 | | `archive_rejects_traversal_and_distinguishes_password_and_corruption` | 恶意条目把文件写到目标目录之外 / 要密码与密码错混成一个错 / 损坏的包测试照样说「好」 |
 | 系统关联 | `file_assoc_register_round_trip_lands_open_with_and_default` | 双击关联文件打不开（open 命令丢引号 / ProgId 挂错键）/ 注销后留悬空默认 / 注销一组误伤另一组 |

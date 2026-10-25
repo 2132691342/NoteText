@@ -375,6 +375,8 @@ export default {
     splitNow: '分卷…',
     selectFirst: '先勾选要操作的条目',
     emptyArchive: '这个压缩包里没有条目',
+    opening: '正在读取压缩包…',
+    previewLoading: '正在读取预览…',
     wrongPassword: '密码不对，请重试',
     needPassword: '这个压缩包需要密码',
     decrypt: '打开',

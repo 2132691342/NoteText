@@ -29,8 +29,8 @@ interface Command {
 反过来做（先在菜单写死一个动作）就会出现「菜单能用的功能按键按不了」。
 
 当前 108 条命令：`file` 18 / `edit` 30 / `search` 5 / `view` 12 /
-`encoding` 6 / `language` 2 / `archive` 6 / `tools` 22 / `compare` 3 / `help` 2。
-`settings` 组不进下拉（它是路由目标，渲染成菜单条右侧入口）。
+`encoding` 6 / `language` 2 / `archive` 6 / `tools` 24 / `compare` 3 / `help` 2。
+`settings` 与 `help` 两组不进下拉（它们是路由目标，渲染成菜单条右侧入口）。
 
 **键位表与命令表必须一致**：命令自身声明的 `key` 是真相源，
 `DEFAULT_KEYBINDINGS` 只做设置页展示与兜底。两边漂移的后果是

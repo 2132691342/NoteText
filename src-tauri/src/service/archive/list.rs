@@ -31,7 +31,14 @@ pub fn list_archive(path: &Path, password: Option<&str>) -> AppResult<ArchiveInf
             let (reader, _len) = open_source(path, if use_parts { &parts } else { &[] })?;
             list_zip(reader)?
         }
-        ArchiveFormat::Tar | ArchiveFormat::Tgz => {
+        // tar 家族（纯 tar + 各压缩层变体）共用同一条流式管线
+        ArchiveFormat::Tar
+        | ArchiveFormat::Tgz
+        | ArchiveFormat::Txz
+        | ArchiveFormat::Tbz2
+        | ArchiveFormat::Tzst
+        | ArchiveFormat::Tlz4
+        | ArchiveFormat::Tbr => {
             let (reader, _len) = open_source(path, if use_parts { &parts } else { &[] })?;
             let codec = tar_codec(path, format);
             list_tar(reader, codec)?

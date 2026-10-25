@@ -83,7 +83,14 @@ pub fn preview_entry(req: &PreviewEntryReq, ctx: &TaskCtx) -> AppResult<PreviewE
                 &mut buf,
             )?;
         }
-        ArchiveFormat::Tar | ArchiveFormat::Tgz => {
+        // tar 家族（纯 tar + 各压缩层变体）共用同一条流式管线
+        ArchiveFormat::Tar
+        | ArchiveFormat::Tgz
+        | ArchiveFormat::Txz
+        | ArchiveFormat::Tbz2
+        | ArchiveFormat::Tzst
+        | ArchiveFormat::Tlz4
+        | ArchiveFormat::Tbr => {
             let (reader, _len) = open()?;
             let codec = tar_codec(src, format);
             read_tar_entry(reader, codec, &name, req.max_bytes, &mut buf)?;

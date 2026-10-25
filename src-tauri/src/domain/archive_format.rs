@@ -15,6 +15,16 @@ pub enum ArchiveFormat {
     Tar,
     /// tar + gzip
     Tgz,
+    /// tar + xz
+    Txz,
+    /// tar + bzip2
+    Tbz2,
+    /// tar + zstd
+    Tzst,
+    /// tar + lz4
+    Tlz4,
+    /// tar + brotli
+    Tbr,
     /// 单文件 gzip
     Gz,
     /// 单文件 bzip2
@@ -102,6 +112,23 @@ impl CompressLevel {
                 CompressLevel::Store => CompressMethod::Store,
                 _ => CompressMethod::Deflate,
             },
+            ArchiveFormat::Txz => match self {
+                CompressLevel::Store => CompressMethod::Store,
+                _ => CompressMethod::Xz,
+            },
+            ArchiveFormat::Tbz2 => match self {
+                CompressLevel::Store => CompressMethod::Store,
+                _ => CompressMethod::BZip2,
+            },
+            ArchiveFormat::Tzst => match self {
+                CompressLevel::Store => CompressMethod::Store,
+                _ => CompressMethod::Zstd,
+            },
+            ArchiveFormat::Tlz4 => CompressMethod::Lz4,
+            ArchiveFormat::Tbr => match self {
+                CompressLevel::Store => CompressMethod::Store,
+                _ => CompressMethod::Brotli,
+            },
             ArchiveFormat::Tar => CompressMethod::Store,
             ArchiveFormat::Gz => match self {
                 CompressLevel::Store => CompressMethod::Store,
@@ -135,6 +162,11 @@ impl ArchiveFormat {
             ArchiveFormat::Zip => "zip",
             ArchiveFormat::Tar => "tar",
             ArchiveFormat::Tgz => "tgz",
+            ArchiveFormat::Txz => "txz",
+            ArchiveFormat::Tbz2 => "tbz2",
+            ArchiveFormat::Tzst => "tzst",
+            ArchiveFormat::Tlz4 => "tlz4",
+            ArchiveFormat::Tbr => "tbr",
             ArchiveFormat::Gz => "gz",
             ArchiveFormat::Bz2 => "bz2",
             ArchiveFormat::Zst => "zst",
@@ -151,10 +183,15 @@ impl ArchiveFormat {
             ArchiveFormat::Zip => &["zip"],
             ArchiveFormat::Tar => &["tar"],
             ArchiveFormat::Tgz => &["tgz", "taz"],
+            ArchiveFormat::Txz => &["txz"],
+            ArchiveFormat::Tbz2 => &["tbz2", "tbz"],
+            ArchiveFormat::Tzst => &["tzst"],
+            ArchiveFormat::Tlz4 => &["tlz4"],
+            ArchiveFormat::Tbr => &["tbr"],
             ArchiveFormat::Gz => &["gz", "gzip"],
             ArchiveFormat::Bz2 => &["bz2", "bzip2", "boz"],
-            ArchiveFormat::Zst => &["zst", "zstd", "tzst"],
-            ArchiveFormat::Xz => &["xz", "txz"],
+            ArchiveFormat::Zst => &["zst", "zstd"],
+            ArchiveFormat::Xz => &["xz"],
             ArchiveFormat::Lz4 => &["lz4"],
             ArchiveFormat::Br => &["br"],
         }
@@ -168,12 +205,17 @@ impl ArchiveFormat {
     }
 
     /// 全部格式的固定顺序：能力表 / 格式下拉共用。
-    pub fn all() -> [ArchiveFormat; 10] {
+    pub fn all() -> [ArchiveFormat; 15] {
         [
             ArchiveFormat::SevenZ,
             ArchiveFormat::Zip,
             ArchiveFormat::Tar,
             ArchiveFormat::Tgz,
+            ArchiveFormat::Txz,
+            ArchiveFormat::Tbz2,
+            ArchiveFormat::Tzst,
+            ArchiveFormat::Tlz4,
+            ArchiveFormat::Tbr,
             ArchiveFormat::Gz,
             ArchiveFormat::Bz2,
             ArchiveFormat::Zst,
@@ -185,10 +227,34 @@ impl ArchiveFormat {
 
     /// 是否为多文件容器（可以「打开浏览」）。
     pub fn is_container(self) -> bool {
+        self.is_tar_family() || matches!(self, ArchiveFormat::SevenZ | ArchiveFormat::Zip)
+    }
+
+    /// tar 容器家族（含各压缩层组合）：列条目 / 解压 / 测试走同一条流式管线。
+    pub fn is_tar_family(self) -> bool {
         matches!(
             self,
-            ArchiveFormat::SevenZ | ArchiveFormat::Zip | ArchiveFormat::Tar | ArchiveFormat::Tgz
+            ArchiveFormat::Tar
+                | ArchiveFormat::Tgz
+                | ArchiveFormat::Txz
+                | ArchiveFormat::Tbz2
+                | ArchiveFormat::Tzst
+                | ArchiveFormat::Tlz4
+                | ArchiveFormat::Tbr
         )
+    }
+
+    /// tar 家族的压缩层；非 tar 家族或纯 tar 返回 None。
+    pub fn tar_codec(self) -> Option<ArchiveFormat> {
+        match self {
+            ArchiveFormat::Tgz => Some(ArchiveFormat::Gz),
+            ArchiveFormat::Txz => Some(ArchiveFormat::Xz),
+            ArchiveFormat::Tbz2 => Some(ArchiveFormat::Bz2),
+            ArchiveFormat::Tzst => Some(ArchiveFormat::Zst),
+            ArchiveFormat::Tlz4 => Some(ArchiveFormat::Lz4),
+            ArchiveFormat::Tbr => Some(ArchiveFormat::Br),
+            _ => None,
+        }
     }
 
     pub fn supports_encryption(self) -> bool {

@@ -603,7 +603,9 @@ fn archive_round_trip_all_formats_preserves_content() {
     let root_str = root.to_string_lossy().to_string();
 
     // 容器格式压整个目录；单文件格式压一个文件（多源在引擎入口直接报 9005）
-    let container: &[&str] = &["7z", "zip", "tar", "tgz"];
+    let container: &[&str] = &[
+        "7z", "zip", "tar", "tgz", "txz", "tbz2", "tzst", "tlz4", "tbr",
+    ];
     let single: &[&str] = &["gz", "bz2", "zst", "xz", "lz4", "br"];
     let ctx = TaskCtx::new("t".into(), 0);
 
@@ -644,6 +646,21 @@ fn archive_round_trip_all_formats_preserves_content() {
                 .unwrap_or_else(|_| panic!("{fmt} 单文件解压后缺产物")),
             want_bin,
             "{fmt} 单文件往返后内容变了"
+        );
+    }
+
+    // 双扩展名（.tar.xz / .tar.br）改个名也要认得出是 tar 家族：
+    // xz 有魔数但 brotli 没有，两条识别路径都要走通，否则改名后打开只剩一个条目。
+    for (fmt, renamed) in [("txz", "renamed.tar.xz"), ("tbr", "renamed.tar.br")] {
+        let src = dir.path().join(format!("out.{fmt}"));
+        let dest = dir.path().join(renamed);
+        fs::copy(&src, &dest).unwrap_or_else(|e| panic!("{renamed} 复制失败: {e}"));
+        let out_dir = dir.path().join(format!("x-{renamed}"));
+        arch::extract::extract_archive(&extract_req(&dest, &out_dir), &ctx)
+            .unwrap_or_else(|e| panic!("{renamed} 改名后识别失败: {e}"));
+        assert!(
+            out_dir.join("样本目录").join("说明.txt").exists(),
+            "{renamed} 改名后没被识别成 tar 家族（目录层级丢了）"
         );
     }
 }

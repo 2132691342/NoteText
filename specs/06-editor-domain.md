@@ -109,8 +109,8 @@ offset_at_line_col(text, line, col) -> Option<usize>
 | 语言 | 加载方式 |
 |---|---|
 | js / ts / json / html / css / scss / xml / markdown / sql / yaml / vue | 静态引入（常见且体积小） |
-| rust / go / java / python / cpp / php | 动态 `import()`（语言包较大） |
-| csharp / ruby / kotlin / lua / shell / powershell / ini / toml / diff | legacy modes（`StreamLanguage`） |
+| rust / go / java / python / cpp / php / c / lua | 动态 `import()`（语言包较大或需 legacy 包） |
+| csharp / ruby / kotlin / shell / powershell / ini / toml / diff | legacy modes（`StreamLanguage`） |
 
 首屏用 `syncExtensions()` 拿静态部分，异步包加载完再 `reconfigure`——
 不会因为等语言包而白屏。

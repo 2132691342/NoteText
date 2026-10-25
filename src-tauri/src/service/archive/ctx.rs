@@ -13,7 +13,8 @@ pub struct TaskCtx {
     processed: Arc<AtomicU64>,
     total: Arc<AtomicU64>,
     current: Arc<Mutex<Option<String>>>,
-    started: Instant,
+    /// 速度起点：begin_phase 会重置（锁保护：快照线程并发读）。
+    started: Mutex<Instant>,
 }
 
 impl TaskCtx {
@@ -25,7 +26,7 @@ impl TaskCtx {
             processed: Arc::new(AtomicU64::new(0)),
             total: Arc::new(AtomicU64::new(total)),
             current: Arc::new(Mutex::new(None)),
-            started: Instant::now(),
+            started: Mutex::new(Instant::now()),
         }
     }
 
@@ -69,6 +70,16 @@ impl TaskCtx {
         self.total.store(n, Ordering::SeqCst);
     }
 
+    /// 进入新阶段：清零已处理量并换总量。转换 / 重建这类「先解压再重压」的两段任务，
+    /// 不清零会让第二段进度从 >1 开始（被钳回 1，进度条僵死在满格）。
+    pub fn begin_phase(&self, total: u64) {
+        self.processed.store(0, Ordering::SeqCst);
+        self.total.store(total, Ordering::SeqCst);
+        if let Ok(mut s) = self.started.lock() {
+            *s = Instant::now();
+        }
+    }
+
     pub fn set_current(&self, name: &str) {
         if let Ok(mut c) = self.current.lock() {
             *c = Some(name.to_string());
@@ -93,7 +104,12 @@ impl TaskCtx {
 
     /// 瞬时速度（字节/秒）。
     pub fn speed(&self) -> Option<u64> {
-        let secs = self.started.elapsed().as_secs_f64();
+        let secs = self
+            .started
+            .lock()
+            .ok()
+            .map(|s| s.elapsed().as_secs_f64())
+            .unwrap_or_default();
         if secs < 0.5 {
             return None;
         }

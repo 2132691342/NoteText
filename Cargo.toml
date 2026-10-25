@@ -29,16 +29,17 @@ tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 
-# 压缩内核（specs/18）：7z / zip 容器 + tar 系 + 六种单文件流。
+# 压缩内核（specs/18）：7z / zip 容器 + tar 家族 + 六种单文件流。
 # sevenz-rust 只开压缩与 AES；zip 走 deflate-flate2 复用 flate2 后端，
-# 避免同一进程里拉两份 deflate 实现。
+# 避免同一进程里拉两份 deflate 实现。deflate64 / lzma 只影响读：别的工具写出的 zip 也能开。
 sevenz-rust = { version = "0.6", default-features = false, features = ["compress", "aes256", "bzip2", "zstd"] }
-zip = { version = "2.4", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate-flate2", "zstd", "time"] }
+zip = { version = "2.4", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate-flate2", "deflate64", "lzma", "zstd", "time"] }
 tar = "0.4"
 flate2 = "1"
 xz2 = "0.1"
 bzip2 = "0.6"
-zstd = "0.13"
+# zstdmt：压缩器开多线程，大文件单核吞吐撑不住
+zstd = { version = "0.13", features = ["zstdmt"] }
 lz4_flex = "0.11"
 brotli = "7"
 crc32fast = "1"

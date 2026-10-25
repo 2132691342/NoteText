@@ -176,6 +176,26 @@ ol {
   height: var(--nt-icon-lg);
 }
 
+/* 虚拟列表三件套：容器相对定位 + 占位块撑出滚动高度 + 绝对定位窗口做 transform 平移。
+   行内容自管布局（网格 / 弹性），但高度必须与 useVirtualList 的 rowHeight 一致。 */
+.nt-vlist {
+  position: relative;
+  overflow: auto;
+  min-height: 0;
+}
+
+.nt-vlist-pad {
+  pointer-events: none;
+}
+
+.nt-vlist-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+
 /* 图标钮：控件高度四档之外的单列，全站同一尺寸 */
 .nt-icon-btn {
   display: inline-flex;

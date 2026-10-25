@@ -374,6 +374,8 @@ export default {
     splitNow: 'Split…',
     selectFirst: 'Select entries first',
     emptyArchive: 'This archive has no entries',
+    opening: 'Reading archive…',
+    previewLoading: 'Loading preview…',
     wrongPassword: 'Wrong password, try again',
     needPassword: 'This archive needs a password',
     decrypt: 'Open',

@@ -55,6 +55,8 @@ pub fn convert_archive(req: &ConvertArchiveReq, ctx: &TaskCtx) -> AppResult<Conv
         ));
     }
     let dest_path = unique_path(&PathBuf::from(&req.dest));
+    // 进入重压阶段：进度清零重新走 0→1，速度也按新阶段计
+    ctx.begin_phase(0);
     let create_req = CreateArchiveReq {
         sources,
         dest: dest_path.to_string_lossy().to_string(),

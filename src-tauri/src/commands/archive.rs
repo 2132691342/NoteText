@@ -11,8 +11,9 @@ use crate::domain::archive_task::ArchiveTaskVO;
 use crate::pkg::error::AppResult;
 use tauri::State;
 
-/// 打开归档（同步）：条目表 + 分卷序列。加密且未提供密码时返回 9002。
-#[tauri::command]
+/// 打开归档（同步语义）：条目表 + 分卷序列。加密且未提供密码时返回 9002。
+/// 标 async 把执行挪到线程池：同步命令在主线程跑，大包列条目会冻住整个窗口。
+#[tauri::command(async)]
 pub fn open_archive(
     state: State<'_, AppState>,
     path: String,
@@ -21,8 +22,9 @@ pub fn open_archive(
     state.services.archive.open(&path, password.as_deref())
 }
 
-/// 预览条目（同步）：取前若干字节判文本 / 图片。
-#[tauri::command]
+/// 预览条目（同步语义）：取前若干字节判文本 / 图片。
+/// 标 async：固实 7z 预览单条目要解整块，在主线程做同样会冻窗口。
+#[tauri::command(async)]
 pub fn preview_archive_entry(
     state: State<'_, AppState>,
     req: PreviewEntryReq,

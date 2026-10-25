@@ -113,7 +113,7 @@ OnceLock，前端挂载后经 `take_launch_intent` 命令拉取一次，无竞�
 | 扩展名 | ProgId |
 |---|---|
 | txt md log json yml yaml toml ini csv xml | `NoteText.Text`，`role: "Viewer"` |
-| zip 7z tar tgz gz bz2 xz zst lz4 br | `NoteText.Archive`，`role: "Viewer"` |
+| zip 7z tar tgz txz tbz2 tbz tzst tlz4 tbr gz bz2 xz zst lz4 br | `NoteText.Archive`，`role: "Viewer"` |
 
 **`Viewer` 而不是 `Editor`**：出现在「打开方式」列表里，
 不抢占用户已有的默认程序。抢占默认是安装器最招人骂的行为之一。

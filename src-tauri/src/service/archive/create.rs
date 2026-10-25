@@ -64,9 +64,16 @@ impl CodecSink {
                 file,
                 bzip2::Compression::new(native_level(level)),
             )),
-            Some(CompressMethod::Zstd) => CodecSink::Zst(
-                zstd::Encoder::new(file, native_level(level) as i32).map_err(err_codec)?,
-            ),
+            Some(CompressMethod::Zstd) => {
+                // 多线程：单核 zstd 压大文件时吞吐减半以上，worker 按核数给
+                let threads = std::thread::available_parallelism()
+                    .map(|n| n.get() as u32)
+                    .unwrap_or(1);
+                let mut enc =
+                    zstd::Encoder::new(file, native_level(level) as i32).map_err(err_codec)?;
+                enc.multithread(threads).map_err(err_codec)?;
+                CodecSink::Zst(enc)
+            }
             Some(CompressMethod::Xz) => {
                 CodecSink::Xz(xz2::write::XzEncoder::new(file, native_level(level)))
             }
@@ -160,6 +167,11 @@ pub fn create_archive(req: &CreateArchiveReq, ctx: &TaskCtx) -> AppResult<Create
         ArchiveFormat::Zip => create_zip(req, ctx, &items, &dest, level, method)?,
         ArchiveFormat::Tar => create_tar(ctx, &items, &dest, None, level)?,
         ArchiveFormat::Tgz => create_tar(ctx, &items, &dest, Some(CompressMethod::Deflate), level)?,
+        ArchiveFormat::Txz => create_tar(ctx, &items, &dest, Some(CompressMethod::Xz), level)?,
+        ArchiveFormat::Tbz2 => create_tar(ctx, &items, &dest, Some(CompressMethod::BZip2), level)?,
+        ArchiveFormat::Tzst => create_tar(ctx, &items, &dest, Some(CompressMethod::Zstd), level)?,
+        ArchiveFormat::Tlz4 => create_tar(ctx, &items, &dest, Some(CompressMethod::Lz4), level)?,
+        ArchiveFormat::Tbr => create_tar(ctx, &items, &dest, Some(CompressMethod::Brotli), level)?,
         ArchiveFormat::Gz => create_single(ctx, &items, &dest, CompressMethod::Deflate, level)?,
         ArchiveFormat::Bz2 => create_single(ctx, &items, &dest, CompressMethod::BZip2, level)?,
         ArchiveFormat::Zst => create_single(ctx, &items, &dest, CompressMethod::Zstd, level)?,

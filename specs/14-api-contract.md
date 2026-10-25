@@ -124,8 +124,8 @@
 
 | 命令 | 入参 | 出参 |
 |---|---|---|
-| `open_archive` | `path`, `password?` | `OpenArchiveVO`（同步） |
-| `preview_archive_entry` | `req: PreviewEntryReq` | `PreviewEntryVO`（同步） |
+| `open_archive` | `path`, `password?` | `OpenArchiveVO`（同步语义；标 async 线程池执行，防大包列条目冻窗） |
+| `preview_archive_entry` | `req: PreviewEntryReq` | `PreviewEntryVO`（同上：固实 7z 预览要解整块） |
 | `get_archive_formats` | — | `ArchiveFormatVO[]` |
 | `create_archive` | `req: CreateArchiveReq` | `string`（任务 id） |
 | `extract_archive` | `req: ExtractArchiveReq` | `string`（任务 id） |

@@ -3,37 +3,56 @@
 
 use crate::domain::archive_format::{ArchiveFormat, CompressLevel, CompressMethod};
 use crate::pkg::error::{codes, AppError, AppResult};
-use std::io::Read;
+use crate::service::archive::ctx::TaskCtx;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-/// 综合探测归档格式：先魔数（tar 的 uStar 标记在偏移 257），
-/// 再扩展名兜底。识别不出返回 None，调用方决定报 9001 还是走普通文件。
+/// 综合探测归档格式：先魔数（tar 的 uStar 标记在偏移 257），再扩展名兜底。
+/// 流编码（gz/xz/...）包着 tar 时归一为对应 tar 家族变体，否则看到的是单条目而非目录树。
 pub fn detect_format(path: &Path) -> Option<ArchiveFormat> {
     if let Ok(mut f) = std::fs::File::open(path) {
         let mut buf = [0u8; 512];
         let n = f.read(&mut buf).unwrap_or(0);
         if let Some(fmt) = ArchiveFormat::from_magic(&buf[..n]) {
-            // 压缩单文件流：可能是包着 tar 的（.tar.gz / .tar.zst ...），
-            // 必须识别为 tar 容器，否则打开看到的是一个条目而不是目录树。
-            if matches!(
-                fmt,
-                ArchiveFormat::Gz | ArchiveFormat::Zst | ArchiveFormat::Bz2 | ArchiveFormat::Xz
-            ) && probe_tar_stream(path, fmt)
-            {
-                return Some(if fmt == ArchiveFormat::Gz {
-                    ArchiveFormat::Tgz
-                } else {
-                    ArchiveFormat::Tar
-                });
-            }
-            return Some(fmt);
+            return Some(resolve_stream(path, fmt));
         }
         if n >= 262 && &buf[257..262] == b"ustar" {
             return Some(ArchiveFormat::Tar);
         }
     }
     let ext = path.extension()?.to_string_lossy().to_string();
-    ArchiveFormat::from_ext(&ext)
+    Some(resolve_stream(path, ArchiveFormat::from_ext(&ext)?))
+}
+
+/// 流编码格式若包着 tar，归一为 tar 家族变体；其余原样返回。
+/// brotli 没有魔数，只能靠扩展名走到这里再探 tar（a.tar.br 便是这条路径）。
+fn resolve_stream(path: &Path, fmt: ArchiveFormat) -> ArchiveFormat {
+    if matches!(
+        fmt,
+        ArchiveFormat::Gz
+            | ArchiveFormat::Zst
+            | ArchiveFormat::Bz2
+            | ArchiveFormat::Xz
+            | ArchiveFormat::Lz4
+            | ArchiveFormat::Br
+    ) && probe_tar_stream(path, fmt)
+    {
+        return tar_variant_of(fmt);
+    }
+    fmt
+}
+
+/// 流编码 → 同编码的 tar 家族变体。
+fn tar_variant_of(codec: ArchiveFormat) -> ArchiveFormat {
+    match codec {
+        ArchiveFormat::Gz => ArchiveFormat::Tgz,
+        ArchiveFormat::Xz => ArchiveFormat::Txz,
+        ArchiveFormat::Bz2 => ArchiveFormat::Tbz2,
+        ArchiveFormat::Zst => ArchiveFormat::Tzst,
+        ArchiveFormat::Lz4 => ArchiveFormat::Tlz4,
+        ArchiveFormat::Br => ArchiveFormat::Tbr,
+        other => other,
+    }
 }
 
 /// 压缩流里是否包着 tar：解出前 512 字节看偏移 257 的 "ustar"。
@@ -59,6 +78,14 @@ fn probe_tar_stream(path: &Path, codec: ArchiveFormat) -> bool {
         }
         ArchiveFormat::Xz => {
             let mut d = xz2::read::XzDecoder::new(std::io::BufReader::new(f));
+            d.read(&mut head).unwrap_or(0)
+        }
+        ArchiveFormat::Lz4 => {
+            let mut d = lz4_flex::frame::FrameDecoder::new(std::io::BufReader::new(f));
+            d.read(&mut head).unwrap_or(0)
+        }
+        ArchiveFormat::Br => {
+            let mut d = brotli::Decompressor::new(std::io::BufReader::new(f), 4096);
             d.read(&mut head).unwrap_or(0)
         }
         _ => return false,
@@ -269,17 +296,14 @@ pub fn unique_path(path: &Path) -> PathBuf {
     parent.join(format!("{stem} (…){ext}"))
 }
 
-/// tar 容器外的压缩层：.tar.gz → Gz，.tar.zst → Zst，纯 .tar → None。
-/// detect 已判定这是 tar 流；压缩层按末级扩展名取。
+/// tar 容器外的压缩层：tgz → Gz、txz → Xz……纯 tar 按末级扩展名兜底
+/// （detect 把 .tar.zst 统一归为 Tzst 后这里仍保留按扩展名的路径，容错改名文件）。
 pub fn tar_codec(path: &Path, format: ArchiveFormat) -> Option<ArchiveFormat> {
-    match format {
-        ArchiveFormat::Tgz => Some(ArchiveFormat::Gz),
-        ArchiveFormat::Tar => {
-            let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
-            ArchiveFormat::from_ext(&ext).filter(|f| !f.is_container())
-        }
-        _ => None,
+    if let Some(codec) = format.tar_codec() {
+        return Some(codec);
     }
+    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    ArchiveFormat::from_ext(&ext).filter(|f| !f.is_container())
 }
 
 /// 给 tar 流包上对应解码器（无压缩层则原样返回）。
@@ -295,8 +319,28 @@ pub fn wrap_tar_codec(
         }
         Some(ArchiveFormat::Bz2) => Box::new(bzip2::read::BzDecoder::new(buf)),
         Some(ArchiveFormat::Xz) => Box::new(xz2::read::XzDecoder::new(buf)),
+        Some(ArchiveFormat::Lz4) => Box::new(lz4_flex::frame::FrameDecoder::new(buf)),
+        Some(ArchiveFormat::Br) => Box::new(brotli::Decompressor::new(buf, 32 * 1024)),
         _ => Box::new(buf),
     })
+}
+
+/// 分块拷贝：每块之间过取消 / 暂停检查点并累计进度。
+/// io::copy 一口气搬完会让大条目（单个几 GB 的文件）取消不了、进度条僵死。
+pub fn copy_with_ctx<R: Read, W: Write>(src: &mut R, dst: &mut W, ctx: &TaskCtx) -> AppResult<u64> {
+    let mut buf = vec![0u8; 1024 * 256];
+    let mut copied = 0u64;
+    loop {
+        ctx.check()?;
+        let n = src.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n])?;
+        copied += n as u64;
+        ctx.add(n as u64);
+    }
+    Ok(copied)
 }
 
 /* ---------------- 压缩库错误 → AppError ---------------- */

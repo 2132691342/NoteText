@@ -131,6 +131,8 @@ fn rewrite(
             .unwrap_or_else(|| "archive".into())
     );
     let dest_tmp = unique_path(&src.with_file_name(rebuild_name));
+    // 进入重建阶段：进度清零重新走 0→1（前一段是中转解压）
+    ctx.begin_phase(0);
     let create_req = CreateArchiveReq {
         sources,
         dest: dest_tmp.to_string_lossy().to_string(),

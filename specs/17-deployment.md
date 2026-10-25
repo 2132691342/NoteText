@@ -7,7 +7,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 ├── NoteText.exe                    # 主程序（前端资源已 embed，单文件可跑）
 └── bundle/
     └── nsis/
-        └── NoteText_1.0.0_x64-setup.exe   # NSIS 安装包
+        └── NoteText_2.0.0_x64-setup.exe   # NSIS 安装包
 ```
 
 产物**不入库**（`.gitignore` 排除 `/target/`）：本地构建一次就产生几百 MB，
@@ -125,8 +125,8 @@ release profile 设了 `strip = "symbols"` 与 `panic = "abort"`，
 - **前端资源 embed 进 exe**：分发只有一个文件，没有「忘了拷 dist 目录」这种失败模式；
   代价是 exe 从 ~2MB 变成 ~5MB，以及每次前端改动都要重新链接。
 - **不做自动更新**：没有更新服务与签名校验链路，安装包就是全部；
-  代价是修 bug 要靠用户重新下载安装，覆盖安装时先杀常驻进程
-  （托盘常驻时 exe 仍被占用，NSIS 的安装脚本会先 `taskkill`）。
+  代价是修 bug 要靠用户重新下载安装，覆盖安装前要先退出常驻进程
+  （托盘常驻时 exe 被占用，安装器无法替换）。
 - **只发 Windows amd64**：单平台让托盘、WebView2、路径分隔符都不必抽象；
   代价是其他平台完全不可用。Tauri 本身支持 mac / linux，
   真要扩平台时先扩 `platform/` 的平台分文件，再处理菜单快捷键差异。

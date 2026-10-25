@@ -56,7 +56,7 @@
         </div>
       </div>
 
-      <!-- 条目表 -->
+      <!-- 条目表：表头固定在滚动区外，正文虚拟滚动（几万条目只渲染可见行） -->
       <div class="nt-barch-table">
         <div class="nt-barch-tr is-head">
           <label class="nt-barch-check">
@@ -69,41 +69,52 @@
           <span>{{ t('archive.colMethod') }}</span>
           <span>{{ t('archive.colModified') }}</span>
         </div>
-        <label v-for="e in visibleEntries" :key="e.name" class="nt-barch-tr"
-          :class="{ 'is-dir': e.is_dir }" :title="e.name">
-          <span class="nt-barch-check" @click.prevent="toggle(e.name)">
-            <input type="checkbox" :checked="checked.has(e.name)" />
-          </span>
-          <span class="nt-barch-entry" @click.stop="onEntryClick(e)">
-            <NtIcon :name="e.is_dir ? 'folder' : 'file'" size="sm" />
-            <span class="nt-barch-ename">{{ shortName(e.name) }}</span>
-            <span v-if="e.encrypted" class="nt-barch-dot" :title="t('archive.encryptedBadge')" />
-          </span>
-          <span class="nt-barch-num">{{ e.is_dir ? '—' : formatSize(e.size) }}</span>
-          <span class="nt-barch-num">{{ e.is_dir ? '—' : formatSize(e.packed_size) }}</span>
-          <span class="nt-barch-num">{{ e.ratio != null ? Math.round(e.ratio * 100) : '—' }}</span>
-          <span class="nt-barch-method">{{ e.method ?? '—' }}</span>
-          <span class="nt-barch-num">{{ e.modified ? formatTime(e.modified) : '—' }}</span>
-        </label>
-        <div v-if="visibleEntries.length === 0" class="nt-barch-empty">
-          {{ filter ? t('common.empty') : t('archive.emptyArchive') }}
+        <div v-if="opening && !info" class="nt-barch-loading">
+          {{ t('archive.opening') }}
+        </div>
+        <div v-else ref="host" class="nt-vlist nt-barch-rows" @scroll.passive="onScroll">
+          <div class="nt-vlist-pad" :style="{ height: `${totalHeight}px` }"></div>
+          <div class="nt-vlist-window" :style="{ transform: `translateY(${offset}px)` }">
+            <label v-for="e in windowItems" :key="e.name" class="nt-barch-tr"
+              :class="{ 'is-dir': e.is_dir }" :style="{ height: `${rowHeight}px` }" :title="e.name">
+              <span class="nt-barch-check" @click.prevent="toggle(e.name)">
+                <input type="checkbox" :checked="checked.has(e.name)" />
+              </span>
+              <span class="nt-barch-entry" @click.stop="onEntryClick(e)">
+                <NtIcon :name="e.is_dir ? 'folder' : 'file'" size="sm" />
+                <span class="nt-barch-ename">{{ shortName(e.name) }}</span>
+                <span v-if="e.encrypted" class="nt-barch-dot" :title="t('archive.encryptedBadge')" />
+              </span>
+              <span class="nt-barch-num">{{ e.is_dir ? '—' : formatSize(e.size) }}</span>
+              <span class="nt-barch-num">{{ e.is_dir ? '—' : formatSize(e.packed_size) }}</span>
+              <span class="nt-barch-num">{{ e.ratio != null ? Math.round(e.ratio * 100) : '—' }}</span>
+              <span class="nt-barch-method">{{ e.method ?? '—' }}</span>
+              <span class="nt-barch-num">{{ e.modified ? formatTime(e.modified) : '—' }}</span>
+            </label>
+          </div>
+          <div v-if="visibleEntries.length === 0" class="nt-barch-empty">
+            {{ filter ? t('common.empty') : t('archive.emptyArchive') }}
+          </div>
         </div>
       </div>
 
       <!-- 预览区：点文件条目时出现在表格下方 -->
-      <div v-if="preview" class="nt-barch-preview">
-        <div class="nt-barch-pvhead">
-          <span>{{ t('archive.previewOf', { name: shortName(preview.name) }) }}</span>
-          <button class="nt-icon-btn" @click="preview = null">
-            <NtIcon name="x" size="sm" />
-          </button>
-        </div>
-        <img v-if="preview.kind === 'image' && preview.data_url" :src="preview.data_url" class="nt-barch-pvimg" />
-        <pre v-else-if="preview.kind === 'text'" class="nt-barch-pvtext">{{ preview.content ?? '' }}</pre>
-        <p v-else class="nt-barch-pvnone">
-          {{ preview.too_large ? t('archive.previewTooLarge') : t('archive.previewOther') }}
-        </p>
-        <p v-if="preview.truncated" class="nt-barch-pvnone">{{ t('archive.previewTruncated') }}</p>
+      <div v-if="preview || previewLoading" class="nt-barch-preview">
+        <div v-if="previewLoading" class="nt-barch-pvhint">{{ t('archive.previewLoading') }}</div>
+        <template v-else>
+          <div class="nt-barch-pvhead">
+            <span>{{ t('archive.previewOf', { name: shortName(preview!.name) }) }}</span>
+            <button class="nt-icon-btn" @click="preview = null">
+              <NtIcon name="x" size="sm" />
+            </button>
+          </div>
+          <img v-if="preview!.kind === 'image' && preview!.data_url" :src="preview!.data_url" class="nt-barch-pvimg" />
+          <pre v-else-if="preview!.kind === 'text'" class="nt-barch-pvtext">{{ preview!.content ?? '' }}</pre>
+          <p v-else class="nt-barch-pvnone">
+            {{ preview!.too_large ? t('archive.previewTooLarge') : t('archive.previewOther') }}
+          </p>
+          <p v-if="preview!.truncated" class="nt-barch-pvnone">{{ t('archive.previewTruncated') }}</p>
+        </template>
       </div>
 
       <!-- 解压选项 -->
@@ -128,6 +139,7 @@ import { useI18n } from 'vue-i18n'
 import { ElButton, ElCheckbox, ElInput, ElOption, ElSelect } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
+import { useVirtualList } from '@/composables/useVirtualList'
 import { api, normalizeError } from '@/api'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
@@ -149,6 +161,7 @@ const opening = ref(false)
 const filter = ref('')
 const checked = ref<Set<string>>(new Set())
 const preview = ref<PreviewEntryVO | null>(null)
+const previewLoading = ref(false)
 const extractDir = ref('')
 const overwrite = ref('overwrite')
 const createSubdir = ref(true)
@@ -159,6 +172,18 @@ const formats = ref<ArchiveFormatVO[]>([])
 void api.archive.formats().then((fs) => {
   formats.value = fs ?? []
 })
+const archiveExts = computed(() => new Set(formats.value.flatMap((f) => f.extensions)))
+
+/** 剥掉末尾最多两层压缩后缀（.tar.gz 两层 / .tgz 一层），与后端 strip_archive_ext 对齐。 */
+function stripArchiveExt(name: string): string {
+  let s = name
+  for (let i = 0; i < 2; i++) {
+    const m = s.match(/\.([^.\\/]+)$/)
+    if (!m || !archiveExts.value.has(m[1].toLowerCase())) break
+    s = s.slice(0, -m[0].length)
+  }
+  return s || name
+}
 const writeFormats = computed(() => formats.value.filter((f) => f.capabilities.write))
 const ratioText = computed(() =>
   info.value?.ratio != null ? t('archive.ratio', { v: Math.round(info.value.ratio * 100) }) : '',
@@ -169,6 +194,10 @@ const visibleEntries = computed(() => {
   const q = filter.value.trim().toLowerCase()
   return q ? list.filter((e) => e.name.toLowerCase().includes(q)) : list
 })
+const { host, totalHeight, windowItems, offset, onScroll, rowHeight } = useVirtualList(
+  visibleEntries,
+  28,
+)
 const selectedFileCount = computed(
   () => visibleEntries.value.filter((e) => !e.is_dir && checked.value.has(e.name)).length,
 )
@@ -191,7 +220,7 @@ async function open() {
     // 分卷序列：切回首卷路径，增删解压都落在首卷
     if (vo.parts.length > 0) path.value = vo.parts[0]
     if (createSubdir.value) {
-      extractDir.value = joinPath(dirName(path.value), baseName(path.value).replace(/\.[^.\\/]+$/, ''))
+      extractDir.value = joinPath(dirName(path.value), stripArchiveExt(baseName(path.value)))
     }
   } catch (e) {
     const err = normalizeError(e)
@@ -290,7 +319,7 @@ async function onConvert() {
   converting.value = true
   try {
     const ext = writeFormats.value.find((f) => f.id === convertTo.value)?.extensions[0] ?? 'zip'
-    const stem = baseName(path.value).replace(/\.[^.\\/]+$/, '')
+    const stem = stripArchiveExt(baseName(path.value))
     await api.archive.convert({
       archive: path.value,
       dest: joinPath(dirName(path.value), `${stem}.${ext}`),
@@ -317,6 +346,8 @@ async function onEntryClick(e: ArchiveEntryVO) {
     preview.value = null
     return
   }
+  // 固实 7z 预览单条目要解整块：可能要等几秒，给出 loading 而不是无反馈
+  previewLoading.value = true
   try {
     preview.value = await api.archive.previewEntry({
       archive: path.value,
@@ -325,6 +356,8 @@ async function onEntryClick(e: ArchiveEntryVO) {
     })
   } catch (err) {
     toast.bad(normalizeError(err).message)
+  } finally {
+    previewLoading.value = false
   }
 }
 
@@ -414,10 +447,13 @@ async function pickExtractDir() {
 .nt-barch-table {
   display: flex;
   flex-direction: column;
-  max-height: 42vh;
-  overflow: auto;
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-sm);
+  overflow: hidden;
+}
+
+.nt-barch-rows {
+  max-height: 42vh;
 }
 
 .nt-barch-tr {
@@ -425,7 +461,9 @@ async function pickExtractDir() {
   grid-template-columns: 26px minmax(180px, 1fr) 76px 76px 48px 70px 110px;
   align-items: center;
   gap: var(--nt-sp-2);
-  padding: 2px var(--nt-sp-2);
+  width: 100%;
+  padding: 0 var(--nt-sp-2);
+  box-sizing: border-box;
   font-size: var(--nt-fs-sm);
   cursor: pointer;
 }
@@ -435,13 +473,27 @@ async function pickExtractDir() {
 }
 
 .nt-barch-tr.is-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   background: var(--nt-elev-surface);
   color: var(--nt-ink-3);
   font-size: var(--nt-fs-hint);
   cursor: default;
+  height: auto;
+  flex: none;
+  padding: var(--nt-sp-1) var(--nt-sp-2);
+}
+
+.nt-barch-loading {
+  padding: var(--nt-sp-6);
+  text-align: center;
+  color: var(--nt-ink-3);
+  font-size: var(--nt-fs-sm);
+}
+
+.nt-barch-empty {
+  padding: var(--nt-sp-6);
+  text-align: center;
+  color: var(--nt-ink-muted);
+  font-size: var(--nt-fs-sm);
 }
 
 .nt-barch-tr.is-dir .nt-barch-ename {
@@ -488,13 +540,6 @@ async function pickExtractDir() {
   color: var(--nt-ink-3);
 }
 
-.nt-barch-empty {
-  padding: var(--nt-sp-6);
-  text-align: center;
-  color: var(--nt-ink-muted);
-  font-size: var(--nt-fs-sm);
-}
-
 .nt-barch-preview {
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-sm);
@@ -513,6 +558,13 @@ async function pickExtractDir() {
   position: sticky;
   top: 0;
   background: var(--nt-elev-surface);
+}
+
+.nt-barch-pvhint {
+  padding: var(--nt-sp-3);
+  text-align: center;
+  color: var(--nt-ink-3);
+  font-size: var(--nt-fs-sm);
 }
 
 .nt-barch-pvtext {

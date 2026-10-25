@@ -8,8 +8,8 @@ use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::archive::ctx::TaskCtx;
 use crate::service::archive::parts::ReadSeek;
 use crate::service::archive::{
-    detect_format, err_sevenz, err_zip, password_error, sanitize_entry_name, split_parts,
-    tar_codec, to_slash, unique_path, wrap_tar_codec,
+    copy_with_ctx, detect_format, err_sevenz, err_zip, password_error, sanitize_entry_name,
+    split_parts, tar_codec, to_slash, unique_path, wrap_tar_codec,
 };
 use std::fs::File;
 use std::io::{Read, Write};
@@ -73,7 +73,14 @@ pub fn extract_archive(req: &ExtractArchiveReq, ctx: &TaskCtx) -> AppResult<Extr
                 ctx,
             )?
         }
-        ArchiveFormat::Tar | ArchiveFormat::Tgz => {
+        // tar 家族（纯 tar + 各压缩层变体）共用同一条流式管线
+        ArchiveFormat::Tar
+        | ArchiveFormat::Tgz
+        | ArchiveFormat::Txz
+        | ArchiveFormat::Tbz2
+        | ArchiveFormat::Tzst
+        | ArchiveFormat::Tlz4
+        | ArchiveFormat::Tbr => {
             let (reader, _len) = open()?;
             let codec = tar_codec(&src, format);
             extract_tar(reader, codec, &dest, selected.as_deref(), policy, ctx)?
@@ -301,9 +308,7 @@ fn extract_zip(
             archive.by_index(i).map_err(err_zip)?
         };
         let mut f = prepare_file(&target)?;
-        std::io::copy(&mut entry, &mut f)?;
-        let copied = entry.size();
-        ctx.add(copied);
+        copy_with_ctx(&mut entry, &mut f, ctx)?;
         file_count += 1;
     }
     Ok(ExtractArchiveVO {
@@ -409,28 +414,28 @@ fn extract_single(
     let size = match format {
         ArchiveFormat::Gz => {
             let mut d = flate2::read::GzDecoder::new(File::open(src)?);
-            std::io::copy(&mut d, &mut f)?
+            copy_with_ctx(&mut d, &mut f, ctx)?
         }
         ArchiveFormat::Bz2 => {
             let mut d = bzip2::read::BzDecoder::new(File::open(src)?);
-            std::io::copy(&mut d, &mut f)?
+            copy_with_ctx(&mut d, &mut f, ctx)?
         }
         ArchiveFormat::Zst => {
             let mut d = zstd::stream::read::Decoder::new(File::open(src)?)
                 .map_err(|e| AppError::wrap(codes::ARCHIVE_CORRUPT, "zstd 流解不开", e))?;
-            std::io::copy(&mut d, &mut f)?
+            copy_with_ctx(&mut d, &mut f, ctx)?
         }
         ArchiveFormat::Xz => {
             let mut d = xz2::read::XzDecoder::new(File::open(src)?);
-            std::io::copy(&mut d, &mut f)?
+            copy_with_ctx(&mut d, &mut f, ctx)?
         }
         ArchiveFormat::Lz4 => {
             let mut d = lz4_flex::frame::FrameDecoder::new(File::open(src)?);
-            std::io::copy(&mut d, &mut f)?
+            copy_with_ctx(&mut d, &mut f, ctx)?
         }
         ArchiveFormat::Br => {
             let mut d = brotli::Decompressor::new(File::open(src)?, 32 * 1024);
-            std::io::copy(&mut d, &mut f)?
+            copy_with_ctx(&mut d, &mut f, ctx)?
         }
         _ => {
             return Err(AppError::new(
@@ -439,7 +444,6 @@ fn extract_single(
             ))
         }
     };
-    ctx.add(size);
     Ok(ExtractArchiveVO {
         dest: String::new(),
         file_count: 1,

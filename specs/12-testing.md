@@ -28,7 +28,7 @@ src-tauri/tests/
 | 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
 | 批量 | `batch_two_phase_applies_only_confirmed_plans` | 扫描就落盘 / 改掉没勾选的文件 / 重命名覆盖已有文件 / 该落地的没落地 |
 | 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
-| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 |
+| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 / 改名后的 .tar.xz .tar.br 没被识别成 tar 家族 |
 | | `archive_update_split_join_preserve_bytes` | 追加 / 删除条目后丢内容 / 分卷首卷打不开 / 合并还原的字节不对 |
 | | `archive_rejects_traversal_and_distinguishes_password_and_corruption` | 恶意条目名把文件写到目标目录之外 / 要密码与密码错混成一个错（前端弹不出密码框）/ 损坏的包测试照样说「好」 |
 | 系统关联 | `file_assoc_register_round_trip_lands_open_with_and_default` | 双击关联文件打不开 NoteText（open 命令丢引号 / ProgId 挂错键）/ 注销后留悬空默认 / 注销一组误伤另一组 |
