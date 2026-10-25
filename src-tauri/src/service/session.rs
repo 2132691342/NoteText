@@ -3,8 +3,6 @@
 
 use std::sync::Arc;
 
-use tauri::WebviewWindow;
-
 use crate::app::bootstrap::now_ms;
 use crate::db::Db;
 use crate::domain::session::{SessionDO, SessionRestoreVO, SessionSaveReq, TabDO};
@@ -47,15 +45,9 @@ impl SessionService {
         })
     }
 
-    /// 记住窗口大小：位置与尺寸变了就回写，下次启动放回原处。只记「正常态」的尺寸：最大化时记的是最大化前的还原尺寸， 否则恢复出来是个奇怪的大窗口。
-    pub fn remember_window(&self, window: &WebviewWindow) -> AppResult<()> {
-        let size = window
-            .inner_size()
-            .map_err(|e| AppError::wrap(codes::SHELL_FAILED, "读取窗口尺寸失败", e))?;
-        let maximized = window
-            .is_maximized()
-            .map_err(|e| AppError::wrap(codes::SHELL_FAILED, "读取窗口状态失败", e))?;
-
+    /// 记住窗口大小：commands 层读好尺寸与最大化状态传进来，service 不知道窗口类型。
+    /// 只记「当前」的尺寸与最大化标记，恢复时由前端决定放回方式。
+    pub fn remember_window(&self, width: i64, height: i64, maximized: bool) -> AppResult<()> {
         self.db.with(|conn| {
             conn.execute(
                 "INSERT INTO sessions (id, window_width, window_height, window_maximized, updated_at)
@@ -65,12 +57,7 @@ impl SessionService {
                     window_height = excluded.window_height,
                     window_maximized = excluded.window_maximized,
                     updated_at = excluded.updated_at",
-                rusqlite::params![
-                    size.width as i64,
-                    size.height as i64,
-                    maximized as i64,
-                    now_ms()
-                ],
+                rusqlite::params![width, height, maximized as i64, now_ms()],
             )
             .map_err(|e| AppError::wrap(codes::DB_FAILED, "保存窗口状态失败", e))?;
             Ok(())

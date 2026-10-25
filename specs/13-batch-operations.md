@@ -68,7 +68,7 @@ pub struct BatchReplaceVO {
 
 跳过的文件计入 `skipped`，不静默吞掉。
 
-### glob 只支持三种形状
+### glob 只支持四种形状
 
 `*xxx` / `xxx*` / `*xxx*` / 精确名。目录级查找里用户真正会写的就这几种，
 上完整 glob 库不值当。

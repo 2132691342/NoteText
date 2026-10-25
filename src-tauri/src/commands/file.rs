@@ -117,9 +117,16 @@ pub fn detect_encoding(
 }
 
 /// 监听目录（文件树外部变更）。
+/// 事件转发在命令层接线：service 收闭包，不引 tauri。
 #[tauri::command]
 pub fn watch_dir(state: State<'_, AppState>, app: AppHandle, dir: String) -> AppResult<()> {
-    state.services.file.watch_dir(&dir, app)
+    state.services.file.watch_dir(
+        &dir,
+        Box::new(move |paths| {
+            use tauri::Emitter;
+            let _ = app.emit("fs:changed", paths);
+        }),
+    )
 }
 
 /// 取消监听。

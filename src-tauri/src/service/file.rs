@@ -33,6 +33,9 @@ pub struct FileService {
 type SelfWrites =
     std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>;
 
+/// 文件变更回调：commands 层注入（转发 emit），service 不引 tauri。
+pub type WatchSink = Box<dyn Fn(Vec<String>) + Send>;
+
 /// 该路径是否在自写窗口内（监控回调用，拿不到 &self）。
 fn is_recent(writes: &SelfWrites, path: &str, now: std::time::Instant) -> bool {
     let Ok(map) = writes.lock() else {
@@ -162,7 +165,7 @@ impl FileService {
                 ),
             ));
         }
-        fs::read(p).map_err(|e| AppError::wrap("1002", "读不了：文件被占用", e))
+        fs::read(p).map_err(|e| AppError::wrap("1001", "读不了：文件被占用", e))
     }
 
     /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。
@@ -399,14 +402,14 @@ impl FileService {
     }
 
     /// 监听目录：文件树的外部变更通知。复用同一个 watcher：每次 `watch` 都新建一个会让 inotify/FSEvents 句柄随目录切换无限增长。
-    pub fn watch_dir(&self, dir: &str, app: tauri::AppHandle) -> AppResult<()> {
+    /// watcher 只建一次：首个 sink 长驻，后续 watch_dir 的 sink 丢弃。
+    pub fn watch_dir(&self, dir: &str, on_change: WatchSink) -> AppResult<()> {
         let mut guard = self
             .watcher
             .lock()
             .map_err(|_| AppError::new(codes::WATCH_FAILED, "监控器锁被污染"))?;
 
         if guard.is_none() {
-            let handle = app.clone();
             // 回调里要用「自己刚写过」的判据，所以把 self_writes 的句柄挪进去。
             let self_writes = SelfWrites::clone(&self.self_writes);
             let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -431,7 +434,7 @@ impl FileService {
                             .map(|p| p.to_string_lossy().to_string())
                             .collect();
                         if !paths.is_empty() {
-                            let _ = tauri::Emitter::emit(&handle, "fs:changed", paths);
+                            on_change(paths);
                         }
                     }
                     Err(e) => tracing::warn!(error = %e, "文件监控事件出错"),
@@ -473,13 +476,13 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
     ));
 
     fs::write(&tmp, bytes).map_err(|e| {
-        AppError::wrap("1002", "写临时文件失败", e).with_detail(format!("路径：{}", tmp.display()))
+        AppError::wrap("1001", "写临时文件失败", e).with_detail(format!("路径：{}", tmp.display()))
     })?;
 
     fs::rename(&tmp, path).map_err(|e| {
         // rename 失败时清掉临时文件，否则同目录会留下一堆 .*.notetext-tmp。
         let _ = fs::remove_file(&tmp);
-        AppError::wrap("1002", "替换原文件失败", e).with_detail(format!("路径：{}", path.display()))
+        AppError::wrap("1001", "替换原文件失败", e).with_detail(format!("路径：{}", path.display()))
     })
 }
 

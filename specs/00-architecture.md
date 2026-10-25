@@ -98,7 +98,7 @@ main.rs
        ├─ app::bootstrap::build(&paths)
        │    ├─ Db::open(&paths.db_path)  WAL + busy_timeout + migrate
        │    ├─ SettingsRepo::load        没有则写默认配置
-       │    └─ Services::new(db)         file / editor / tools / userdata / batch / archive
+       │    └─ Services::new(db)         file / file_ops / session / tools / userdata / batch / archive
        ├─ tauri::Builder
        │    ├─ plugin(single_instance)   二次启动转交
        │    ├─ plugin(dialog)            原生打开 / 保存对话框

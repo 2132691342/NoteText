@@ -11,8 +11,15 @@ pub fn on_ready(app: &AppHandle) {
     tracing::info!("窗口就绪，广播 app:ready");
 
     // 窗口状态回写：把当前窗口大小存进会话，下次启动恢复原尺寸。
+    // 尺寸读取在 app 层做完：service 只收纯数值。
     if let Some(window) = app.get_webview_window("main") {
-        let _ = state.services.session.remember_window(&window);
+        if let (Ok(size), Ok(maximized)) = (window.inner_size(), window.is_maximized()) {
+            let _ = state.services.session.remember_window(
+                size.width as i64,
+                size.height as i64,
+                maximized,
+            );
+        }
     }
 
     let _ = tauri::Emitter::emit(app, "app:ready", ());

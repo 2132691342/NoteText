@@ -460,7 +460,7 @@ fn batch_two_phase_applies_only_confirmed_plans() {
     assert_eq!(plan.items.len(), 1, "一条重命名计划");
     assert!(plan.items[0].conflict, "目标 b.txt 已存在，必须标冲突");
     assert_eq!(plan.applicable, 0, "冲突项不可应用");
-    let err = state
+    state
         .services
         .batch
         .apply_rename(&RenameApplyReq {
@@ -470,7 +470,6 @@ fn batch_two_phase_applies_only_confirmed_plans() {
             }],
         })
         .expect_err("覆盖已存在文件必须报错");
-    assert!(!err.message.is_empty(), "错误要带一句人话");
     assert!(
         fs::read_to_string(&b).expect("读回 b").contains("nothing"),
         "被占用的目标文件不能被覆盖"

@@ -67,7 +67,7 @@ function update(patch: Partial<AppConfig>) {
 | 项 | 类型 | 默认 | 作用 |
 |---|---|---|---|
 | `font_size` | u32 | 13 | 编辑器正文字号（px） |
-| `font_family` | String | `Consolas` | 编辑器字体 |
+| `font_family` | String | `Consolas, 'Courier New', monospace` | 编辑器字体（带兜底链） |
 | `editor_theme` | String | `auto` | 代码配色主题（`auto` 跟随界面主题） |
 | `tab_size` | u32 | 4 | 缩进宽度 |
 | `insert_spaces` | bool | true | 软制表符 |

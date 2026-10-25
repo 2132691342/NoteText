@@ -15,7 +15,7 @@
 ```ts
 interface Command {
   id: string                    // 全局唯一，如 'file.save'
-  group: MenuGroup              // 十个分组之一（stores/commands.ts 的 MENU_GROUPS）
+  group: MenuGroup              // 十一个分组之一（stores/commands.ts 的 MENU_GROUPS）
   labelKey: string              // i18n key
   key?: string                  // 默认组合键（Tauri accelerator 格式）
   run: () => void | Promise<void>
@@ -28,8 +28,8 @@ interface Command {
 
 反过来做（先在菜单写死一个动作）就会出现「菜单能用的功能按键按不了」。
 
-当前 102 条命令：`file` 18 / `edit` 30 / `search` 5 / `view` 12 /
-`encoding` 6 / `language` 2 / `tools` 24 / `compare` 3 / `help` 2。
+当前 108 条命令：`file` 18 / `edit` 30 / `search` 5 / `view` 12 /
+`encoding` 6 / `language` 2 / `archive` 6 / `tools` 22 / `compare` 3 / `help` 2。
 `settings` 组不进下拉（它是路由目标，渲染成菜单条右侧入口）。
 
 **键位表与命令表必须一致**：命令自身声明的 `key` 是真相源，
@@ -84,7 +84,8 @@ dialogs.open('json', seedText, extra)
 两个视图（分屏），按 tabId 定位才能落在正确的那个上。
 
 组件向外的通知（状态栏 / 工具栏消费）走 document 自定义事件，
-全部带 `tabId` 防止分屏与多标签串位：
+跨标签的都带 `tabId` 防止分屏与多标签串位
+（`bookmarks-changed` / `nt-marks-changed` 是全局通知，不带 tabId）：
 
 | 事件 | 方向 | 用途 |
 |---|---|---|

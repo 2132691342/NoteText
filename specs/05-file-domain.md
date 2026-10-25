@@ -85,7 +85,7 @@ detect(bytes) -> (encoding, low_confidence)
 | utf-16le / utf-16be | 手写 `encode_utf16` / `decode_utf16` |
 | windows-1252 / iso-8859-1 | 单字节表（32 个高位 + 0xA0–0xFF 直映） |
 | gb18030 / big5 / shift_jis | 双字节表（常用区子集） |
-| euc-jp / euc-kr / koi8-r | 只做 ASCII 直通，其余给 U+FFFD |
+| euc-jp / euc-kr / koi8-r | 只做 ASCII 直通，高位字节落 Latin-1 区（U+0080–U+00FF） |
 
 **表里没有的字符解成 U+FFFD / 编成 `?`**：宁可显式问号，不要静默丢字。
 
@@ -97,7 +97,7 @@ detect(bytes) -> (encoding, low_confidence)
 ```
 read_dir(dir)
   ├─ 不是目录 → FILE_NOT_FOUND
-  ├─ 应用 ignore_patterns（按名字精确匹配或 glob）
+  ├─ 应用 ignore_patterns（按名字精确匹配）
   ├─ 权限不足的项跳过（不是整棵目录读失败）
   └─ 排序：目录在前，名称不区分大小写
 ```
@@ -105,16 +105,17 @@ read_dir(dir)
 **一层不递归**：不递归算总量，用户展开 `.git` 才知道代价就晚了。
 
 **忽略规则来自配置**：`FileConfig.ignore_patterns` 默认
-`node_modules` / `.git` / `target` / `dist`。匹配用 `globMatch`
-（只支持 `*` 与 `?`，够常见规则）。
+`node_modules` / `.git` / `target` / `dist`。匹配按名字精确相等，
+不解析通配符——常见忽略目标都是固定的构建产物名，精确匹配可预期；
+按扩展名过滤的场景交给查找工具的 glob。
 
 ### 文件监控
 
 ```
-watch_dir(dir, app)
+watch_dir(dir, on_change)
   ├─ 一个 RecommendedWatcher 复用（每次新建会让 inotify 句柄无限增长）
   ├─ 只报 is_modify / is_create / is_remove（访问时间之类的噪音丢掉）
-  └─ emit('fs:changed', paths)
+  └─ 变更经 commands 层注入的回调转发 → emit('fs:changed', paths)
 ```
 
 **监控失败不阻断启动**：编辑器核心功能不依赖它，失败只让侧栏的监控面板不可用。

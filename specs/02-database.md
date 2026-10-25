@@ -68,5 +68,5 @@ if v < 1 { conn.execute_batch(MIGRATION_V1)?; conn.execute_batch("PRAGMA user_ve
 但换来的零外部依赖值得。
 
 **不引 ORM**：对象关系映射那层抽象在这个规模下是净负担——
-7 张表、几十个字段，手写 SQL 更短也更快。要引 ORM 的门槛是
+8 张表、几十个字段，手写 SQL 更短也更快。要引 ORM 的门槛是
 「跨库可移植」，而 NoteText 只跑 SQLite。

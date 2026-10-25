@@ -64,11 +64,9 @@ restore_session() -> SessionRestoreVO { session, tabs, missing }
 
 ### 窗口状态记忆
 
-`remember_window(window)` 由前端在 resize / 最大化时调：
-
-- 只记「正常态」的尺寸：最大化时记的是最大化前的还原尺寸，
-  否则恢复出来是个奇怪的大窗口；
-- `window_maximized` 单独记，恢复时先设尺寸再最大化。
+`remember_window` 只在后端启动收尾调一次（`app::lifecycle::on_ready`）：
+尺寸与最大化状态在 app 层读好后以纯数值传给 service。
+`window_maximized` 单独记，恢复时先设尺寸再最大化。
 
 ## 约束
 

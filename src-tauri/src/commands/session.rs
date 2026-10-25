@@ -5,7 +5,7 @@ use tauri::State;
 
 use crate::app::bootstrap::AppState;
 use crate::domain::session::{SessionRestoreVO, SessionSaveReq};
-use crate::pkg::error::AppResult;
+use crate::pkg::error::{codes, AppError, AppResult};
 
 /// 恢复上次会话。
 #[tauri::command]
@@ -45,7 +45,17 @@ pub fn patch_session(
 }
 
 /// 记住窗口尺寸（前端在 resize / 最大化时调）。
+/// 窗口读取留在命令层：service 只收纯数值。
 #[tauri::command]
 pub fn remember_window(state: State<'_, AppState>, window: tauri::WebviewWindow) -> AppResult<()> {
-    state.services.session.remember_window(&window)
+    let size = window
+        .inner_size()
+        .map_err(|e| AppError::wrap(codes::SHELL_FAILED, "读取窗口尺寸失败", e))?;
+    let maximized = window
+        .is_maximized()
+        .map_err(|e| AppError::wrap(codes::SHELL_FAILED, "读取窗口状态失败", e))?;
+    state
+        .services
+        .session
+        .remember_window(size.width as i64, size.height as i64, maximized)
 }

@@ -90,7 +90,7 @@ cursor）：代码区可独立压暗，不让界面 chrome 的亮色抢走代码
 | 组 | 变量 |
 |---|---|
 | 字号 | `--nt-fs-2xs`(10) ~ `--nt-fs-3xl`(32)，8 级 |
-| 间距 | `--nt-sp-1`(4) ~ `--nt-sp-12`(48)，4 的倍数 |
+| 间距 | `--nt-sp-1`(4) ~ `--nt-sp-6`(24) 加 `sp-8`(32) / `sp-10`(40) / `sp-12`(48)，共 9 档 |
 | 圆角 | `--nt-radius-xs`(4) / `sm`(6) / `radius`(8) / `lg`(12) / `xl`(14) / `full`（六档） |
 | 控件高度 | `--nt-ctl-h-sm`(26) / `ctl-h`(34) / `ctl-h-lg`(38) / `ctl-h-xl`(44) / `ctl-icon`(32) |
 | Chrome 高度 | `--nt-h-menu`(32) / `toolbar`(34) / `tab`(32) / `sidebar-header`(30) / `status`(26) |

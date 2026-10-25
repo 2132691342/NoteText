@@ -69,10 +69,7 @@ if ($Full) {
 
 # rustfmt 必须无输出：.gitattributes 把 *.rs 钉成 LF，CRLF 会被一律报成未格式化。
 Invoke-Step 'rustfmt' {
-    $bad = @(cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check 2>&1 |
-        Where-Object { $_ -and $_ -notmatch '^Diff in' })
-    foreach ($f in $bad) { Write-Host "      需要格式化：$f" -ForegroundColor Yellow }
-    $global:LASTEXITCODE = [int][bool]$bad
+    cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 }
 
 Invoke-Step 'cargo check' { cargo check --manifest-path src-tauri/Cargo.toml --all-targets }

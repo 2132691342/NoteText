@@ -79,8 +79,8 @@ offset_at_line_col(text, line, col) -> Option<usize>
 ### 脏标记
 
 **按「与载入时快照不同」判**，不是按「有没有输入过」：
-用户改了又改回来，标签该是干净的。`CodeEditor.vue` 的
-`updateListener` 里比较 `vu.state.doc.toString() !== baseline`。
+用户改了又改回来，标签该是干净的。比较在 `useEditorRegistry` 的
+`isDirty()`（比较文档与 baseline），编辑器的 `updateListener` 调它。
 
 ## 前端编辑器容器
 
@@ -97,14 +97,20 @@ offset_at_line_col(text, line, col) -> Option<usize>
 | `tabSizeComp` | `editor.tab_size` |
 | `lineNumComp` | `editor.line_numbers` |
 | `foldComp` | `editor.fold_gutter` |
+| `activeLineComp` | 当前行高亮 |
+| `bracketComp` | 括号配对着色 |
+| `whitespaceComp` | 空白符显示 |
+| `guidesComp` | 缩进参考线 + 括号配色 + 行尾标记（「看法」三件合一体） |
+| `bookmarkComp` | 书签 gutter（行号左侧一列点） |
+| `marksComp` | 5 色词标记装饰 |
 
 ### 语言加载
 
 | 语言 | 加载方式 |
 |---|---|
-| js / ts / json / html / css / xml / markdown / sql / yaml / vue | 静态引入（常见且体积小） |
+| js / ts / json / html / css / scss / xml / markdown / sql / yaml / vue | 静态引入（常见且体积小） |
 | rust / go / java / python / cpp / php | 动态 `import()`（语言包较大） |
-| csharp / ruby / kotlin / shell / powershell / ini / toml / diff | legacy modes（`StreamLanguage`） |
+| csharp / ruby / kotlin / lua / shell / powershell / ini / toml / diff | legacy modes（`StreamLanguage`） |
 
 首屏用 `syncExtensions()` 拿静态部分，异步包加载完再 `reconfigure`——
 不会因为等语言包而白屏。
