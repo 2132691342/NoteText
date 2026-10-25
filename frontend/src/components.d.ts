@@ -31,6 +31,7 @@ declare module 'vue' {
     EditorArea: typeof import('./components/editor/EditorArea.vue')['default']
     EditorPanel: typeof import('./components/settings/EditorPanel.vue')['default']
     EncodingToolDialog: typeof import('./components/dialogs/EncodingToolDialog.vue')['default']
+    ExtractArchiveDialog: typeof import('./components/dialogs/ExtractArchiveDialog.vue')['default']
     FilePanel: typeof import('./components/settings/FilePanel.vue')['default']
     FileTreeNode: typeof import('./components/panels/FileTreeNode.vue')['default']
     FileTreePanel: typeof import('./components/panels/FileTreePanel.vue')['default']

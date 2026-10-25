@@ -178,6 +178,13 @@ const treeMenuItems = computed<MenuItem[]>(() => {
             },
           },
           {
+            label: t('tree.extractTo'),
+            run: () => {
+              menu.value = null
+              dialogs.open('extractArchive', '', { path: archiveEntry.path })
+            },
+          },
+          {
             label: t('tree.extractHere', { name: archiveEntry.name }),
             run: () => void extractHere(archiveEntry.path),
           },
@@ -216,6 +223,13 @@ const treeMenuItems = computed<MenuItem[]>(() => {
             run: () => {
               menu.value = null
               dialogs.open('createArchive', '', { sources: [] })
+            },
+          },
+          {
+            label: t('tree.extractArchive'),
+            run: () => {
+              menu.value = null
+              dialogs.open('extractArchive', '', {})
             },
           },
         ]

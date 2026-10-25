@@ -27,6 +27,7 @@ export type DialogKind =
   | 'logViewer'
   | 'drafts'
   | 'createArchive'
+  | 'extractArchive'
   | 'archiveBrowser'
   | 'archiveTasks'
   | 'splitJoin'

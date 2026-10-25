@@ -21,8 +21,8 @@ export interface Command {
 /**
  * 菜单分组的全集与顺序。
  *
- * 十个顶级菜单与主流编辑器对齐：文件 / 编辑 / 查找 / 视图 / 编码 /
- * 语言 / 设置 / 工具 / 对比 / 帮助。顺序即渲染顺序，改这里就是改菜单条。
+ * 十一个顶级菜单与主流编辑器对齐：文件 / 编辑 / 查找 / 视图 / 编码 /
+ * 语言 / 压缩 / 设置 / 工具 / 对比 / 帮助。顺序即渲染顺序，改这里就是改菜单条。
  */
 export const MENU_GROUPS = [
   'file',
@@ -31,6 +31,7 @@ export const MENU_GROUPS = [
   'view',
   'encoding',
   'language',
+  'archive',
   'settings',
   'tools',
   'compare',
@@ -50,6 +51,7 @@ export const MENU_LABEL_KEYS: Record<MenuGroup, string> = {
   view: 'menu.view',
   encoding: 'menu.encodingMenu',
   language: 'menu.languageMenu',
+  archive: 'menu.archiveMenu',
   settings: 'menu.settings',
   tools: 'menu.tools',
   compare: 'menu.compareMenu',
@@ -150,8 +152,9 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'tools.hex': 'Control+Alt+H',
   'tools.batchFindReplace': 'Control+Shift+B',
   'tools.batchRename': 'Control+Alt+R',
-  'tools.archive': 'Control+Alt+A',
-  'tools.archiveTasks': 'Control+Alt+T',
+  'archive.create': 'Control+Alt+A',
+  'archive.extract': 'Control+Alt+X',
+  'archive.tasks': 'Control+Alt+T',
   'bookmark.toggle': 'F2',
   'bookmark.next': 'Shift+F2',
   'macro.record': 'Control+Shift+M',

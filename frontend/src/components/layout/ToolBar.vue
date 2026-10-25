@@ -88,6 +88,11 @@
             {{ t('tool.batchFindReplace') }}
           </ElDropdownItem>
           <ElDropdownItem command="batchRename">{{ t('tool.batchRename') }}</ElDropdownItem>
+          <ElDropdownItem command="archiveCreate" divided>
+            {{ t('menu.archiveCreate') }}
+          </ElDropdownItem>
+          <ElDropdownItem command="archiveExtract">{{ t('menu.archiveExtract') }}</ElDropdownItem>
+          <ElDropdownItem command="archiveTasks">{{ t('menu.archiveTasks') }}</ElDropdownItem>
         </ElDropdownMenu>
       </template>
     </ElDropdown>
@@ -192,7 +197,8 @@ async function onSave() {
 }
 
 function onTool(cmd: string) {
-  commands.run(`tools.${cmd}`)
+  // 压缩入口的命令 id 在 archive 组，不带 tools. 前缀。
+  commands.run(cmd.startsWith('archive') ? cmd : `tools.${cmd}`)
 }
 </script>
 

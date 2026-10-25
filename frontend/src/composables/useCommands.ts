@@ -1211,21 +1211,74 @@ export function registerCommands() {
       run: () => dialogs.open('batchRename'),
     },
 
-    // ---- 压缩 / 归档（specs/18）----
+    // ---- 压缩 / 归档（specs/18）：独立顶级菜单的全部入口 ----
     {
-      id: 'tools.archive',
-      group: 'tools',
-      labelKey: 'menu.archive',
+      id: 'archive.create',
+      group: 'archive',
+      labelKey: 'menu.archiveCreate',
       key: 'Control+Alt+A',
       run: () => {
+        // 预填当前标签：用户最常见的起点就是「把这个文件压了」。
         const tab = editor.active
-        const src = tab?.path ? [tab.path] : []
+        const src = tab?.path && !tab.path.startsWith('draft:') ? [tab.path] : []
         dialogs.open('createArchive', '', { sources: src })
       },
     },
     {
-      id: 'tools.archiveTasks',
-      group: 'tools',
+      id: 'archive.extract',
+      group: 'archive',
+      labelKey: 'menu.archiveExtract',
+      key: 'Control+Alt+X',
+      run: async () => {
+        const p = await api.openFileDialog(
+          settings.config.file.remember_last_folder
+            ? settings.config.file.last_folder
+            : undefined,
+        )
+        if (p) dialogs.open('extractArchive', '', { path: p })
+      },
+    },
+    {
+      id: 'archive.open',
+      group: 'archive',
+      labelKey: 'menu.archiveOpen',
+      run: async () => {
+        const p = await api.openFileDialog(
+          settings.config.file.remember_last_folder
+            ? settings.config.file.last_folder
+            : undefined,
+        )
+        if (p) dialogs.open('archiveBrowser', '', { path: p })
+      },
+    },
+    {
+      id: 'archive.test',
+      group: 'archive',
+      labelKey: 'menu.archiveTest',
+      run: async () => {
+        const p = await api.openFileDialog(
+          settings.config.file.remember_last_folder
+            ? settings.config.file.last_folder
+            : undefined,
+        )
+        if (!p) return
+        try {
+          await api.archive.test({ archive: p, password: null })
+          toast.ok(t('archive.queued'))
+        } catch (e) {
+          toast.bad(normalizeError(e).message)
+        }
+      },
+    },
+    {
+      id: 'archive.splitJoin',
+      group: 'archive',
+      labelKey: 'menu.archiveSplitJoin',
+      run: () => dialogs.open('splitJoin'),
+    },
+    {
+      id: 'archive.tasks',
+      group: 'archive',
       labelKey: 'menu.archiveTasks',
       key: 'Control+Alt+T',
       run: () => dialogs.open('archiveTasks'),
