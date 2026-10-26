@@ -68,7 +68,8 @@ export function useExternalChange() {
     // 干净标签：必须真的把新正文推进编辑器，只改元数据会让编辑区停在旧内容。
     // 那时提示说文件变了、编辑区还是旧的，用户以为提示在撒谎。
     try {
-      const content = await api.readFile(path)
+      // 截断标签只有前段内容：全量读会被后端拒绝，外部变更就永远同步不过来
+      const content = await api.readFile(path, undefined, tab.truncated ? { mode: 'head' } : undefined)
       const changed = getText(tab.id) !== content.text
       editor.applyContent(tab, content)
       if (changed) {

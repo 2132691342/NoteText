@@ -27,6 +27,7 @@
 | 文件监控 | notify | ^7.x |
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
+| 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
 | 测试 | 标准库 `#[test]` + tempfile | 单文件 8 条长链路（specs/12）；`scripts/check.ps1` 收口全部验证 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
@@ -41,8 +42,6 @@
 - **微前端框架**：单窗口桌面编辑器没有多团队并行开发的诉求，引入只增构建复杂度；
 - **图编排 / 流程图库**：编辑器不做流程设计，引入 ~2MB 体积无对应功能；
 - **HTTP 客户端库**：前后端纯 Tauri invoke 通信，没有 HTTP 客户端的使用场景；
-- **encoding_rs**：当前只支持 12 种编码，其中 2 种（Windows-1252 / ISO-8859-1）是手写单字节表，手写表可测且可解释。
-  **要扩展编码清单时优先换 encoding_rs**，别继续往表里加；
 - **regex crate**：工具箱的正则测试器只需常见语法，手写引擎省 ~1MB 体积。
   要支持 `{n,m}` 量词与命名组时换 regex crate。
 - **富文本编辑器**：没有对应场景（NoteText 是代码 / 纯文本向的），

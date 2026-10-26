@@ -1,8 +1,9 @@
 # NoteText
 
 **轻量级 Windows 桌面文本编辑器。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
-安装包 10MB 以内（CI 有体积门禁），内置代码编辑、查找替换、编码转换、JSON 工具、
-Diff 对比、Markdown 预览、文档预览与压缩归档。
+安装包 10MB 以内（CI 有体积门禁）。内置代码编辑、查找替换、12 种编码转换、
+JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
+15 种格式的压缩解压、批量操作与系统文件关联。
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
@@ -31,7 +32,7 @@ Diff 对比、Markdown 预览、文档预览与压缩归档。
 | 对比 | 文本 LCS 行级 + 行内高亮；目录一层逐文件；与剪贴板对比 |
 | 哈希 | MD5 / SHA-1 / SHA-256，大小写两种输出 |
 | 正则 | 实时匹配 + 捕获组表格，`i` `m` `s` `x` 四开关 |
-| 编码转换 | 12 种编码互转，可选写 BOM；一键转 UTF-8 |
+| 编码转换 | 12 种编码互转（GB18030 / Big5 / Shift_JIS / EUC 走完整码表），可选写 BOM；一键转 UTF-8 |
 | 行编辑 | 11 种行级变换（排序 / 去重 / 大小写 / 去空白…），可预览后应用 |
 | 书签 / 片段 / 宏 | 侧栏面板；`F2` 加书签；片段缩写展开；宏 `Ctrl+Shift+M` 录制、`Ctrl+Shift+P` 回放 |
 | 函数列表 | 侧栏按语言正则提取符号，点击跳转 |
@@ -39,10 +40,10 @@ Diff 对比、Markdown 预览、文档预览与压缩归档。
 | 小地图 | 配置开关；canvas 只画轮廓不画字，虚拟滚动跟随 |
 | 剪贴板历史 | 复制 / 剪切攒 50 条（编辑器事件与命令表都收集），点击回插 |
 | Hex 查看 | 16 字节一行（偏移 / hex / ASCII），只渲染可视区 |
-| 文档预览 | 按扩展名分流 xlsx / docx / pdf / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本 |
+| 文档预览 | 按扩展名分流 xlsx / csv / tsv / docx / pdf / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本；CSV 走后端切行，几十 MB 的导出表也能开 |
 | 批量查找替换 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
-| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略）/ 打开浏览（增删 / 预览 / 转换）/ 测试 / 分卷合并 / 任务面板；7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ gz / bz2 / zst / xz / lz4 / br 十五种格式，长任务走队列，大包打开与解压不冻窗（specs/18） |
+| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换）/ 测试 / 分卷合并 / 任务面板；7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ gz / bz2 / zst / xz / lz4 / br 十五种格式，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗；rar / lzh / cab / iso 无内置解压，预览器直接指引用 7-Zip（specs/18） |
 | 文件分卷 | 任意文件按大小切卷 / 合并还原；压缩包创建时可直接分卷 |
 | 系统关联 | 设置 → 系统与关联：把 NoteText 挂进文本 / 压缩包的「打开方式」与默认应用候选，双击即开（specs/17） |
 | 文件树 | 懒展开 + 右键全套（新建 / 重命名 / 删除 / 剪切 / 复制 / 粘贴 / 副本 / 资源管理器 / 压缩 / 解压到… / 一键解压）+ 树内拖拽移动 |
@@ -54,7 +55,7 @@ Diff 对比、Markdown 预览、文档预览与压缩归档。
 | 会话恢复 | 启动恢复标签 / 光标 / 窗口大小；未保存草稿也恢复 |
 | 托盘与单实例 | 关闭到托盘；二次启动转交文件路径 |
 | 备份 | 导出 / 导入书签、片段、宏、草稿、最近文件 |
-| 大文件降级 | 超过 32MB 自动只读前段，状态栏标「已截断」，**拦截写回** |
+| 大文件降级 | 超过 32MB 自动只读前段，状态栏标「已截断」，**拦截写回**；CSV / TSV 表格预览单独走切行链路，不受 20MB 二进制预览上限约束 |
 
 ## 快速开始
 
@@ -133,7 +134,7 @@ NoteText/
 | 层 | 选型 |
 |---|---|
 | 桌面壳 | Tauri 2（无边框 + 前端自绘标题栏，WebView2 渲染） |
-| 后端 | Rust（rusqlite bundled · notify · tracing） |
+| 后端 | Rust（rusqlite bundled · notify · tracing · encoding_rs 码表） |
 | 前端 | Vue 3.4 + TypeScript 5.4 + Vite 5.2 |
 | 状态管理 | Pinia 2.1 |
 | 路由 | Vue Router 4.3（hash 模式） |
@@ -158,17 +159,28 @@ NoteText/
 
 | 文档 | 内容 |
 |---|---|
-| [AGENTS.md](AGENTS.md) | **工程规范（唯一权威）**：分层 / 依赖方向 / 错误码 / 测试 / 命名 / 注释 |
-| [DESIGN.md](DESIGN.md) | 视觉语言与交互原则 |
+| [AGENTS.md](AGENTS.md) | **工程规范（唯一权威）**：分层 / 依赖方向 / 错误码 / 命名 / 注释 / 测试 |
+| [DESIGN.md](DESIGN.md) | 视觉语言：灰阶与强调色、表面阶梯、按钮五态、动效纪律 |
 | [specs/00](specs/00-architecture.md) | 总架构：分层、启动时序、通信、状态归属、排障速查 |
-| [specs/01–05](specs/01-runtime-and-paths.md) | 运行时与路径 / 数据库 / 配置 / 桌面壳 / 文件域 |
-| [specs/06–10](specs/06-editor-domain.md) | 编辑器域 / 前端状态与命令 / 用户数据 / 工具箱 / 会话恢复 |
-| [specs/11–13](specs/11-visual-tokens.md) | 视觉令牌 / 测试与验证 / 批量操作 |
-| [specs/14](specs/14-api-contract.md) | invoke 命令契约（前后端对照表） |
+| [specs/01](specs/01-runtime-and-paths.md) | 运行时与路径：数据目录、单实例、日志 |
+| [specs/02](specs/02-database.md) | 数据库：表结构、WAL、迁移 |
+| [specs/03](specs/03-config.md) | 配置：44 个配置项、派生量、回写时机 |
+| [specs/04](specs/04-desktop-shell.md) | 桌面壳：托盘、关闭策略、退出契约 |
+| [specs/05](specs/05-file-domain.md) | 文件域：读写、编码探测、表格预览、大文件降级 |
+| [specs/06](specs/06-editor-domain.md) | 编辑器域：CodeMirror 装配、语言加载、形态分流 |
+| [specs/07](specs/07-frontend-state.md) | 前端状态与命令表 |
+| [specs/08](specs/08-user-data.md) | 用户数据：书签 / 片段 / 宏 / 草稿 / 最近文件 |
+| [specs/09](specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
+| [specs/10](specs/10-session-restore.md) | 会话恢复 |
+| [specs/11](specs/11-visual-tokens.md) | 视觉令牌与主题 |
+| [specs/12](specs/12-testing.md) | 测试与验证：9 条长链路、四档脚本 |
+| [specs/13](specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
+| [specs/14](specs/14-api-contract.md) | invoke 命令契约（107 个命令对照表） |
 | [specs/15](specs/15-error-codes.md) | 错误码分段与处置动作 |
 | [specs/16](specs/16-page-structure.md) | 页面与组件地图 |
 | [specs/17](specs/17-deployment.md) | 构建与分发 |
-| [specs/18](specs/18-archive.md) | 归档 / 压缩子系统：格式、任务队列、安全底线 |
+| [specs/18](specs/18-archive.md) | 压缩子系统：15 种格式、任务队列、安全底线 |
+| [specs/faq](specs/faq.md) | 开发排障速查 |
 
 每篇规格只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。
 内置用户手册在 `assets/docs/`，面向用户；`specs/` 面向开发，两者不重复维护同一份话术。
@@ -190,7 +202,7 @@ pwsh scripts/check.ps1 -Test archive   # 只跑名字含关键字的链路
 
 | 分组 | 守护的坏事（摘） |
 |---|---|
-| 文件 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；原子写不留临时文件；重命名拒绝覆盖 / 成环 / 路径逃逸；新建同名不清空已有内容 |
+| 文件 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；GBK CSV 在文本视图与表格预览里解出同一份汉字；原子写不留临时文件；重命名拒绝覆盖 / 成环 / 路径逃逸 |
 | 会话 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null` |
 | 批量 | 扫描阶段不落盘、应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
 | 备份 | 五个用户数据表导出后导得回；不在备份里的本机数据不被抹掉 |

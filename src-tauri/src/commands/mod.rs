@@ -26,6 +26,7 @@ macro_rules! command_handlers {
             commands::file::write_file,
             commands::file::save_file_as,
             commands::file::read_dir,
+            commands::file::read_table_preview,
             commands::file::stat_file,
             commands::file::open_file_dialog,
             commands::file::open_files_dialog,

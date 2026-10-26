@@ -15,7 +15,7 @@
 read(path, mode)
   ├─ stat：不存在 → FILE_NOT_FOUND；超过上限 → FILE_TOO_LARGE（提示用 head）
   ├─ 按 mode 取字节（Full / Head / Range）
-  ├─ encoding::detect(&bytes)      BOM 优先 → 合法 UTF-8 → GBK/Big5/SJIS 特征 → latin 兜底
+  ├─ encoding::detect(&bytes)      BOM → UTF-16 无 BOM → UTF-8 → 候选编码打分
   ├─ encoding::strip_bom           记录 has_bom，剥掉再解
   ├─ encoding::decode
   └─ normalize_newlines            行尾归一成 LF 供编辑器算行列
@@ -66,31 +66,61 @@ rename 失败时清掉临时文件，否则同目录会留下一堆 `.xxx.notete
 detect(bytes) -> (encoding, low_confidence)
   1) BOM 是硬证据：EF BB BF → utf-8-bom；FF FE → utf-16le；FE FF → utf-16be
   2) 空文件 → utf-8（不是 latin 兜底）
-  3) 合法 UTF-8 → utf-8
-  4) GB18030 特征（双字节首 0x81–0xFE、次字节合法区间）→ gb18030
-  5) Big5 特征 → big5
-  6) Shift_JIS 特征（半角片假名占比）→ shift_jis
-  7) 兜底 windows-1252 + low_confidence = true
+  3) UTF-16 无 BOM：NUL 占比 ≥ 20% 且几乎全落同一奇偶位 → utf-16le / utf-16be
+  4) UTF-8（末尾截断也算）→ utf-8
+  5) 候选编码按解码损失打分：gb18030 → big5 → euc-kr → shift_jis → windows-1252
+  6) 损失全不为 0 → 取最小者 + low_confidence = true
 ```
+
+**第 3 步必须早于第 4 步**：`A\0B\0` 是合法 UTF-8，顺序颠倒会把 UTF-16 判成 UTF-8。
+
+**第 4 步容忍截断**：`Head` 模式必然切在多字节字符中间，
+`from_utf8` 的 `error_len() == None`（输入意外结束）仍按 UTF-8 处理——
+否则一份 UTF-8 大文件会被截断处的半个字符带偏成 GBK，整篇乱码。
+
+**损失打分（`loss`）**：替换符 ×100、控制字符 ×20、私用区 ×40、罕见区汉字 ×1。
+候选顺序即平手时的优先级（中文用户量最大的现实顺序）。
 
 **`low_confidence` 时前端必须提示「不确定」**：`FileContentVO.truncated` 是
 「被截断**或**置信度低」的或语义，状态栏的编码名后带 `?`。
 让用户手选比报错好——报错等于「打不开」，而大多数情况用户知道这是什么编码。
 
-### 编码表是手写的子集
+### 码表来自 `encoding_rs`
 
 | 编码 | 实现 |
 |---|---|
-| utf-8 / utf-8-bom | 标准库 |
-| utf-16le / utf-16be | 手写 `encode_utf16` / `decode_utf16` |
-| windows-1252 / iso-8859-1 | 单字节表（32 个高位 + 0xA0–0xFF 直映） |
-| gb18030 / big5 / shift_jis | 双字节表（常用区子集） |
-| euc-jp / euc-kr / koi8-r | 只做 ASCII 直通，高位字节落 Latin-1 区（U+0080–U+00FF） |
+| utf-8 / utf-8-bom | `encoding_rs`（严格校验，失败交给上层回退） |
+| utf-16le / utf-16be | 解码走 `encoding_rs`；编码自己按码元写（`Encoding::encode` 是表单语义，Unicode 一律吐 UTF-8） |
+| gb18030（兼 GBK / GB2312） | `encoding_rs::GB18030` |
+| big5 / shift_jis / euc-jp / euc-kr | `encoding_rs` 对应码表 |
+| windows-1252 / iso-8859-1 / koi8-r | `encoding_rs` 对应码表 |
+
+**为什么用完整码表而不是手写子集**：手写表只能覆盖标点与少量常用字，
+中文正文必然解成 U+FFFD——「打开就乱码」的根因常是「表里没字」，不是探测错。
+代价是二进制体积约 +200KB，换来 12 种编码全量正确。
 
 **表里没有的字符解成 U+FFFD / 编成 `?`**：宁可显式问号，不要静默丢字。
+`had_errors` 时记一条 warn 日志，便于排查「为什么存回去丢了几个字」。
 
-**要扩展编码清单时优先换 `encoding_rs`**，别继续往表里加——
-半套码表比没有更容易让人误判。这是写进 [AGENTS.md §1.1](../AGENTS.md) 的约定。
+### 表格预览（CSV / TSV）
+
+```
+read_table_preview(path, encoding?) -> TablePreviewVO
+  ├─ 读前 8MB（TABLE_HEAD_BYTES），超出部分只统计行数
+  ├─ detect + decode：编码判定与文本链路同一条，不让渲染层自己猜
+  ├─ 截断时丢掉最后一行（半条记录比少一行更误导）
+  ├─ sniff_delimiter：前 10 行里 , / \t / ; / | 出现最多的那个
+  ├─ parse_delimited：引号包裹、"" 转义、字段内分隔符与换行
+  └─ total_rows：尾部按换行统计（最多再扫 128MB，超了记 0 = 未知）
+```
+
+**为什么不让前端用 XLSX 读 CSV**：那条路要先 `read_binary`（20MB 上限）、
+把 base64 解成 `Uint8Array` 再交给 SheetJS 按 UTF-8 猜编码。
+大表被上限挡掉、GBK 表整列 mojibake——用户看到「文件太大打不开」与
+「中文全是乱码」两个症状，根因是同一条链路。
+
+`rows` 上限 5000 行、前端再按 2000 行渲染：再多也没人逐行看，
+但 `total_rows` 仍给出来，用户知道表有多大。
 
 ### 目录树
 
@@ -125,6 +155,8 @@ watch_dir(dir, on_change)
 - **文本与二进制都走 invoke**：文本出参是 `String`；二进制的 `Vec<u8>` 会
   序列化成 `number[]`（体积约 4 倍），所以 `read_binary` 出参是 base64，
   并带 20MB 上限。图片 / PDF / docx / Hex 都用它——不给渲染层 fs 插件权限；
+- **CSV / TSV 不走 `read_binary`**：表格预览走 `read_table_preview`，
+  按前 8MB 切行，几十 MB 的导出表也能开，且编码由后端判定；
 - 空文件按 UTF-8，`has_bom = false`，`line_ending = "lf"`；
 - `stat_file` 的 `is_binary` 判据是「前 8KB 含 NUL」，但带 BOM 的 UTF-16
   直接判文本（`FF FE` / `FE FF` 开头）——否则满篇 NUL 会让它被当成二进制；
@@ -132,10 +164,10 @@ watch_dir(dir, on_change)
 
 ## 取舍
 
-**不引 chardet 之类的统计探测库**：常见中文编码的判定用「高位字节序列合法」
-+「是否含典型中文字符」已够用，且**可解释**（能告诉用户为什么这么判）。
-统计库在短文本上误判率高，而编辑器面对的常是几行的配置片段。
-代价是冷门编码判不出——那种情况置 `low_confidence` 让用户手选。
+**不引 chardet 之类的统计探测库**：码表用 `encoding_rs`，判定仍自己写——
+「候选编码各解一遍、数损失」比统计模型**可解释**（能说清为什么这么判），
+在几行的配置片段上也不至于像统计库那样凭噪声下结论。
+代价是候选清单固定为五种，冷门编码判不出——那种情况置 `low_confidence` 让用户手选。
 
 ## 文件操作（`src-tauri/src/service/file_ops.rs`）
 

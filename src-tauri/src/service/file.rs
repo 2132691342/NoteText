@@ -1,5 +1,6 @@
 //! 文件服务：读取 / 写入 / 目录树 / 元信息 / 编码探测。
-//! 三条决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；大文件分模式读。
+//! 四条决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；
+//! 大文件分模式读；CSV / TSV 预览走后端切行（不受二进制预览上限约束）。
 
 use std::fs;
 use std::path::Path;
@@ -9,7 +10,9 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::db::Db;
 use crate::domain::encoding::DetectResultVO;
-use crate::domain::file::{DirEntry, FileContentVO, FileMeta, ReadMode, WriteResultVO};
+use crate::domain::file::{
+    DirEntry, FileContentVO, FileMeta, ReadMode, TablePreviewVO, WriteResultVO,
+};
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::repo::recent::RecentRepo;
 use crate::service::encoding;
@@ -19,6 +22,16 @@ pub const MAX_FULL_READ: u64 = 32 * 1024 * 1024;
 
 /// 预览探测用的字节数：够判 BOM 与统计可解码比例。
 const SNIFF_BYTES: usize = 8192;
+
+/// 表格预览解析的行数上限：前端只渲染前 2000 行，多解析无收益。
+const MAX_TABLE_ROWS: usize = 5000;
+
+/// 表格预览读取的字节上限：8MB 的 CSV 已覆盖绝大多数导出文件，
+/// 剩余部分只数行数不再解析。
+const TABLE_HEAD_BYTES: u64 = 8 * 1024 * 1024;
+
+/// 统计总行数时最多再扫这么多字节：再大就不数了（总数按未知处理）。
+const MAX_TABLE_SCAN: u64 = 128 * 1024 * 1024;
 
 pub struct FileService {
     db: Arc<Db>,
@@ -390,6 +403,77 @@ impl FileService {
         })
     }
 
+    /// CSV / TSV 预览：只读前段 + 按探测编码解码 + 切成行。
+    /// 不受 `read_bytes` 的预览上限约束——几十 MB 的导出表也能直接看。
+    pub fn read_table_preview(
+        &self,
+        path: &str,
+        encoding: Option<&str>,
+    ) -> AppResult<TablePreviewVO> {
+        let p = Path::new(path);
+        if !p.is_file() {
+            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
+                .with_detail(format!("路径：{path}")));
+        }
+        let meta = fs::metadata(p)?;
+
+        use std::io::Read;
+        let cap = TABLE_HEAD_BYTES.min(meta.len()) as usize;
+        let mut bytes = Vec::with_capacity(cap);
+        fs::File::open(p)?
+            .take(TABLE_HEAD_BYTES)
+            .read_to_end(&mut bytes)?;
+        let head_cut = bytes.len() as u64;
+        let truncated = head_cut < meta.len();
+
+        let (detected, low) = encoding::detect(&bytes);
+        let enc = encoding.unwrap_or(&detected).to_string();
+        let (_, body) = encoding::strip_bom(&bytes, &enc);
+        let text = match encoding::decode(body, &enc) {
+            Ok(t) => t,
+            // 指定编码解不动：退回探测结果，用户选错时至少还打得开
+            Err(_) if enc != detected => {
+                let (_, body2) = encoding::strip_bom(&bytes, &detected);
+                encoding::decode(body2, &detected)
+                    .unwrap_or_else(|_| String::from_utf8_lossy(body).into_owned())
+            }
+            Err(_) => String::from_utf8_lossy(body).into_owned(),
+        };
+
+        // 截断处必然落在某一行中间：丢掉最后一行，否则会显示半条记录
+        let mut text = text;
+        if truncated {
+            if let Some(idx) = text.rfind('\n') {
+                text.truncate(idx + 1);
+            }
+        }
+
+        let delimiter = sniff_delimiter(&text);
+        let (rows, parsed) = parse_delimited(&text, delimiter, MAX_TABLE_ROWS);
+        // 尾部没解析的部分按换行数补进总数：状态栏的「共 N 行」要大致对得上。
+        // 超过扫描上限就不再数了——GB 级文件上逐字节扫一遍纯属浪费，此时总数记为 0（未知）。
+        let total_rows = if truncated {
+            match count_newlines(p, head_cut, MAX_TABLE_SCAN) {
+                Ok((n, true)) => parsed + n,
+                _ => 0,
+            }
+        } else {
+            parsed
+        };
+        let total_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+
+        Ok(TablePreviewVO {
+            path: path.to_string(),
+            encoding: enc,
+            delimiter: delimiter.to_string(),
+            rows,
+            total_rows,
+            total_cols,
+            truncated: truncated || low || total_rows > MAX_TABLE_ROWS,
+            size: meta.len(),
+        })
+    }
+
     /// 探测编码。
     pub fn detect(&self, bytes: &[u8]) -> DetectResultVO {
         let (enc, low) = encoding::detect(bytes);
@@ -489,6 +573,91 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
 /// 探测行尾（不含 BOM 的原始字节）。
 fn detect_line_ending_of(bytes: &[u8]) -> String {
     detect_line_ending(&String::from_utf8_lossy(bytes))
+}
+
+/// 分隔符嗅探：前 10 行里出现次数最多的候选。都没有时按逗号处理（单列表）。
+fn sniff_delimiter(text: &str) -> char {
+    const CANDS: [char; 4] = [',', '\t', ';', '|'];
+    let mut best = (',', 0usize);
+    for c in CANDS {
+        let hits: usize = text.lines().take(10).map(|l| l.matches(c).count()).sum();
+        if hits > best.1 {
+            best = (c, hits);
+        }
+    }
+    best.0
+}
+
+/// CSV 解析：支持引号包裹、`""` 转义、字段内的分隔符与换行。
+/// 返回 `(保留的前 max_rows 行, 解析到的记录总数)`。
+fn parse_delimited(text: &str, delim: char, max_rows: usize) -> (Vec<Vec<String>>, usize) {
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut row: Vec<String> = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut total = 0usize;
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if quoted {
+            if ch == '"' {
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                    field.push('"');
+                } else {
+                    quoted = false;
+                }
+            } else {
+                field.push(ch);
+            }
+            continue;
+        }
+        match ch {
+            '"' if field.is_empty() => quoted = true,
+            c if c == delim => row.push(std::mem::take(&mut field)),
+            '\r' => {}
+            '\n' => {
+                row.push(std::mem::take(&mut field));
+                total += 1;
+                if rows.len() < max_rows {
+                    rows.push(std::mem::take(&mut row));
+                } else {
+                    row.clear();
+                }
+            }
+            c => field.push(c),
+        }
+    }
+    if !field.is_empty() || !row.is_empty() {
+        row.push(field);
+        total += 1;
+        if rows.len() < max_rows {
+            rows.push(row);
+        }
+    }
+    (rows, total)
+}
+
+/// 从指定偏移起数换行，最多再扫 `max` 字节。返回 `(行数, 是否读完)`。
+fn count_newlines(path: &Path, from: u64, max: u64) -> std::io::Result<(usize, bool)> {
+    use std::io::{Read, Seek, SeekFrom};
+    if from == 0 {
+        return Ok((0, true));
+    }
+    let mut f = fs::File::open(path)?;
+    f.seek(SeekFrom::Start(from))?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut n = 0usize;
+    let mut scanned = 0u64;
+    while scanned < max {
+        let read = f.read(&mut buf)?;
+        if read == 0 {
+            return Ok((n, true));
+        }
+        scanned += read as u64;
+        n += buf[..read].iter().filter(|&&b| b == b'\n').count();
+    }
+    Ok((n, false))
 }
 
 fn detect_line_ending(text: &str) -> String {

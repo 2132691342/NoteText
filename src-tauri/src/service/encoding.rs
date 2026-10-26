@@ -1,12 +1,17 @@
 //! 编码：探测 / 解码 / 编码 / BOM 处理 / 清单。
-//! 用字节合法性判断而不用字符统计库；没把握时置 low_confidence。
+//! 码表与解码器走 `encoding_rs`：手写表只能覆盖标点，中文正文必然解成替换符。
 
-use std::collections::BTreeMap;
+use encoding_rs::{
+    Encoding, BIG5, EUC_JP, EUC_KR, GB18030, KOI8_R, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8,
+    WINDOWS_1252,
+};
 
 use crate::domain::encoding::EncodingInfo;
 use crate::pkg::error::{codes, AppError, AppResult};
 
-/// 支持的编码清单：设置页下拉与状态栏的取值表。与前端 `utils/encoding.ts` 的 key 必须一致——不一致时状态栏显示的名字 与实际写盘用的编码会对不上。
+/// 支持的编码清单：设置页下拉与状态栏的取值表。
+/// 与前端 `utils/encoding.ts` 的 key 必须一致——不一致时状态栏显示的名字
+/// 与实际写盘用的编码会对不上。
 pub fn supported() -> Vec<EncodingInfo> {
     let mut v = vec![
         EncodingInfo {
@@ -49,15 +54,43 @@ pub fn supported() -> Vec<EncodingInfo> {
     v
 }
 
-/// 探测编码：BOM 优先，然后启发式。返回 `(encoding_id, low_confidence)`。
+/// 编码 id → 码表。`None` 表示这一版不支持。
+fn encoding_of(id: &str) -> Option<&'static Encoding> {
+    Some(match id {
+        "utf-8" | "utf-8-bom" => UTF_8,
+        "utf-16le" => UTF_16LE,
+        "utf-16be" => UTF_16BE,
+        // GB18030 是 GBK / GB2312 的超集：用它解 GBK 字节无损
+        "gb18030" | "gbk" | "gb2312" => GB18030,
+        "big5" => BIG5,
+        "shift_jis" | "sjis" => SHIFT_JIS,
+        "euc-jp" => EUC_JP,
+        "euc-kr" => EUC_KR,
+        "windows-1252" | "iso-8859-1" => WINDOWS_1252,
+        "koi8-r" => KOI8_R,
+        _ => return None,
+    })
+}
+
+/// 候选编码与探测顺序：中文优先，也就是中文用户量最大的现实顺序。
+const CANDIDATES: [(&str, &Encoding); 5] = [
+    ("gb18030", GB18030),
+    ("big5", BIG5),
+    ("euc-kr", EUC_KR),
+    ("shift_jis", SHIFT_JIS),
+    ("windows-1252", WINDOWS_1252),
+];
+
+/// 探测编码：BOM → UTF-16 无 BOM 特征 → UTF-8 → 候选编码打分。
+/// 返回 `(encoding_id, low_confidence)`。
 pub fn detect(bytes: &[u8]) -> (String, bool) {
     // 1) BOM 是硬证据。
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return ("utf-8-bom".into(), false);
     }
+    // UTF-32LE 的 BOM 是 FF FE 00 00，会被这里抢先判成 UTF-16LE。
+    // 编辑器场景 UTF-32 极少，误判代价可接受。
     if bytes.starts_with(&[0xFF, 0xFE]) {
-        // 注意：UTF-32LE 的 BOM 是 FF FE 00 00，会被这里抢先判成 UTF-16LE。
-        // 编辑器场景 UTF-32 极少，误判代价可接受。
         return ("utf-16le".into(), false);
     }
     if bytes.starts_with(&[0xFE, 0xFF]) {
@@ -69,79 +102,100 @@ pub fn detect(bytes: &[u8]) -> (String, bool) {
         return ("utf-8".into(), false);
     }
 
-    // 3) 合法 UTF-8 就判 UTF-8：这是主流，先问最可能的。
-    if std::str::from_utf8(bytes).is_ok() {
+    // 3) UTF-16 无 BOM：ASCII 的 NUL 交错是硬特征，必须先于 UTF-8 判断
+    //    （`A\0B\0` 本身是合法 UTF-8，顺序颠倒会把 UTF-16 判成 UTF-8）。
+    if let Some(id) = detect_utf16_no_bom(bytes) {
+        return (id.into(), false);
+    }
+
+    // 4) 合法 UTF-8 就判 UTF-8：这是主流，先问最可能的。
+    if is_utf8(bytes) {
         return ("utf-8".into(), false);
     }
 
-    // 4) 不是合法 UTF-8：按各编码的字节特征猜。
-    if looks_like_gb18030(bytes) {
-        return ("gb18030".into(), false);
-    }
-    if looks_like_big5(bytes) {
-        return ("big5".into(), false);
-    }
-    if looks_like_sjis(bytes) {
-        return ("shift_jis".into(), false);
-    }
-
-    // 5) 都不像：给 latin-1 兜底（它永远能解，不会乱码成问号），并告知不确定。
-    ("windows-1252".into(), true)
-}
-
-/// GB18030 特征：双字节序列的首字节 0x81–0xFE、次字节在合法区间，
-/// 且四字节序列首字节 0x81–0xFE 次字节 0x30–0x39。
-fn looks_like_gb18030(bytes: &[u8]) -> bool {
-    let mut i = 0;
-    let mut pairs = 0usize;
-    while i + 1 < bytes.len() {
-        let b0 = bytes[i];
-        let b1 = bytes[i + 1];
-        if (0x81..=0xFE).contains(&b0) && (0x40..=0xFE).contains(&b1) && b1 != 0x7F {
-            pairs += 1;
-            i += 2;
-        } else if (0x81..=0xFE).contains(&b0) && (0x30..=0x39).contains(&b1) && i + 3 < bytes.len()
-        {
-            pairs += 1;
-            i += 4;
-        } else {
-            i += 1;
+    // 5) 不是 UTF-8：各候选按解码损失打分，取最小。
+    let mut best: Option<(&str, usize)> = None;
+    for (id, enc) in CANDIDATES {
+        let score = loss(bytes, enc);
+        match best {
+            Some((_, s)) if score >= s => {}
+            _ => best = Some((id, score)),
         }
     }
-    pairs > 0
+    match best {
+        // 有候选能无损失解码：中文字符多、编码清单里排前的胜出，置信度高。
+        Some((id, 0)) => (id.into(), false),
+        // 全都解不干净：给损失最小的，但告知不确定。
+        Some((id, _)) => (id.into(), true),
+        None => ("windows-1252".into(), true),
+    }
 }
 
-/// Big5 特征：首字节 0x81–0xFE，次字节 0x40–0x7E 或 0xA1–0xFE。
-fn looks_like_big5(bytes: &[u8]) -> bool {
-    let mut pairs = 0usize;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        let b0 = bytes[i];
-        let b1 = bytes[i + 1];
-        if (0x81..=0xFE).contains(&b0)
-            && ((0x40..=0x7E).contains(&b1) || (0xA1..=0xFE).contains(&b1))
-        {
-            pairs += 1;
-            i += 2;
-        } else {
-            i += 1;
+/// UTF-16 无 BOM：NUL 占比 ≥ 20% 且几乎全落在同一奇偶位。
+fn detect_utf16_no_bom(bytes: &[u8]) -> Option<&'static str> {
+    let n = bytes.len().min(4096) & !1;
+    if n < 4 {
+        return None;
+    }
+    let sample = &bytes[..n];
+    let mut zeros = 0usize;
+    let mut even = 0usize;
+    let mut odd = 0usize;
+    for (i, &b) in sample.iter().enumerate() {
+        if b == 0 {
+            zeros += 1;
+            if i % 2 == 0 {
+                even += 1;
+            } else {
+                odd += 1;
+            }
         }
     }
-    pairs > 0
+    if zeros * 5 < n {
+        return None;
+    }
+    // 奇数位是 0 → 低字节在前（LE）；偶数位是 0 → BE
+    if odd * 10 > zeros * 9 {
+        Some("utf-16le")
+    } else if even * 10 > zeros * 9 {
+        Some("utf-16be")
+    } else {
+        None
+    }
 }
 
-/// Shift_JIS 特征：单字节半角片假名 0xA1–0xDF，或双字节首字节 0x81–0x9F/0xE0–0xEF。
-fn looks_like_sjis(bytes: &[u8]) -> bool {
-    let mut hits = 0usize;
-    for &b in bytes {
-        if (0xA1..=0xDF).contains(&b) {
-            hits += 1;
+/// 是否 UTF-8：整块合法，或只在末尾被截断（读前段模式必然发生）。
+fn is_utf8(bytes: &[u8]) -> bool {
+    match std::str::from_utf8(bytes) {
+        Ok(_) => true,
+        // error_len 为 None 表示「输入意外结束」——多字节序列被切在中间，
+        // 这种情况仍应按 UTF-8 打开，否则截断会把它误判成 GBK。
+        Err(e) => e.error_len().is_none(),
+    }
+}
+
+/// 解码损失：替换符 / 控制字符记重罚，罕见区汉字记轻罚（解错的典型表现）。
+fn loss(bytes: &[u8], enc: &'static Encoding) -> usize {
+    let (text, _) = enc.decode_without_bom_handling(bytes);
+    let mut score = 0usize;
+    for ch in text.chars() {
+        let cp = ch as u32;
+        if ch == '\u{FFFD}' {
+            score += 100;
+        } else if (cp < 0x20 && ch != '\n' && ch != '\r' && ch != '\t') || cp == 0x7F {
+            score += 20;
+        } else if (0xE000..=0xF8FF).contains(&cp) {
+            // 私用区：多字节序列跨错位的典型产物
+            score += 40;
+        } else if (0x3400..=0x4DBF).contains(&cp) || (0xF900..=0xFAFF).contains(&cp) {
+            score += 1;
         }
     }
-    hits > 0 && hits * 4 > bytes.len()
+    score
 }
 
-/// 去掉 BOM，返回 `(has_bom, body)`。生命周期省略在这里不成立：返回值可能来自 `bytes` 也可能来自 `encoding`， 显式绑到 `bytes` 上，调用方一看就知道拿到的是原缓冲区的切片。
+/// 去掉 BOM，返回 `(has_bom, body)`。生命周期显式绑到 `bytes` 上：
+/// 调用方一看就知道拿到的是原缓冲区的切片。
 pub fn strip_bom<'a>(bytes: &'a [u8], encoding: &str) -> (bool, &'a [u8]) {
     match encoding {
         "utf-8-bom" if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) => (true, &bytes[3..]),
@@ -161,203 +215,82 @@ pub fn bom_bytes(encoding: &str) -> &'static [u8] {
     }
 }
 
-/// 列出支持的编码。与前端 utils/encoding.ts 的 key 必须一致，
-/// 不一致时状态栏显示的名字会和实际写盘用的编码对不上。
+/// 字节按编码解成字符串。UTF-8 严格校验（失败交给调用方回退），
+/// 其余编码有损解码并记一条告警——宁可显示替换符也不要打不开。
 pub fn decode(bytes: &[u8], encoding: &str) -> AppResult<String> {
-    match encoding {
-        "utf-8" | "utf-8-bom" => String::from_utf8(bytes.to_vec())
-            .map_err(|e| AppError::wrap(codes::ENCODE_FAILED, "不是合法的 UTF-8 字节", e)),
-        "utf-16le" => Ok(decode_utf16(bytes, false)),
-        "utf-16be" => Ok(decode_utf16(bytes, true)),
-        "windows-1252" | "iso-8859-1" => Ok(decode_single_byte(bytes, &table_1252())),
-        "gb18030" => Ok(decode_gb18030(bytes)),
-        "big5" => Ok(decode_two_byte(bytes, &table_big5())),
-        "shift_jis" => Ok(decode_sjis(bytes)),
-        "euc-jp" | "euc-kr" | "koi8-r" => Ok(decode_single_byte(bytes, &BTreeMap::new())),
-        other => Err(
-            AppError::new(codes::ENCODE_FAILED, format!("暂不支持的编码：{other}"))
-                .with_detail("请在设置里改用受支持的编码打开"),
-        ),
+    if matches!(encoding, "utf-8" | "utf-8-bom") {
+        return String::from_utf8(bytes.to_vec())
+            .map_err(|e| AppError::wrap(codes::ENCODE_FAILED, "不是合法的 UTF-8 字节", e));
     }
+    let enc = encoding_of(encoding).ok_or_else(|| {
+        AppError::new(codes::ENCODE_FAILED, format!("暂不支持的编码：{encoding}"))
+            .with_detail("请在设置里改用受支持的编码打开")
+    })?;
+    let (text, had_errors) = enc.decode_without_bom_handling(bytes);
+    if had_errors {
+        tracing::warn!(encoding, "解码遇到非法字节，已按有损方式打开");
+    }
+    Ok(text.into_owned())
 }
 
-/// 字符串按编码编码成字节。
+/// 字符串按编码编成字节。表里没有的字符落 `?`，不让静默丢字。
 pub fn encode(text: &str, encoding: &str) -> AppResult<Vec<u8>> {
-    match encoding {
-        "utf-8" | "utf-8-bom" => Ok(text.as_bytes().to_vec()),
-        "utf-16le" => Ok(encode_utf16(text, false)),
-        "utf-16be" => Ok(encode_utf16(text, true)),
-        "windows-1252" | "iso-8859-1" => Ok(encode_single_byte(text, &table_1252())),
-        "gb18030" => Ok(encode_gb18030(text)),
-        "big5" => Ok(encode_two_byte(text, &table_big5())),
-        "shift_jis" => Ok(encode_sjis(text)),
-        "euc-jp" | "euc-kr" | "koi8-r" => Ok(encode_single_byte(text, &BTreeMap::new())),
-        other => Err(AppError::new(
+    let enc = encoding_of(encoding).ok_or_else(|| {
+        AppError::new(
             codes::ENCODE_FAILED,
-            format!("暂不支持写入编码：{other}"),
-        )),
-    }
-}
-
-// ---- UTF-16 ----
-
-fn decode_utf16(bytes: &[u8], big_endian: bool) -> String {
-    let mut units: Vec<u16> = Vec::with_capacity(bytes.len() / 2);
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        let u = if big_endian {
-            u16::from_be_bytes([bytes[i], bytes[i + 1]])
-        } else {
-            u16::from_le_bytes([bytes[i], bytes[i + 1]])
-        };
-        units.push(u);
-        i += 2;
-    }
-    String::from_utf16_lossy(&units)
-}
-
-fn encode_utf16(text: &str, big_endian: bool) -> Vec<u8> {
-    let mut out = Vec::with_capacity(text.len() * 2);
-    for u in text.encode_utf16() {
-        if big_endian {
-            out.extend_from_slice(&u.to_be_bytes());
-        } else {
-            out.extend_from_slice(&u.to_le_bytes());
+            format!("暂不支持写入编码：{encoding}"),
+        )
+    })?;
+    // encoding_rs 的 `encode()` 是 WHATWG 表单语义：Unicode 编码一律吐 UTF-8，
+    // 所以 UTF-16 得自己按码元写。BOM 由写盘层统一补，这里不写。
+    if matches!(encoding, "utf-16le" | "utf-16be") {
+        let be = encoding == "utf-16be";
+        let mut out = Vec::with_capacity(text.len() * 2);
+        for u in text.encode_utf16() {
+            if be {
+                out.extend_from_slice(&u.to_be_bytes());
+            } else {
+                out.extend_from_slice(&u.to_le_bytes());
+            }
         }
+        return Ok(out);
     }
-    out
-}
-
-// ---- 单字节码表 ----
-
-fn decode_single_byte(bytes: &[u8], table: &BTreeMap<u16, char>) -> String {
-    let mut out = String::with_capacity(bytes.len());
-    for &b in bytes {
-        let cp = b as u16;
-        out.push(table.get(&cp).copied().unwrap_or(cp as u8 as char));
+    let (bytes, _, had_errors) = enc.encode(text);
+    if had_errors {
+        tracing::warn!(encoding, "编码遇到无法表示的字符，已落成问号");
     }
-    out
+    Ok(bytes.into_owned())
 }
 
-fn encode_single_byte(text: &str, table: &BTreeMap<u16, char>) -> Vec<u8> {
-    // 反表：char → byte
-    let rev: BTreeMap<char, u8> = table.iter().map(|(k, v)| (*v, *k as u8)).collect();
-    let mut out = Vec::with_capacity(text.len());
-    for ch in text.chars() {
-        let cp = ch as u32;
-        if cp < 0x80 {
-            out.push(cp as u8);
-        } else if let Some(&b) = rev.get(&ch) {
-            out.push(b);
-        } else {
-            out.push(b'?'); // 表里没有的字符：宁可显式问号，不要静默丢字
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 三种最容易判错的字节序列：GBK 中文、被截断的 UTF-8、无 BOM 的 UTF-16。
+    #[test]
+    fn probes_cjk_and_bomless_utf16_correctly() {
+        // "车牌号" 的 GBK 字节
+        let gbk = [0xB3, 0xB5, 0xC5, 0xC6, 0xBA, 0xC5];
+        assert_eq!(detect(&gbk).0, "gb18030", "GBK 中文应判 GB18030");
+        assert_eq!(decode(&gbk, "gb18030").unwrap(), "车牌号");
+
+        // "车牌" 的 UTF-8 字节切掉末尾：截断不等于「不是 UTF-8」
+        let mut truncated = "车牌".as_bytes().to_vec();
+        truncated.pop();
+        assert_eq!(detect(&truncated).0, "utf-8", "截断的 UTF-8 仍应判 UTF-8");
+
+        // UTF-16LE 的 NUL 交错是合法 UTF-8，必须先于 UTF-8 判定
+        let utf16 = encode("hello 中文", "utf-16le").unwrap();
+        assert_eq!(detect(&utf16).0, "utf-16le", "bytes={utf16:02X?}");
+        assert_eq!(decode(&utf16, "utf-16le").unwrap(), "hello 中文");
     }
-    out
-}
 
-// ---- 双字节码表（Big5 / GBK 用同一套骨架）----
-
-fn decode_two_byte(bytes: &[u8], table: &BTreeMap<u16, char>) -> String {
-    let mut out = String::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let b0 = bytes[i];
-        if b0 < 0x80 {
-            out.push(b0 as char);
-            i += 1;
-        } else if i + 1 < bytes.len() {
-            let key = u16::from_be_bytes([b0, bytes[i + 1]]);
-            out.push(table.get(&key).copied().unwrap_or('\u{FFFD}'));
-            i += 2;
-        } else {
-            out.push('\u{FFFD}');
-            i += 1;
-        }
+    /// 编码往返：写出去再读回来必须一字不差，且探测得出同一个编码。
+    #[test]
+    fn round_trips_gbk_text() {
+        let text = "车牌号：京A12345，中文测试。";
+        let bytes = encode(text, "gb18030").unwrap();
+        assert_eq!(decode(&bytes, "gb18030").unwrap(), text);
+        assert_eq!(detect(&bytes).0, "gb18030");
     }
-    out
-}
-
-fn encode_two_byte(text: &str, table: &BTreeMap<u16, char>) -> Vec<u8> {
-    let rev: BTreeMap<char, u16> = table.iter().map(|(k, v)| (*v, *k)).collect();
-    let mut out = Vec::with_capacity(text.len());
-    for ch in text.chars() {
-        let cp = ch as u32;
-        if cp < 0x80 {
-            out.push(cp as u8);
-        } else if let Some(&k) = rev.get(&ch) {
-            out.push((k >> 8) as u8);
-            out.push((k & 0xFF) as u8);
-        } else {
-            out.push(b'?');
-        }
-    }
-    out
-}
-
-fn decode_gb18030(bytes: &[u8]) -> String {
-    decode_two_byte(bytes, &table_gbk())
-}
-
-fn encode_gb18030(text: &str) -> Vec<u8> {
-    encode_two_byte(text, &table_gbk())
-}
-
-fn decode_sjis(bytes: &[u8]) -> String {
-    decode_two_byte(bytes, &table_sjis())
-}
-
-fn encode_sjis(text: &str) -> Vec<u8> {
-    encode_two_byte(text, &table_sjis())
-}
-
-// ---- 码表 ----
-// 表是常用字符子集而非完整 Unicode 映射：覆盖中文常用字、标点与西欧重音。
-
-fn table_1252() -> BTreeMap<u16, char> {
-    let mut m = BTreeMap::new();
-    for (i, ch) in [
-        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž',
-        '\u{8F}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}',
-        'ž', 'Ÿ',
-    ]
-    .iter()
-    .enumerate()
-    {
-        m.insert(0x80 + i as u16, *ch);
-    }
-    for i in 0xA0u16..=0xFF {
-        m.insert(i, char::from_u32(i as u32).unwrap_or('\u{FFFD}'));
-    }
-    m
-}
-
-fn table_gbk() -> BTreeMap<u16, char> {
-    // GBK 区：0xA1A1–0xFEFE。这里放一段常用区（标点 + 一级汉字首尾 + 常用汉字）。
-    // 生成完整表超出「轻量编辑器」的范围，且会让二进制体积增加 ~100KB。
-    let mut m = BTreeMap::new();
-    // 全角符号区
-    for (i, ch) in "、。，．；：？！…—·ˉˇ¨‘’“”〈〉《》「」『』【】＋－×÷＝≠≤≥∞℃￥‰§☆★○●◎◇◆□■△▲※→←↑↓"
-        .chars()
-        .enumerate()
-    {
-        m.insert(0xA1A1 + i as u16, ch);
-    }
-    m
-}
-
-fn table_big5() -> BTreeMap<u16, char> {
-    let mut m = BTreeMap::new();
-    for (i, ch) in "，。、；：？！（）「」『』【】…—·".chars().enumerate() {
-        m.insert(0xA140 + i as u16, ch);
-    }
-    m
-}
-
-fn table_sjis() -> BTreeMap<u16, char> {
-    let mut m = BTreeMap::new();
-    for (i, ch) in "。「」、・ァィゥェォャュョッー".chars().enumerate() {
-        m.insert(0x8140 + i as u16, ch);
-    }
-    m
 }

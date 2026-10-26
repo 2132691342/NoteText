@@ -35,7 +35,7 @@ pub async fn open_dialog(
     Ok(picked.map(|p| p.to_string()))
 }
 
-/// 多选文件对话框：压缩 / 批量操作一次挑一批文件。
+/// 多选文件对话框：压缩打包与批量解压都要一次挑一批文件。
 pub async fn open_files_dialog(suggested_dir: Option<String>) -> AppResult<Vec<String>> {
     use tauri_plugin_dialog::DialogExt;
     let app = handle()?;

@@ -9,7 +9,17 @@ import { extName } from '@/utils'
  * 它给的是「用外部程序打开」的卡片，而不是一屏十六进制。
  * `binary` 则是可执行文件 / 压缩包这类根本不该当文档看的东西。
  */
-export type FileKind = 'text' | 'markdown' | 'html' | 'image' | 'sheet' | 'docx' | 'pdf' | 'legacyDoc' | 'binary'
+export type FileKind =
+  | 'text'
+  | 'markdown'
+  | 'html'
+  | 'image'
+  | 'sheet'
+  | 'docx'
+  | 'pdf'
+  | 'legacyDoc'
+  | 'archiveLegacy'
+  | 'binary'
 
 const IMAGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif'])
 
@@ -33,6 +43,14 @@ const LEGACY_DOC = new Set([
 ])
 
 /**
+ * 没有内置解压能力的归档格式。
+ *
+ * 这些格式的压缩算法是专有的（rar / lzh），或容器结构完全不同（cab / iso），
+ * 进十六进制视图等于什么都没告诉用户——改成「给一条明确出路」的卡片。
+ */
+const ARCHIVE_LEGACY = new Set(['rar', 'lzh', 'lha', 'cab', 'iso', 'img'])
+
+/**
  * 扩展名即可断定的二进制外壳。
  *
  * 为什么要列出来而不是全靠内容嗅探：嗅探只读前 8KB，
@@ -40,7 +58,7 @@ const LEGACY_DOC = new Set([
  * 编辑器里就是一屏乱码，保存还会写坏原文件。
  */
 const BINARY = new Set([
-  'zip', '7z', 'rar', 'gz', 'tgz', 'bz2', 'xz', 'tar', 'cab', 'iso', 'img',
+  'zip', '7z', 'gz', 'tgz', 'bz2', 'xz', 'tar',
   'exe', 'dll', 'sys', 'msi', 'com', 'scr', 'app', 'apk', 'jar', 'war', 'class',
   'so', 'dylib', 'o', 'obj', 'lib', 'a', 'pdb', 'pyc', 'wasm',
   'db', 'sqlite', 'sqlite3', 'mdb', 'dat', 'pak', 'bin', 'dmg', 'vhd', 'vhdx',
@@ -65,8 +83,14 @@ export function kindOf(path: string, isBinary = false): FileKind {
   if (MARKDOWN.has(ext)) return 'markdown'
   if (HTML.has(ext)) return 'html'
   if (LEGACY_DOC.has(ext)) return 'legacyDoc'
+  if (ARCHIVE_LEGACY.has(ext)) return 'archiveLegacy'
   if (BINARY.has(ext)) return 'binary'
   return isBinary ? 'binary' : 'text'
+}
+
+/** 是否专有归档（预览器要针对它给出「先用别的工具解压」的指引）。 */
+export function isArchiveLegacy(path: string): boolean {
+  return ARCHIVE_LEGACY.has(extName(path))
 }
 
 /** 该形态能不能按文本读进 CodeMirror。 */
@@ -74,9 +98,16 @@ export function isTextKind(kind: FileKind): boolean {
   return kind === 'text' || kind === 'markdown' || kind === 'html'
 }
 
-/** 该形态该交给 DocPreview（含「读不了但有出路」的老式文档）。 */
+/** 该形态该交给 DocPreview（含「读不了但有出路」的老式文档与专有归档）。 */
 export function hasRichPreview(kind: FileKind): boolean {
-  return kind === 'docx' || kind === 'pdf' || kind === 'sheet' || kind === 'image' || kind === 'legacyDoc'
+  return (
+    kind === 'docx' ||
+    kind === 'pdf' ||
+    kind === 'sheet' ||
+    kind === 'image' ||
+    kind === 'legacyDoc' ||
+    kind === 'archiveLegacy'
+  )
 }
 
 /**

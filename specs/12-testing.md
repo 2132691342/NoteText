@@ -16,7 +16,7 @@ scripts/i18n-audit.mjs           编译期抓不到的国际化问题
 
 | 测试 | 用户故事 | 守住的坏事 |
 |---|---|---|
-| `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 打开 → 保存 → 重开 | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 |
+| `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 打开 → 保存 → 重开 | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / GBK 表格与文本解出两份内容 / 临时文件堆积 |
 | `file_ops_refuse_overwrite_cycle_escape_and_partial_delete` | 改名、删一批、新建同名 | 无声覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
 | `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays` | 首次启动 → 开三个标签 → 重启 | 空列表序列化成 null（前端白屏）/ 标签顺序与活跃项丢失 |
 | `batch_preview_then_apply_touches_only_confirmed_files` | 扫描 → 勾选 → 替换 → 改名 | 扫描阶段就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |

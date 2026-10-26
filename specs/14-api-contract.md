@@ -1,7 +1,9 @@
 # API 契约
 
-这一篇是前端 `api/index.ts` 与后端 `commands/` 的对照表。**改字段必须两边同步**，
-并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
+## 定位
+
+前端 `api/index.ts` 与后端 `commands/` 的对照表：105 个 invoke 命令的入参出参。
+**改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定
 
@@ -12,7 +14,7 @@
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
 | 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
-| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的会话链路） |
+| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `empty_lists_serialize_to_array_not_null`） |
 
 ## 文件
 
@@ -20,12 +22,13 @@
 |---|---|---|
 | `read_file` | `path`, `mode?`, `encoding?` | `FileContentVO` |
 | `read_binary` | `path` | `string`（base64，上限 20MB） |
+| `read_table_preview` | `path`, `encoding?` | `TablePreviewVO`（CSV / TSV，不受 20MB 上限） |
 | `write_file` | `path`, `text`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO` |
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
 | `read_dir` | `dir` | `DirEntry[]` |
 | `stat_file` | `path` | `FileMeta` |
 | `open_file_dialog` | `suggested_dir?` | `string \| null` |
-| `open_files_dialog` | `suggested_dir?` | `string[]`（取消是空表） |
+| `open_files_dialog` | `suggested_dir?` | `string[]`（多选，批量解压用） |
 | `open_folder_dialog` | `suggested_dir?` | `string \| null` |
 | `save_file_dialog` | `suggested_name?` | `string \| null` |
 | `detect_encoding` | `bytes: number[]` | `DetectResultVO` |

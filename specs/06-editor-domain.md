@@ -175,7 +175,8 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 |---|---|---|
 | `binary` | 可执行 / 压缩包 / 媒体，或未知扩展名且 `stat.is_binary` | `HexView.vue`（虚拟滚动，只渲染可视区） |
 | `legacyDoc` | `.doc` `.ppt(x)` `.odt` `.rtf` `.epub` 等无内嵌渲染器的文档 | `DocPreview.vue` → 「没有内置预览」卡片 |
-| `image` `sheet` `docx` `pdf` | 扩展名表 | `DocPreview.vue`（动态 import 对应预览器） |
+| `archiveLegacy` | `.rar` `.lzh` `.cab` `.iso` 等无内置解压的归档 | `DocPreview.vue` → 「用 7-Zip 解压后再打开」卡片 + 外部程序入口 |
+| `image` `sheet` `docx` `pdf` | 扩展名表（`sheet` 内再分：CSV / TSV 走后端切行，xlsx 走 SheetJS） | `DocPreview.vue`（动态 import 对应预览器） |
 | `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
 | `html` | `.html` `.htm` `.xhtml` | `CodeEditor.vue`（可编辑）+ `DocPreview.vue` 沙箱 iframe 静态预览（`showing_preview`，不执行脚本） |
 | `text` | 其余 | `CodeEditor.vue` / `DocPreview.vue`（`showing_preview`） |

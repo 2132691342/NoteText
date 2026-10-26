@@ -27,6 +27,9 @@ anyhow = { workspace = true }
 # 持久化：rusqlite bundled = 自带 SQLite C 源码，无需系统装 SQLite，也无 CGO 依赖链
 rusqlite = { workspace = true }
 
+# 编码：GB18030 / Big5 / Shift_JIS / EUC 的完整码表（纯 Rust，无 C 依赖）
+encoding_rs = { workspace = true }
+
 # 文件监控：目录树外部变更与 tail -f
 notify = { workspace = true }
 

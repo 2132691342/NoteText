@@ -1,7 +1,10 @@
 # 16 · 页面与组件地图
 
-NoteText 是单窗口应用，只有一个常驻视图（编辑器）+ 两个路由视图（设置 / 帮助）。
-所有工具箱都是挂在最外层的浮窗，不是路由。
+## 定位
+
+单窗口应用：一个常驻视图（编辑器）+ 两个路由视图（设置 / 帮助），
+所有工具箱都是挂在最外层的浮窗而不是路由。这一篇给出布局五层、浮窗清单、
+组件树与各自的数据来源——改 UI 前先在这里定位该动哪个组件。
 
 **标题栏挂在 `App.vue` 而不是编辑器页**：设置页与帮助页也要能最小化 / 关闭，
 否则用户进了设置就没有鼠标出口（无边框窗口没有系统窗控）。
@@ -27,8 +30,11 @@ App.vue
 ├── ToolBar.vue           工具栏 34px：高频图标钮 + 「更多」下拉
 ├── SideBar.vue           侧栏：七个面板的容器，宽度可拖
 ├── TabBar.vue            标签栏 32px：标签 + 脏标记 + 关闭钮
-├── EditorArea.vue        编辑区：按 view_type 分发 + 分屏 + 拖放提示
-│   └── CodeEditor.vue    CodeMirror 容器（compartments）
+├── EditorArea.vue        编辑区：按形态分发 + 分屏 + 拖放提示
+│   ├── CodeEditor.vue    CodeMirror 容器（compartments）
+│   ├── MarkdownEditor.vue  Markdown 三态：编辑 / 分屏 / 预览
+│   ├── DocPreview.vue    只读预览：xlsx / csv / docx / pdf / 图片 / 文本，含「读不了」的出路卡片
+│   └── Minimap.vue       小地图（canvas 轮廓，虚拟滚动跟随）
 └── StatusBar.vue         状态栏 26px：修改指示 / 光标 / 语言 / 编码 / 行尾 / 缩放
 ```
 

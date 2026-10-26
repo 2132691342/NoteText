@@ -65,6 +65,20 @@ pub async fn save_file_as(
     }
 }
 
+/// CSV / TSV 表格预览：后端解码 + 切行，前端不碰原始字节。
+/// 标 async 的原因与归档一致——大文件的文本解码不能在主线程上做。
+#[tauri::command(async)]
+pub fn read_table_preview(
+    state: State<'_, AppState>,
+    path: String,
+    encoding: Option<String>,
+) -> AppResult<crate::domain::file::TablePreviewVO> {
+    state
+        .services
+        .file
+        .read_table_preview(&path, encoding.as_deref())
+}
+
 /// 列目录。
 #[tauri::command]
 pub fn read_dir(

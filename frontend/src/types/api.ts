@@ -62,6 +62,19 @@ export interface WriteResultVO {
   modified_at: number
 }
 
+/** CSV / TSV 表格预览：后端已按探测编码解好，前端只画。 */
+export interface TablePreviewVO {
+  path: string
+  encoding: string
+  /** 分隔符原字符：`,` / `\t` / `;` / `|` */
+  delimiter: string
+  rows: string[][]
+  total_rows: number
+  total_cols: number
+  truncated: boolean
+  size: number
+}
+
 // ---- 编码域 ----
 
 export interface EncodingInfo {

@@ -173,18 +173,27 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     );
 
     // 强制编码：按 gb18030 打开 GBK 字节；编码名不认识时退回探测，不能打不开文件。
+    // 码表必须能解出真正的汉字（D6D0 CEC4 = 中文），只解出标点等于「打开就乱码」。
     let gbk = data.join("gbk.txt");
     let p = gbk.to_string_lossy().to_string();
-    roundtrip(&state, &gbk, &[0xA1, 0xA1, 0xA1, 0xA2]);
+    roundtrip(&state, &gbk, &[0xD6, 0xD0, 0xCE, 0xC4]);
     let forced = file
         .read_as(&p, ReadMode::Full, Some("gb18030"))
         .expect("按 gb18030 读失败");
-    assert_eq!(forced.text, "、。", "指定 gb18030 应解出表内符号");
+    assert_eq!(forced.text, "中文", "指定 gb18030 应解出汉字");
     assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
     let fallback = file
         .read_as(&p, ReadMode::Full, Some("klingon"))
         .expect("选错编码也不该打不开");
-    assert_eq!(fallback.text, "、。", "不支持的编码名应退回探测");
+    assert_eq!(fallback.text, "中文", "不支持的编码名应退回探测");
+
+    // 表格预览与文本视图必须解出同一份汉字：编码判定只该有一条链路。
+    let csv = data.join("gbk.csv");
+    fs::write(&csv, [0xD6u8, 0xD0, 0xCE, 0xC4, b',', b'1', b'\n']).expect("写 csv 失败");
+    let table = file
+        .read_table_preview(&csv.to_string_lossy(), None)
+        .expect("表格预览失败");
+    assert_eq!(table.rows[0][0], "中文", "表格预览把 GBK 中文解成了乱码");
 
     // 原子写：成功后不留临时文件（残留会在每次保存后越积越多）。
     let x = data.join("x.txt");
