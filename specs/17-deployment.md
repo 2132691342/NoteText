@@ -19,12 +19,15 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 
 ## 流水线
 
-两条 GitHub Actions，分工是「日常门禁」与「出包」，两条都跑与本地同一个入口：
+两条 GitHub Actions，分工是「日常门禁」与「出包」，两条都直接执行同一组检查：
 
 | 工作流 | 触发 | 做什么 |
 |---|---|---|
-| `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 跑 `pwsh scripts/check.ps1 -Full`；失败时脚本在控制台摘出「哪条链坏了、错在哪一行」 |
-| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 跑 `pwsh scripts/check.ps1 -Full`（rustfmt / check / clippy / 测试 / i18n 审计 / 前端构建）→ `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
+| `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 前端构建 → rustfmt / check / clippy / 链路测试 |
+| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 执行同一组门禁 → `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
+
+前端构建必须在 Rust 编译型检查之前完成：`tauri::generate_context!()` 会在编译期读取
+`frontend/dist`，新 checkout 中该目录尚不存在。
 
 **「推 main 不发版、只有推 tag 才发版」是靠两个工作流各自的触发条件锁死的**：
 
@@ -39,8 +42,8 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 其余约定，改动流水线前要知道：
 
 - **门禁与出包分层**：日常质量门禁集中在 `ci.yml`；`release.yml` 出包前
-  整套 `-Full` 重跑一遍——发版是低频动作，多花几分钟换「tag 上的产物
-  一定是全绿代码构建的」
+  重跑前端构建、rustfmt、check、clippy 与链路测试——发版是低频动作，
+  多花几分钟换「tag 上的产物一定是全绿代码构建的」
 - **两个 job 都跑 `windows-latest`**：目标平台只有 Windows amd64，
   门禁与出包必须在同一套系统调用上验
 - **tauri-cli 用 npm 版**：`frontend/package.json` 的 devDependencies 已锁

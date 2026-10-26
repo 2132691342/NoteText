@@ -91,10 +91,11 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 ### 本地验证
 
 ```bash
-pwsh scripts/check.ps1                 # 日常：格式 → 编译 → 8 条链路
-pwsh scripts/check.ps1 -Test archive   # 只跑名字含关键字的链路
-pwsh scripts/check.ps1 -Full           # 门禁：+ i18n 审计 + clippy + 前端构建
-node scripts/i18n-audit.mjs            # 单独查国际化
+npm --prefix frontend run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
 ```
 
 ## 项目结构
@@ -125,8 +126,7 @@ NoteText/
 │       ├── utils/             # 纯函数（格式互转 / glob / 剪贴板 / 错误翻译）
 │       └── *.css              # themes / base / ep-theme / content / print 五个 CSS
 ├── assets/docs/               # 内置用户手册（帮助页渲染）
-├── specs/                     # 架构与子系统规格（00–18，一篇一个主题）
-└── scripts/                   # 验证入口（check.ps1 / i18n-audit.mjs）
+└── specs/                     # 架构与子系统规格（00–18，一篇一个主题）
 ```
 
 ## 技术栈
@@ -173,7 +173,7 @@ NoteText/
 | [specs/09](specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
 | [specs/10](specs/10-session-restore.md) | 会话恢复 |
 | [specs/11](specs/11-visual-tokens.md) | 视觉令牌与主题 |
-| [specs/12](specs/12-testing.md) | 测试与验证：9 条长链路、四档脚本 |
+| [specs/12](specs/12-testing.md) | 测试与验证：8 条长链路、本地与 CI 门禁 |
 | [specs/13](specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
 | [specs/14](specs/14-api-contract.md) | invoke 命令契约（107 个命令对照表） |
 | [specs/15](specs/15-error-codes.md) | 错误码分段与处置动作 |
@@ -194,7 +194,7 @@ NoteText/
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
-pwsh scripts/check.ps1 -Test archive   # 只跑名字含关键字的链路
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- archive
 ```
 
 判据见 [AGENTS.md §3](AGENTS.md) 与 [specs/12](specs/12-testing.md)：

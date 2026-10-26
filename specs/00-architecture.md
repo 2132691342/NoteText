@@ -86,7 +86,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。内核是 CodeMirror
 | `service/tools.rs` | JSON / Diff / 哈希 / 正则 / 迷你正则引擎 | [09](09-tools.md) |
 | `service/session.rs` + `repo/session.rs` | 会话保存与恢复 | [10](10-session-restore.md) |
 | `themes.css` + `ep-theme.css` | 视觉令牌与主题 | [11](11-visual-tokens.md) |
-| `tests/chain_tests.rs` + `scripts/` | 测试组织与验证入口 | [12](12-testing.md) |
+| `tests/chain_tests.rs` + GitHub Actions | 测试组织与验证入口 | [12](12-testing.md) |
 | `service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](13-batch-operations.md) |
 | `service/archive/` | 压缩 / 解压引擎、任务队列、格式能力表 | [18](18-archive.md) |
 | `commands/` ↔ `api/index.ts` | invoke 命令契约 | [14](14-api-contract.md) |

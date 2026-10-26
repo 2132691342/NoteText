@@ -29,7 +29,7 @@
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
-| 测试 | 标准库 `#[test]` + tempfile | 单文件 8 条长链路（specs/12）；`scripts/check.ps1` 收口全部验证 |
+| 测试 | 标准库 `#[test]` + tempfile | 单文件 8 条长链路（specs/12）；本地与 GitHub Actions 执行同一组命令 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
@@ -363,8 +363,7 @@ mod dialog_stub;
 
 ### 2.10.2 国际化（强制）
 
-中文默认 + 英文，两者永远同构：**加一个 key 就两个文件同时加**。密钥与失效由
-`scripts/i18n-audit.mjs` 机械核对（`check.ps1 -Full` 会跑），不靠人工对表。
+中文默认 + 英文，两者永远同构：**加一个 key 就两个文件同时加**，不靠运行时降级掩盖缺项。
 
 | 位置 | 该写什么 | 不能写什么 |
 |---|---|---|
@@ -377,8 +376,7 @@ mod dialog_stub;
 **后端 message 固定中文**：Rust 侧没有「界面语言」这个概念（窗口属于前端），
 所以它只负责一句中文描述。英文界面由前端 `normalizeError()` 按错误码取
 `errCode.<code>` 的英文句子，后端那句降级为 `details`。
-**加新错误码时，`pkg/error.rs` 与 `locales/{zh-CN,en}.ts` 的 `errCode` 三处要一起加**，
-审计脚本会校验。
+**加新错误码时，`pkg/error.rs` 与 `locales/{zh-CN,en}.ts` 的 `errCode` 三处要一起加**。
 
 **Element Plus 文案跟随界面语言**：`main.ts` 注入 `computed<Language>`，
 `App.vue` 在最顶层 `inject` 后交给 `ElConfigProvider`。
@@ -451,23 +449,22 @@ mod dialog_stub;
   「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」六组排列，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
-- 全量测试亚秒级；局部改动可以只跑一条链路（`-Test <关键字>`），不必等整套门禁
+- 全量测试亚秒级；局部改动可以用 `cargo test --test chain_tests -- <关键字>` 只跑一条链路
 
 ### 3.3 验证入口
 
-一个脚本收口全部验证动作，不在文档 / CI / 本地各写一套命令。分档按「改了多大」选：
+本地与 GitHub Actions 按同一顺序执行；前端构建必须早于 Rust 编译型检查：
 
-| 命令 | 跑什么 | 什么时候用 |
-|---|---|---|
-| `pwsh scripts/check.ps1` | rustfmt → cargo check → 8 条链路 | 日常 |
-| `pwsh scripts/check.ps1 -Test archive` | 只跑名字含该关键字的链路 | 改一个子系统时 |
-| `pwsh scripts/check.ps1 -Full` | + i18n 审计 + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
+| 命令 | 目的 |
+|---|---|
+| `npm --prefix frontend run build` | 类型检查并生成 `frontend/dist` |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Rust 格式门禁 |
+| `cargo check --manifest-path src-tauri/Cargo.toml --all-targets` | 全目标编译检查 |
+| `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | 静态检查 |
+| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` | 8 条链路测试 |
 
-- **默认安静**：成功时不打测试清单，失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
-- `scripts/i18n-audit.mjs` 可以单独跑：`node scripts/i18n-audit.mjs`
-  它查五件事——key 引用是否都有定义、zh/en 是否对齐、模板里有没有裸中文、
-  后端错误码是否两边都有文案、提示里是否直接传了 key。
-  这五类问题都是编译期抓不到的；通过时只打一行统计
+`tauri::generate_context!()` 会在 Rust 编译期读取 `frontend/dist`；新 checkout 中该目录
+不存在，所以 `cargo check`、Clippy 与测试前都要先构建前端。
 
 ### 3.4 测试索引
 
@@ -486,9 +483,9 @@ mod dialog_stub;
 
 | 改动位置 | 命令 |
 |---|---|
-| 某个域的行为 | `pwsh scripts/check.ps1` |
-| 只改了压缩 / 只改了一条链路 | `pwsh scripts/check.ps1 -Test <关键字>` |
-| 拿不准 | `pwsh scripts/check.ps1 -Full` |
+| 某个域的行为 | `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` |
+| 只改了压缩 / 只改了一条链路 | `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- <关键字>` |
+| 拿不准 | 按 §3.3 顺序执行全部五条命令 |
 
 
 ---
@@ -496,18 +493,12 @@ mod dialog_stub;
 ## 4. 架构门禁
 
 ```bash
-pwsh scripts/check.ps1 -Full         # rustfmt + 前端构建 + cargo check + clippy + 全量测试
-./frontend/node_modules/.bin/tauri build   # 产物 target/release/NoteText.exe
-```
-
-脚本逐步展开就是下面这些命令；单独跑某一步时才手敲：
-
-```bash
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check   # 必须无输出
-cargo check --manifest-path src-tauri/Cargo.toml --all-targets    # 编译比测试更早暴露类型错误
+npm --prefix frontend run build                                      # 先生成 frontend/dist
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check      # 必须无输出
+cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --lib --test chain_tests
-cd frontend && npm run build         # vue-tsc -b && vite build：类型检查已串在构建里
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
+./frontend/node_modules/.bin/tauri build                              # 产物 target/release/NoteText.exe
 ```
 
 为什么测试不喂 `--all-targets`：没有测试文件的包交给 `cargo test` 也要编译一遍，

@@ -51,9 +51,21 @@ jobs:
             ~/AppData/Local/tauri/NSIS
           key: nsis-3.13
 
-      # 出包前先过静态门禁：clippy 与前端类型检查编译期发现不了。
-      - name: 静态门禁
-        run: pwsh scripts/check.ps1 -Full
+      # Tauri 的 generate_context! 会在 Rust 编译期读取 frontend/dist。
+      - name: 构建前端
+        run: npm --prefix frontend run build
+
+      - name: 检查 Rust 格式
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: 检查 Rust 编译
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: 运行 Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: 运行链路测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
 
       # 必须从仓库根跑：CLI 要向上找到 src-tauri/tauri.conf.json。
       # 注意是 --bundles（复数）：--bundler 是 1.x 的写法，2.x 已移除。

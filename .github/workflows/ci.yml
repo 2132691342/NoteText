@@ -40,12 +40,21 @@ jobs:
         with:
           workspaces: .
 
-      # 显式装依赖（走 setup-node 的 npm cache）。
-      # check.ps1 见到 node_modules 已存在就不会再跑 npm ci。
       - name: 装前端依赖
         run: npm --prefix frontend ci
 
-      # 单一验证入口：与本地 `pwsh scripts/check.ps1 -Full` 完全一致。
-      # 失败时脚本自己把「哪条链坏了、错在哪一行」写进 job summary。
-      - name: 全量门禁
-        run: pwsh scripts/check.ps1 -Full
+      # Tauri 的 generate_context! 会在 Rust 编译期读取 frontend/dist。
+      - name: 构建前端
+        run: npm --prefix frontend run build
+
+      - name: 检查 Rust 格式
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: 检查 Rust 编译
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: 运行 Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: 运行链路测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
