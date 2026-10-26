@@ -145,6 +145,7 @@ import type {
   PreviewEntryReq,
   PreviewEntryVO,
   SplitFileReq,
+  TablePreviewVO,
   TestArchiveReq,
 } from '@/types/api'
 
@@ -158,6 +159,9 @@ export const api = {
     }),
   /** 读二进制（预览 / Hex）。返回 base64：走 Vec<u8> 会被序列化成 number[]。 */
   readBinary: (path: string) => call<string>('read_binary', { path }),
+  /** CSV / TSV 表格预览：后端解码切行，不受 read_binary 的 20MB 上限约束。 */
+  readTablePreview: (path: string, encoding?: string) =>
+    call<TablePreviewVO>('read_table_preview', { path, encoding: encoding ?? null }),
   writeFile: (
     path: string,
     text: string,
@@ -211,6 +215,9 @@ export const api = {
   },
   openFileDialog: (suggestedDir?: string) =>
     call<string | null>('open_file_dialog', { suggested_dir: suggestedDir ?? null }),
+  /** 多选文件：批量解压一次挑多个包。 */
+  openFilesDialog: (suggestedDir?: string) =>
+    call<string[]>('open_files_dialog', { suggested_dir: suggestedDir ?? null }),
   openFolderDialog: (suggestedDir?: string) =>
     call<string | null>('open_folder_dialog', { suggested_dir: suggestedDir ?? null }),
   saveFileDialog: (suggestedName?: string) =>

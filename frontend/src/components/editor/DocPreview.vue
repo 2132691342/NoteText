@@ -33,7 +33,7 @@
     </div>
 
     <div v-if="kind === 'unsupported'" class="nt-empty">
-      <p>{{ t('tool.previewUnsupported') }}</p>
+      <p>{{ legacyArchive ? t('viewer.archiveUnsupported') : t('tool.previewUnsupported') }}</p>
       <p class="nt-empty-hint">{{ t('tool.previewUnsupportedHint') }}</p>
       <div class="nt-empty-actions">
         <ElButton size="small" @click="emit('openHex')">{{ t('tool.hexViewer') }}</ElButton>
@@ -104,8 +104,10 @@ import { useToastStore } from '@/stores/toast'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useSettingsStore } from '@/stores/settings'
 import NtIcon from '@/components/common/NtIcon.vue'
-import { baseName, copyText } from '@/utils'
-import { kindOf } from '@/utils/fileKind'
+import { baseName, copyText, extName } from '@/utils'
+import { isArchiveLegacy, kindOf } from '@/utils/fileKind'
+import { encodingShort } from '@/utils/encoding'
+import type { TablePreviewVO } from '@/types/api'
 import { docVersionOf, get } from '@/composables/useEditorRegistry'
 
 const props = defineProps<{ path: string; tabId?: number }>()
@@ -118,6 +120,8 @@ const md = useMarkdown()
 
 const host = ref<HTMLElement | null>(null)
 const fileName = computed(() => baseName(props.path))
+/** 专有归档（rar / cab / iso …）：提示文案要说清「为什么打不开、下一步怎么做」。 */
+const legacyArchive = computed(() => isArchiveLegacy(props.path))
 /** asset 协议 URL：图片与 PDF 都直接交给 Chromium 加载，不走 base64。 */
 const assetUrl = computed(() => convertFileSrc(props.path))
 const src = assetUrl
@@ -156,7 +160,9 @@ async function classify() {
       return
     case 'sheet':
       kind.value = 'sheet'
-      await renderXlsx(run)
+      // CSV / TSV 走后端切行：几十 MB 的导出表也能开，编码也由后端探测
+      if (isDelimited(props.path)) await renderDelimited(run)
+      else await renderXlsx(run)
       return
     case 'docx':
       kind.value = 'docx'
@@ -295,6 +301,102 @@ function base64ToBytes(b64: string): Uint8Array {
 const MAX_SHEET_ROWS = 2000
 /** 单表最多渲染的列数：再宽也没人横向翻到底。 */
 const MAX_SHEET_COLS = 80
+
+/** CSV / TSV：交给后端切行，不走 read_binary（那条路有 20MB 上限）。 */
+function isDelimited(path: string): boolean {
+  const ext = extName(path)
+  return ext === 'csv' || ext === 'tsv'
+}
+
+/** 分隔文本预览：后端已按探测编码解码，这里只画。 */
+async function renderDelimited(run: number) {
+  if (!host.value) return
+  try {
+    const data = await api.readTablePreview(props.path)
+    if (run !== token || !host.value) return
+    const built = buildRowsTable(data)
+    host.value.innerHTML = built.html
+    meta.value = built.meta
+  } catch (e) {
+    if (run !== token) return
+    reportBroken(e)
+  }
+}
+
+/** 列号 0 → A、26 → AA：表头字母行自己算，不必为它加载整个 xlsx 库。 */
+function colName(i: number): string {
+  let n = i
+  let s = ''
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s
+    n = Math.floor(n / 26) - 1
+  } while (n >= 0)
+  return s
+}
+
+/** 把后端切好的行画成表格：与 xlsx 同一套骨架、同一个行数上限。 */
+function buildRowsTable(data: TablePreviewVO): { html: string; meta: string } {
+  if (data.rows.length === 0) {
+    return { html: `<p class="nt-sheet-note">${t('viewer.sheetEmpty')}</p>`, meta: '' }
+  }
+  const totalCols = Math.max(1, data.total_cols)
+  const colEnd = Math.min(totalCols, MAX_SHEET_COLS)
+  const rowEnd = Math.min(data.rows.length, MAX_SHEET_ROWS)
+
+  // 列宽按前 200 行估：CSV 没有列信息，等宽会让长名字全被裁掉
+  const cols: string[] = []
+  const sampleRows = Math.min(rowEnd, 200)
+  for (let c = 0; c < colEnd; c += 1) {
+    let longest = 4
+    for (let r = 0; r < sampleRows; r += 1) {
+      const s = data.rows[r]?.[c] ?? ''
+      let w = 0
+      for (const ch of s) w += /[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 2 : 1
+      if (w > longest) longest = w
+    }
+    cols.push(`${Math.min(360, Math.max(56, Math.round(longest * 7.2) + 18))}px`)
+  }
+
+  const parts: string[] = [
+    '<table class="nt-sheet-table"><colgroup><col style="width:44px">',
+    cols.map((w) => `<col style="width:${w}">`).join(''),
+    '</colgroup>',
+    '<tr class="nt-sheet-head"><td class="nt-sheet-corner"></td>',
+  ]
+  for (let c = 0; c < colEnd; c += 1) parts.push(`<td class="nt-sheet-col">${colName(c)}</td>`)
+  parts.push('</tr>')
+
+  for (let r = 0; r < rowEnd; r += 1) {
+    // 第一行是表头：冻住，长表往下滚也能对上列
+    const freeze = r === 0 ? ' class="nt-sheet-freeze"' : ''
+    parts.push(`<tr${freeze}><td class="nt-sheet-rownum">${r + 1}</td>`)
+    for (let c = 0; c < colEnd; c += 1) {
+      const text = data.rows[r]?.[c] ?? ''
+      const numeric = /^-?[\d,]+(\.\d+)?%?$/.test(text.trim()) && text.trim() !== ''
+      parts.push(`<td${numeric ? ' class="is-num"' : ''}>${escapeHtml(text)}</td>`)
+    }
+    parts.push('</tr>')
+  }
+  parts.push('</table>')
+
+  const clipped = data.truncated || data.rows.length > MAX_SHEET_ROWS
+  // total_rows = 0 表示文件太大、后端没统计总数：文案不能写「共 0 行」
+  const known = data.total_rows > rowEnd
+  if (clipped) {
+    parts.push(
+      `<p class="nt-sheet-note">${
+        known
+          ? t('viewer.sheetTruncated', { shown: rowEnd, total: data.total_rows })
+          : t('viewer.sheetTruncatedUnknown', { shown: rowEnd })
+      }</p>`,
+    )
+  }
+  const totalText = known ? String(data.total_rows) : `${data.rows.length}+`
+  return {
+    html: parts.join(''),
+    meta: `${totalText} × ${totalCols} · ${encodingShort(data.encoding)}`,
+  }
+}
 
 /** 工作簿常驻：切页签不必重新解压文件。 */
 let workbook: import('xlsx').WorkBook | null = null

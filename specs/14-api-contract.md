@@ -1,7 +1,9 @@
 # API 契约
 
-这一篇是前端 `api/index.ts` 与后端 `commands/` 的对照表。**改字段必须两边同步**，
-并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
+## 定位
+
+前端 `api/index.ts` 与后端 `commands/` 的对照表：107 个 invoke 命令的入参出参。
+**改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定
 
@@ -20,11 +22,13 @@
 |---|---|---|
 | `read_file` | `path`, `mode?`, `encoding?` | `FileContentVO` |
 | `read_binary` | `path` | `string`（base64，上限 20MB） |
+| `read_table_preview` | `path`, `encoding?` | `TablePreviewVO`（CSV / TSV，不受 20MB 上限） |
 | `write_file` | `path`, `text`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO` |
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
 | `read_dir` | `dir` | `DirEntry[]` |
 | `stat_file` | `path` | `FileMeta` |
 | `open_file_dialog` | `suggested_dir?` | `string \| null` |
+| `open_files_dialog` | `suggested_dir?` | `string[]`（多选，批量解压用） |
 | `open_folder_dialog` | `suggested_dir?` | `string \| null` |
 | `save_file_dialog` | `suggested_name?` | `string \| null` |
 | `detect_encoding` | `bytes: number[]` | `DetectResultVO` |

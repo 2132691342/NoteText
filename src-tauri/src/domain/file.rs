@@ -65,3 +65,24 @@ pub struct WriteResultVO {
     pub bytes: usize,
     pub modified_at: i64,
 }
+
+/// CSV / TSV 表格预览：后端按编码解码后切成行，前端只负责画。
+/// 走这条路而不是把整包字节塞给渲染层：几十 MB 的导出表也能秒开，
+/// 且中文编码由后端探测（让 JS 自己猜编码必然乱码）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TablePreviewVO {
+    pub path: String,
+    /// 探测或指定的编码 id。
+    pub encoding: String,
+    /// 分隔符：`,` / `\t` / `;` / `|`。
+    pub delimiter: String,
+    /// 行数据；每行长度可能不同（末列缺值）。
+    pub rows: Vec<Vec<String>>,
+    /// 记录总数（含未渲染的尾部）。
+    pub total_rows: usize,
+    /// 最宽一行占的列数。
+    pub total_cols: usize,
+    /// 是否只解析了前一段：前端据此显示「已截断」。
+    pub truncated: bool,
+    pub size: u64,
+}

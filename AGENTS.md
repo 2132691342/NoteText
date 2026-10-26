@@ -27,6 +27,7 @@
 | 文件监控 | notify | ^7.x |
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
+| 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
 | 测试 | testing（标准库） | 一包一入口、一个子测试一种坏法；`scripts/check.ps1` 收口全部验证 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
@@ -41,8 +42,6 @@
 - **微前端框架**：单窗口桌面编辑器没有多团队并行开发的诉求，引入只增构建复杂度；
 - **图编排 / 流程图库**：编辑器不做流程设计，引入 ~2MB 体积无对应功能；
 - **HTTP 客户端库**：前后端纯 Tauri invoke 通信，没有 HTTP 客户端的使用场景；
-- **encoding_rs**：当前只支持 12 种编码，其中 2 种（Windows-1252 / ISO-8859-1）是手写单字节表，手写表可测且可解释。
-  **要扩展编码清单时优先换 encoding_rs**，别继续往表里加；
 - **regex crate**：工具箱的正则测试器只需常见语法，手写引擎省 ~1MB 体积。
   要支持 `{n,m}` 量词与命名组时换 regex crate。
 - **富文本编辑器**：没有对应场景（NoteText 是代码 / 纯文本向的），
@@ -452,7 +451,8 @@ mod dialog_stub;
   「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」六组排列，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
-- 全量测试亚秒级，**不设「只跑一条链」的开关**——加了省不了多少时间，却要多记一个参数
+- 全量测试亚秒级；定位单条用 cargo 的过滤参数，不另做脚本开关：
+  `cargo test --test chain_tests 压缩`
 
 ### 3.3 验证入口
 
@@ -460,8 +460,9 @@ mod dialog_stub;
 
 | 命令 | 跑什么 | 什么时候用 |
 |---|---|---|
-| `pwsh scripts/check.ps1` | rustfmt → cargo check → 全量测试 | 日常快门 |
-| `pwsh scripts/check.ps1 -Full` | + i18n 审计 + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
+| `pwsh scripts/check.ps1` | rustfmt → cargo check → 全部测试 | 改后端 / 日常 |
+| `pwsh scripts/check.ps1 -Frontend` | i18n 审计 → 前端构建 | 改前端 |
+| `pwsh scripts/check.ps1 -Full` | 两侧全跑 + clippy `-D warnings` | 提交前 |
 | `pwsh scripts/check.ps1 -List` | 列出全部测试名 | 不知道入口叫什么时 |
 
 - **默认安静**：失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
@@ -479,14 +480,14 @@ JSON / 哈希 / 注释这类单函数行为不设测试）；每一条都守护
 
 | 分组 | 测试 | 坏法 |
 |---|---|---|
-| 文件 | `file_read_write_roundtrip_preserves_encoding_and_atomic_write` | 行尾没按原样写回 / BOM 丢或多字节 / 强制编码打开仍是乱码 / 选错编码打不开 / 临时文件堆积 / 打错路径在磁盘留痕 |
-| | `file_tree_ops_reject_destructive_requests` | 重命名无声覆盖文件 / 树成环 / 路径逃逸 / 陈旧路径让整批删除失败 / 新建同名清空已有内容 |
-| 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
+| 文件 | `file_round_trip_preserves_encoding_bom_and_line_ending` | 行尾没按原样写回 / BOM 丢或重复 / 强制编码打开仍是乱码 / 选错编码打不开 / 临时文件堆积 / 打错路径在磁盘留痕 |
+| | `gbk_csv_preview_and_text_view_agree` | 中文列 mojibake / 表格预览与编辑器解出两种内容 |
+| | `file_ops_refuse_destructive_targets` | 重命名无声覆盖文件 / 树成环 / 相对路径逃逸 / 陈旧路径让整批删除失败 / 新建同名清空已有内容 |
+| 会话 | `first_launch_seeds_defaults_and_session_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
 | 批量 | `batch_two_phase_applies_only_confirmed_plans` | 扫描就落盘 / 改掉没勾选的文件 / 重命名覆盖已有文件 / 该落地的没落地 |
-| 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
-| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 / 改名后的 .tar.xz .tar.br 认不出 tar 家族 |
-| | `archive_update_split_join_preserve_bytes` | 追加 / 删除条目后丢内容 / 分卷首卷打不开 / 合并还原的字节不对 |
-| | `archive_rejects_traversal_and_distinguishes_password_and_corruption` | 恶意条目把文件写到目标目录之外 / 要密码与密码错混成一个错 / 损坏的包测试照样说「好」 |
+| 备份 | `backup_round_trip_merges_with_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 / 宏的 UUID 变了 |
+| 压缩 | `archive_round_trip_all_formats_then_update_split_join` | 某格式往返丢内容 / 中文名乱 / 层级塌 / 改名后的 .tar.xz .tar.br 认不出 / 增删丢条目 / 首卷打不开 / 合并字节不一致 |
+| | `archive_rejects_traversal_and_separates_password_errors` | 恶意条目写到目标之外 / 要密码与密码错混成一个错 / 损坏的包测试照样说「好」 |
 | 系统关联 | `file_assoc_register_round_trip_lands_open_with_and_default` | 双击关联文件打不开（open 命令丢引号 / ProgId 挂错键）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：

@@ -280,7 +280,8 @@ pub fn split_parts(path: &Path) -> Vec<PathBuf> {
     let s = path.to_string_lossy().to_string();
     if let Some(base) = s.strip_suffix(".001") {
         let mut parts = vec![path.to_path_buf()];
-        for i in 2..=999 {
+        // 上限与 split_file 保持一致：999 会漏掉更长的分卷链
+        for i in 2..=9999 {
             let name = format!("{base}.{i:03}");
             let p = Path::new(&name);
             if p.exists() {

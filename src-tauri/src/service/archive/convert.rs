@@ -4,10 +4,12 @@
 use crate::domain::archive::{
     ConvertArchiveReq, ConvertArchiveVO, CreateArchiveReq, ExtractArchiveReq,
 };
+use crate::domain::archive_format::ArchiveFormat;
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::archive::create::create_archive;
 use crate::service::archive::ctx::TaskCtx;
 use crate::service::archive::extract::extract_archive;
+use crate::service::archive::list::list_archive;
 use crate::service::archive::{detect_format, parse_format, unique_path};
 use std::path::PathBuf;
 
@@ -25,6 +27,15 @@ pub fn convert_archive(req: &ConvertArchiveReq, ctx: &TaskCtx) -> AppResult<Conv
         return Err(AppError::new(
             codes::ARCHIVE_BAD_REQUEST,
             "目标格式与源格式相同：换一个格式再转",
+        ));
+    }
+
+    // 源包的加密 / 固实属性先读一次：转换是重建，不带上就会静默降级成明文包
+    let src_info = list_archive(&src, req.password.as_deref())?;
+    if src_info.encrypted && req.new_password.as_deref().unwrap_or("").is_empty() {
+        return Err(AppError::new(
+            codes::ARCHIVE_BAD_REQUEST,
+            "源压缩包有密码：转换需要给新密码，否则新包会变成明文",
         ));
     }
 
@@ -64,8 +75,9 @@ pub fn convert_archive(req: &ConvertArchiveReq, ctx: &TaskCtx) -> AppResult<Conv
         method: None,
         level: req.level,
         password: req.new_password.clone(),
-        encrypt_filenames: false,
-        solid: false,
+        // 跟着源包的属性走：7z 加密文件名只在有密码时才有意义
+        encrypt_filenames: src_info.encrypted_names && to == ArchiveFormat::SevenZ,
+        solid: src_info.solid,
         split_to: None,
         exclude: Vec::new(),
         comment: None,

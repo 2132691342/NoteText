@@ -18,6 +18,9 @@ serde_json = "1"
 thiserror = "2"
 anyhow = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+# 编码（specs/05）：GB18030 / Big5 / Shift_JIS / EUC 的真实码表。
+# 手写表只能覆盖标点，中文正文必然解成替换符——那是「打开就乱码」的根因。
+encoding_rs = "0.8"
 notify = "7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

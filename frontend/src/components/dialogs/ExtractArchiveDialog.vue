@@ -100,9 +100,28 @@
         </ElCheckbox>
       </div>
 
+      <!-- 提交后的实时进度：不必切到任务面板才知道有没有在动 -->
+      <div v-if="activeTask" class="nt-xarch-progress">
+        <ElProgress
+          :percentage="pct"
+          :stroke-width="6"
+          :status="activeTask.status === 'failed' ? 'exception' : undefined"
+        />
+        <div class="nt-xarch-progress-row">
+          <span class="nt-xarch-summary">{{ activeTask.current ?? activeTask.title }}</span>
+          <ElButton v-if="busy" size="small" @click="archive.cancel(activeTask.id)">
+            {{ t('archive.stop') }}
+          </ElButton>
+        </div>
+      </div>
+
       <div class="nt-xarch-actions">
-        <ElButton size="small" :disabled="!path" @click="test">{{ t('archive.testNow') }}</ElButton>
-        <ElButton size="small" type="primary" :disabled="!canExtract" @click="extract">
+        <ElButton size="small" :disabled="!path || busy" @click="test">{{ t('archive.testNow') }}</ElButton>
+        <!-- 批量：一次挑多个包，各自解到同名文件夹；勾选条目只对当前包生效 -->
+        <ElTooltip :content="t('archive.batchExtractHint')" placement="top">
+          <ElButton size="small" :disabled="busy" @click="batchExtract">{{ t('archive.batchExtract') }}</ElButton>
+        </ElTooltip>
+        <ElButton size="small" type="primary" :disabled="!canExtract || busy" @click="extract">
           {{ checked.size > 0 ? t('archive.extractSelected', { n: checked.size }) : t('archive.extractNow') }}
         </ElButton>
       </div>
@@ -113,11 +132,12 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElButton, ElCheckbox, ElInput, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElCheckbox, ElInput, ElOption, ElProgress, ElSelect, ElTooltip } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { useVirtualList } from '@/composables/useVirtualList'
 import { api, normalizeError } from '@/api'
+import { useArchiveStore } from '@/stores/archive'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
 import { baseName, dirName, formatSize, joinPath } from '@/utils'
@@ -127,6 +147,25 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const toast = useToastStore()
 const dialogs = useDialogStore()
+const archive = useArchiveStore()
+
+/** 本窗口提交的任务：进度直接在窗口内显示，完成时自动关窗。 */
+const taskId = ref('')
+const closeOnDone = ref(false)
+const activeTask = computed(() => archive.tasks.find((x) => x.id === taskId.value) ?? null)
+const busy = computed(() => {
+  const s = activeTask.value?.status
+  return s === 'queued' || s === 'running' || s === 'paused'
+})
+/** 总量未知时 progress = -1：按 0 画，文案里仍能看出在跑。 */
+const pct = computed(() => Math.max(0, Math.round((activeTask.value?.progress ?? 0) * 100)))
+
+watch(
+  () => activeTask.value?.status,
+  (s) => {
+    if (s === 'done' && closeOnDone.value) emit('close')
+  },
+)
 
 /** 解压目标：命令入口 / 树右键经 dialogs.open('extractArchive', '', { path }) 传入。 */
 const path = ref((dialogs.seedExtra.path as string) ?? '')
@@ -268,7 +307,7 @@ function shortName(name: string): string {
 
 async function extract() {
   try {
-    await api.archive.extract({
+    taskId.value = await api.archive.extract({
       archive: path.value,
       dest: extractDir.value,
       entries: checked.value.size > 0 ? [...checked.value] : null,
@@ -276,17 +315,45 @@ async function extract() {
       overwrite: overwrite.value,
       create_subdir: createSubdir.value,
     })
+    closeOnDone.value = true
     toast.ok(t('archive.queued'))
-    emit('close')
   } catch (e) {
     toast.bad(normalizeError(e).message)
   }
 }
 
+/** 批量解压：多个包各自解到同名文件夹，全部进队列并行跑（队列上限 2）。 */
+async function batchExtract() {
+  const list = await api.openFilesDialog(extractDir.value || path.value || undefined)
+  if (!list || list.length === 0) return
+  let queued = 0
+  let failed = 0
+  for (const p of list) {
+    try {
+      await api.archive.extract({
+        archive: p,
+        // 目标取包所在目录，再由 create_subdir 建同名文件夹：
+        // 与单个解压的默认行为一致，不会把多个包的内容倒进同一处。
+        dest: dirName(p),
+        entries: null,
+        password: password.value || null,
+        overwrite: overwrite.value,
+        create_subdir: true,
+      })
+      queued += 1
+    } catch (e) {
+      failed += 1
+      toast.bad(`${baseName(p)}: ${normalizeError(e).message}`)
+    }
+  }
+  if (queued > 0) toast.ok(t('archive.batchQueued', { n: queued }))
+}
+
 /** 测试不关窗：结果由任务 toast 说，密码对不对也能在这里先验证。 */
 async function test() {
   try {
-    await api.archive.test({ archive: path.value, password: password.value || null })
+    taskId.value = await api.archive.test({ archive: path.value, password: password.value || null })
+    closeOnDone.value = false
     toast.ok(t('archive.queued'))
   } catch (e) {
     toast.bad(normalizeError(e).message)
@@ -449,6 +516,24 @@ async function test() {
 
 .nt-xarch-sub {
   margin-left: var(--nt-sp-3);
+}
+
+.nt-xarch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nt-sp-1);
+  padding: var(--nt-sp-2) var(--nt-sp-3);
+  background: var(--nt-elev-2);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-sm);
+}
+
+.nt-xarch-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nt-sp-2);
+  min-width: 0;
 }
 
 .nt-xarch-actions {

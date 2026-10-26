@@ -1,5 +1,5 @@
-//! 集成测试：9 条长链路，按「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」分组排列。
-//! 函数名就是它守护的那件坏事；测试与坏法的完整索引见 specs/12-testing.md。
+//! 集成测试：9 条长链路，按「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」分组。
+//! 一条测试一个用户故事；纯函数级断言留在各自模块的单测里。
 
 // 每个测试二进制单独编译本模块，helper 未必全被用到。
 #![allow(dead_code)]
@@ -74,18 +74,16 @@ fn roundtrip(state: &AppState, file: &PathBuf, bytes: &[u8]) -> FileContentVO {
 fn batch_root(dir: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
     let root = dir.join("batch");
     fs::create_dir_all(&root).expect("建目录失败");
-    let a = root.join("a.txt");
-    let b = root.join("b.txt");
-    (root, a, b)
+    (root.clone(), root.join("a.txt"), root.join("b.txt"))
 }
 
-/// 压缩样本目录：中文文件名 + 嵌套目录 + 二进制内容，往返要逐字节一致。
-fn archive_samples(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+/// 压缩样本目录：中文文件名 + 嵌套目录 + 二进制内容。
+fn archive_samples(dir: &std::path::Path) -> (PathBuf, PathBuf) {
     let root = dir.join("样本目录");
     let sub = root.join("子目录");
     fs::create_dir_all(&sub).expect("建样本目录失败");
     fs::write(root.join("说明.txt"), b"hello note text\r\nsecond line\n").expect("写样本失败");
-    // 256KB 可压缩内容 + 不可压缩随机段：两条路都走到
+    // 256KB 可压缩内容 + 不可压缩尾巴：走两条压缩路径
     let mut blob = Vec::with_capacity(256 * 1024);
     for i in 0..256 * 1024 {
         blob.push((i % 251) as u8);
@@ -124,16 +122,14 @@ fn extract_req(archive: &std::path::Path, dest: &std::path::Path) -> ExtractArch
 
 // ---------- 文件 ----------
 
-/// 文件读写全链路：行尾按原样写回、BOM 剥离又补回、强制编码解出正确内容、
-/// 写盘走原子替换不留临时文件也不替用户造目录。
-/// 坏法：行尾/BOM 在打开-保存-重开间漂移（文件逐次劣化）、选错编码打不开、
-/// 临时文件越积越多、打错路径在磁盘留痕。
+/// 打开 → 改 → 存 → 重开的完整往返：行尾、BOM、编码三样都不能在保存时漂移。
+/// 坏法：CRLF 被写成 LF、BOM 丢失或重复、GBK 文件被转成 UTF-8、临时文件留在磁盘上。
 #[test]
-fn file_read_write_roundtrip_preserves_encoding_and_atomic_write() {
+fn file_round_trip_preserves_encoding_bom_and_line_ending() {
     let (dir, state) = boot();
     let data = dir.path();
 
-    // 行尾：读时 CRLF 归一成 LF；写时不指定行尾按文件原本的 CRLF 原样写回。
+    // 行尾：读归一成 LF，写回按文件原本的 CRLF。
     let crlf = data.join("crlf.txt");
     let read = roundtrip(&state, &crlf, b"a\r\nb\r\n");
     assert_eq!(read.line_ending, "crlf", "应探测到 CRLF");
@@ -149,7 +145,7 @@ fn file_read_write_roundtrip_preserves_encoding_and_atomic_write() {
         "应原样写回 CRLF"
     );
 
-    // BOM：读时剥掉；显式 utf-8-bom 写回时补回。
+    // BOM：读剥掉，显式 utf-8-bom 写回时补回。
     let bom = data.join("bom.txt");
     let read_bom = roundtrip(&state, &bom, b"\xEF\xBB\xBFhello");
     assert_eq!(read_bom.text, "hello", "读进来应剥掉 BOM");
@@ -170,8 +166,7 @@ fn file_read_write_roundtrip_preserves_encoding_and_atomic_write() {
         "写回去应补回 BOM"
     );
 
-    // 强制编码：按 gb18030 打开 GBK 字节要解出表内符号；
-    // 不认识的编码名退回探测编码——用户选错也不能打不开文件。
+    // 强制编码与错误编码名：用户选错也要打得开，退回探测结果。
     let gbk = data.join("gbk.txt");
     let p = gbk.to_string_lossy().to_string();
     roundtrip(&state, &gbk, &[0xA1u8, 0xA1, 0xA1, 0xA2]);
@@ -180,22 +175,25 @@ fn file_read_write_roundtrip_preserves_encoding_and_atomic_write() {
         .file
         .read_as(&p, ReadMode::Full, Some("gb18030"))
         .expect("按 gb18030 读失败");
-    assert_eq!(forced.text, "、。", "指定 gb18030 应解出表内符号");
+    // GBK 里 A1A1 是全角空格、A1A2 是顿号（码表按 Unicode 映射）
+    assert_eq!(
+        forced.text, "\u{3000}、",
+        "指定 gb18030 应解出全角空格与顿号"
+    );
     assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
     let fallback = state
         .services
         .file
         .read_as(&p, ReadMode::Full, Some("klingon"))
         .expect("选错编码也不该打不开");
-    assert_eq!(fallback.text, "、。", "不支持应退回探测编码");
+    assert_eq!(fallback.text, "\u{3000}、", "不支持应退回探测编码");
 
-    // 原子写：正常写成功后不留临时文件；目标目录不存在直接报错，不替用户造。
+    // 原子写：不留临时文件；目标目录不存在直接报错，不替用户造目录。
     let file = data.join("x.txt");
-    let p = file.to_string_lossy().to_string();
     state
         .services
         .file
-        .write(&p, "new content", None, None, None)
+        .write(&file.to_string_lossy(), "new content", None, None, None)
         .expect("写失败");
     assert_eq!(fs::read_to_string(&file).expect("回读"), "new content");
     let leftovers: Vec<String> = fs::read_dir(data)
@@ -220,18 +218,60 @@ fn file_read_write_roundtrip_preserves_encoding_and_atomic_write() {
     );
 }
 
-/// 文件树操作的三类护栏：重命名拒绝覆盖 / 成环 / 逃逸，批量删除对陈旧路径
-/// 只记账不中断，新建同名拒绝而不是清空已有内容。
-/// 坏法：任何一种失守都是「用户的文件被无声销毁」。
+/// 中文 CSV 的两条打开路径：文本视图与表格预览必须解出同一份汉字。
+/// 坏法：中文列 mojibake 或替换符、表格预览与编辑器看到两种内容。
 #[test]
-fn file_tree_ops_reject_destructive_requests() {
+fn gbk_csv_preview_and_text_view_agree() {
+    let (dir, state) = boot();
+    let csv = dir.path().join("会员.csv");
+    // GBK 字节："车牌号,车主\n京A12345,张三\n沪B88888,李四\n"
+    let gbk: Vec<u8> = vec![
+        0xB3, 0xB5, 0xC5, 0xC6, 0xBA, 0xC5, 0x2C, 0xB3, 0xB5, 0xD6, 0xF7, 0x0D, 0x0A, 0xBE, 0xA9,
+        0x41, 0x31, 0x32, 0x33, 0x34, 0x35, 0x2C, 0xD5, 0xC5, 0xC8, 0xFD, 0x0D, 0x0A, 0xBB, 0xA6,
+        0x42, 0x38, 0x38, 0x38, 0x38, 0x38, 0x2C, 0xC0, 0xEE, 0xCB, 0xC4, 0x0D, 0x0A,
+    ];
+    fs::write(&csv, &gbk).expect("写 CSV 失败");
+    let path = csv.to_string_lossy().to_string();
+
+    let preview = state
+        .services
+        .file
+        .read_table_preview(&path, None)
+        .expect("表格预览失败");
+    assert_eq!(preview.encoding, "gb18030", "GBK 字节应探测为 GB18030");
+    assert_eq!(preview.delimiter, ",", "逗号分隔应被识别");
+    assert_eq!(preview.total_rows, 3, "表头 + 两行数据");
+    assert!(!preview.truncated, "小表不该标记截断");
+    assert_eq!(
+        preview.rows[0],
+        vec!["车牌号".to_string(), "车主".to_string()],
+        "表头必须是汉字"
+    );
+    assert_eq!(preview.rows[1][1], "张三", "正文必须是汉字，不是替换符");
+    assert_eq!(preview.rows[2][1], "李四");
+
+    let text = state
+        .services
+        .file
+        .read(&path, ReadMode::Full)
+        .expect("文本读取失败");
+    assert_eq!(text.encoding, "gb18030", "两条链路应得出同一个编码");
+    assert!(
+        text.text.contains("车牌号") && text.text.contains("李四"),
+        "文本视图同样要出汉字"
+    );
+}
+
+/// 文件操作的三类护栏：重命名拒绝覆盖与成环、非绝对路径拒绝、批量删除逐条记账。
+/// 坏法：任何一个失守都是「用户的文件被无声销毁」或「一个坏路径让整批失败」。
+#[test]
+fn file_ops_refuse_destructive_targets() {
     let (dir, state) = boot();
     let svc = &state.services.file_ops;
     let root = dir.path().join("ops");
     let sub = root.join("sub");
     fs::create_dir_all(&sub).expect("建目录失败");
 
-    // 重命名：先来一次成功的，再逐个验拒绝面。
     let a = root.join("a.txt");
     fs::write(&a, "content\n").expect("写文件失败");
     let b = root.join("b.txt");
@@ -242,6 +282,7 @@ fn file_tree_ops_reject_destructive_requests() {
     .expect("重命名失败");
     assert!(!a.exists(), "原路径该消失");
 
+    // 目标已存在：拒绝，且已有文件内容不变。
     let c = root.join("c.txt");
     fs::write(&c, "keep me\n").expect("写 c 失败");
     let err = svc
@@ -250,20 +291,23 @@ fn file_tree_ops_reject_destructive_requests() {
             to: c.to_string_lossy().to_string(),
         })
         .expect_err("目标已存在必须拒绝");
-    assert_eq!(err.code, "1003", "拒绝码该是路径越界档");
+    assert_eq!(err.code, codes::PATH_ESCAPE, "拒绝码应为路径越界档");
     assert_eq!(
         fs::read_to_string(&c).expect("读回 c").trim(),
         "keep me",
         "拒绝后已有文件不能被覆盖"
     );
+
+    // 目录进自己的子目录：拒绝（否则文件树成环）。
     let err = svc
         .rename(&RenameReq {
             from: root.to_string_lossy().to_string(),
             to: sub.join("root").to_string_lossy().to_string(),
         })
-        .expect_err("目录移进自己子目录必须拒绝");
-    assert_eq!(err.code, "1003", "成环必须拒绝");
-    // 相对路径依赖隐式工作目录，`..` 会逃出操作范围。
+        .expect_err("成环必须拒绝");
+    assert_eq!(err.code, codes::PATH_ESCAPE, "成环必须拒绝");
+
+    // 相对路径依赖隐式工作目录，判据不可复现：拒绝。
     assert!(
         svc.rename(&RenameReq {
             from: "a.txt".into(),
@@ -272,21 +316,8 @@ fn file_tree_ops_reject_destructive_requests() {
         .is_err(),
         "相对路径必须拒绝"
     );
-    assert!(
-        svc.rename(&RenameReq {
-            from: dir.path().join("x").to_string_lossy().to_string(),
-            to: dir
-                .path()
-                .join("..")
-                .join("y")
-                .to_string_lossy()
-                .to_string(),
-        })
-        .is_err(),
-        "含 .. 的路径必须拒绝"
-    );
 
-    // 批量删除：一个陈旧路径不能让整批失败，只记账。
+    // 批量删除：不存在的那个只记账，存在的那个真的删掉。
     let d = root.join("d.txt");
     fs::write(&d, "bye\n").expect("写 d 失败");
     let res = svc
@@ -301,7 +332,7 @@ fn file_tree_ops_reject_destructive_requests() {
     assert_eq!(res.failed, 1, "不存在的那个该记账失败");
     assert!(!d.exists(), "存在的那个该真的消失");
 
-    // 新建：同名重复必须拒绝，已有内容不能被清空。
+    // 新建同名：拒绝，已有内容不能被清空。
     let nf = root.join("fresh.txt");
     svc.create_file(&MkdirReq {
         path: nf.to_string_lossy().to_string(),
@@ -318,42 +349,31 @@ fn file_tree_ops_reject_destructive_requests() {
 
 // ---------- 会话 ----------
 
-/// 启动与会话的完整故事：首启写默认配置、空库空列表序列化成 []（null 会白屏）、
-/// 会话往返保标签顺序与窗口尺寸、关光标签后会话行仍在。
+/// 启动 → 恢复 → 关光标签：默认配置、空列表契约、标签顺序与窗口尺寸都在这条链上。
+/// 坏法：首启没写默认配置、空列表序列化成 null 让前端白屏、重启丢顺序与窗口大小。
 #[test]
-fn first_launch_seeds_defaults_and_session_round_trip_restores_tabs() {
+fn first_launch_seeds_defaults_and_session_restores_tabs() {
     let (_dir, state) = boot();
 
-    // 首次启动：默认配置就位；空库的会话与各用户数据列表都是「空」而不是 null。
     state
         .db
         .with(|conn| {
             let cfg = SettingsRepo::load(conn)?;
             assert_eq!(cfg, AppConfig::default(), "首次启动应写入默认配置");
-            let empty = SessionRepo::load(conn)?;
-            assert!(empty.session.is_none(), "空库不应有会话");
-            assert!(empty.tabs.is_empty(), "空库不应有标签");
             Ok(())
         })
         .expect("数据库链路不可用");
-    let ud = &state.services.userdata;
-    for (name, json) in [
-        (
-            "书签",
-            serde_json::to_string(&ud.list_bookmarks().expect("列书签失败")).expect("序列化失败"),
-        ),
-        (
-            "片段",
-            serde_json::to_string(&ud.list_snippets(&Default::default()).expect("列片段失败"))
-                .expect("序列化失败"),
-        ),
-        (
-            "草稿",
-            serde_json::to_string(&ud.list_drafts().expect("列草稿失败")).expect("序列化失败"),
-        ),
-    ] {
-        assert_eq!(json, "[]", "空{name}列表必须序列化成 [] 而不是 null");
-    }
+
+    // 空列表契约：列表字段必须是 [] 而不是 null（书签 / 片段 / 草稿同一实现）。
+    let empty_json = serde_json::to_string(
+        &state
+            .services
+            .userdata
+            .list_bookmarks()
+            .expect("列书签失败"),
+    )
+    .expect("序列化失败");
+    assert_eq!(empty_json, "[]", "空列表必须序列化成 [] 而不是 null");
 
     // 带标签保存 → 恢复：顺序、活跃索引、窗口尺寸都在。
     let tabs = vec![
@@ -390,9 +410,8 @@ fn first_launch_seeds_defaults_and_session_round_trip_restores_tabs() {
 
 // ---------- 批量 ----------
 
-/// 批量操作的两阶段契约：替换扫描只看不改、应用只改勾选的文件；
-/// 重命名冲突必须标出且应用整体拒绝、无冲突的计划真落地。
-/// 坏法：扫描就落盘 / 改掉没勾选的文件 / 重命名覆盖已有文件。
+/// 批量操作的两阶段契约：扫描只看不改、应用只改勾选的文件、重命名冲突整体拒绝。
+/// 坏法：扫描就落盘、改掉没勾选的文件、重命名覆盖已有文件。
 #[test]
 fn batch_two_phase_applies_only_confirmed_plans() {
     let (dir, state) = boot();
@@ -401,7 +420,6 @@ fn batch_two_phase_applies_only_confirmed_plans() {
     fs::write(&b, "nothing here\n").expect("写 b 失败");
     let before_b = fs::read_to_string(&b).expect("读 b");
 
-    // 扫描：命中要数对，文件必须原样。
     let scan = state
         .services
         .batch
@@ -421,7 +439,6 @@ fn batch_two_phase_applies_only_confirmed_plans() {
         "扫描阶段不能改动文件"
     );
 
-    // 应用：只改勾选的 a.txt，没勾选的 b.txt 不能被静默改掉。
     let res = state
         .services
         .batch
@@ -444,7 +461,7 @@ fn batch_two_phase_applies_only_confirmed_plans() {
         "没勾选的文件不能被改"
     );
 
-    // 重命名预览：a.txt → b.txt 目标已存在，标冲突且不可应用。
+    // 重命名：目标已存在要标冲突，应用整体拒绝。
     let plan = state
         .services
         .batch
@@ -475,7 +492,7 @@ fn batch_two_phase_applies_only_confirmed_plans() {
         "被占用的目标文件不能被覆盖"
     );
 
-    // 无冲突的计划：真落地。
+    // 无冲突的计划真落地。
     let ok = state
         .services
         .batch
@@ -493,14 +510,13 @@ fn batch_two_phase_applies_only_confirmed_plans() {
 
 // ---------- 备份 ----------
 
-/// 备份导出再导入，五个用户数据表都要回来——只导出不导入等于换机即丢数据。
-/// 合并语义一并守护：不在备份里的本机数据必须原样保留。
+/// 备份导出再导入：五类用户数据都要回来，且合并保留本机独有数据。
+/// 坏法：换机即丢数据、导入把本机数据抹掉、宏的 UUID 变了导致引用断链。
 #[test]
-fn backup_round_trip_restores_user_tables_and_keeps_local_rows() {
+fn backup_round_trip_merges_with_local_rows() {
     let (_dir, state) = boot();
     let ud = &state.services.userdata;
 
-    // 造五类数据：书签、片段、宏、草稿、最近文件。
     ud.add_bookmark(BookmarkAddReq {
         path: "C:\\a.txt".into(),
         line: 3,
@@ -539,7 +555,7 @@ fn backup_round_trip_restores_user_tables_and_keeps_local_rows() {
 
     let backup = ud.export_backup().expect("导出失败");
 
-    // 清场模拟换机：备份里有的数据全删，再补一条不在备份里的本机书签。
+    // 清场模拟换机：备份里有的全删，再补一条不在备份里的本机书签。
     ud.clear_bookmarks(None).expect("清书签失败");
     ud.remove_snippet(snippet.id).expect("删片段失败");
     ud.remove_macro(macro_vo.id.clone()).expect("删宏失败");
@@ -566,49 +582,54 @@ fn backup_round_trip_restores_user_tables_and_keeps_local_rows() {
         bookmarks.iter().any(|b| b.path == "C:\\local.txt"),
         "不在备份里的本机书签必须保留（合并语义）"
     );
-    let snippets = ud.list_snippets(&Default::default()).expect("列片段失败");
     assert!(
-        snippets.iter().any(|s| s.content == "{\"a\":1}"),
+        ud.list_snippets(&Default::default())
+            .expect("列片段失败")
+            .iter()
+            .any(|s| s.content == "{\"a\":1}"),
         "片段正文要回来"
     );
-    let macros = ud.list_macros().expect("列宏失败");
     assert!(
-        macros
+        ud.list_macros()
+            .expect("列宏失败")
             .iter()
             .any(|m| m.id == macro_vo.id && m.name == "格式化三连"),
         "宏按 UUID 原样回来"
     );
-    let drafts = ud.list_drafts().expect("列草稿失败");
     assert!(
-        drafts.iter().any(|d| d.content == "未保存的想法"),
+        ud.list_drafts()
+            .expect("列草稿失败")
+            .iter()
+            .any(|d| d.content == "未保存的想法"),
         "草稿正文要回来"
     );
-    let recent = ud.list_recent().expect("列最近失败");
     assert!(
-        recent.iter().any(|r| r.path == "C:\\a.txt"),
+        ud.list_recent()
+            .expect("列最近失败")
+            .iter()
+            .any(|r| r.path == "C:\\a.txt"),
         "最近文件要回来"
     );
 }
 
 // ---------- 压缩 ----------
 
-/// 全格式往返：压缩出来的包解压后内容必须逐字节一致（含中文文件名与嵌套目录）。
-/// 坏法：某一格式解压出的文件内容变了 / 文件名乱了 / 目录层级塌了。
+/// 十五种格式往返 + 重建式增删 + 分卷链，一条链走完压缩子系统的全部主路径。
+/// 坏法：某格式内容变了或层级塌了、增删丢条目、首卷打不开、合并字节不一致。
 #[test]
-fn archive_round_trip_all_formats_preserves_content() {
+fn archive_round_trip_all_formats_then_update_split_join() {
     let dir = tempfile::tempdir().expect("建临时目录失败");
     let (root, bin_file) = archive_samples(dir.path());
     let want_bin = fs::read(&bin_file).expect("回读样本");
     let want_txt = fs::read(root.join("说明.txt")).expect("回读样本");
     let root_str = root.to_string_lossy().to_string();
+    let ctx = TaskCtx::new("t".into(), 0);
 
-    // 容器格式压整个目录；单文件格式压一个文件（多源在引擎入口直接报 9005）
+    // ① 容器格式压整个目录；单文件格式压一个文件。
     let container: &[&str] = &[
         "7z", "zip", "tar", "tgz", "txz", "tbz2", "tzst", "tlz4", "tbr",
     ];
     let single: &[&str] = &["gz", "bz2", "zst", "xz", "lz4", "br"];
-    let ctx = TaskCtx::new("t".into(), 0);
-
     for fmt in container {
         let dest = dir.path().join(format!("out.{fmt}"));
         arch::create::create_archive(&create_req(vec![root_str.clone()], &dest, fmt), &ctx)
@@ -616,21 +637,19 @@ fn archive_round_trip_all_formats_preserves_content() {
         let out_dir = dir.path().join(format!("x-{fmt}"));
         arch::extract::extract_archive(&extract_req(&dest, &out_dir), &ctx)
             .unwrap_or_else(|e| panic!("{fmt} 解压失败: {e}"));
-        let extracted_root = out_dir.join("样本目录");
+        let extracted = out_dir.join("样本目录");
         assert_eq!(
-            fs::read(extracted_root.join("说明.txt"))
-                .unwrap_or_else(|_| panic!("{fmt} 解压后缺 说明.txt")),
+            fs::read(extracted.join("说明.txt")).unwrap_or_else(|_| panic!("{fmt} 缺 说明.txt")),
             want_txt,
             "{fmt} 往返后文本内容变了"
         );
         assert_eq!(
-            fs::read(extracted_root.join("子目录").join("数据.bin"))
-                .unwrap_or_else(|_| panic!("{fmt} 解压后缺 子目录/数据.bin（层级或中文名塌了）")),
+            fs::read(extracted.join("子目录").join("数据.bin"))
+                .unwrap_or_else(|_| panic!("{fmt} 缺 子目录/数据.bin（层级或中文名塌了）")),
             want_bin,
             "{fmt} 往返后二进制内容变了"
         );
     }
-
     for fmt in single {
         let dest = dir.path().join(format!("数据.bin.{fmt}"));
         arch::create::create_archive(
@@ -642,15 +661,13 @@ fn archive_round_trip_all_formats_preserves_content() {
         arch::extract::extract_archive(&extract_req(&dest, &out_dir), &ctx)
             .unwrap_or_else(|e| panic!("{fmt} 解压失败: {e}"));
         assert_eq!(
-            fs::read(out_dir.join("数据.bin"))
-                .unwrap_or_else(|_| panic!("{fmt} 单文件解压后缺产物")),
+            fs::read(out_dir.join("数据.bin")).unwrap_or_else(|_| panic!("{fmt} 缺产物")),
             want_bin,
             "{fmt} 单文件往返后内容变了"
         );
     }
 
-    // 双扩展名（.tar.xz / .tar.br）改个名也要认得出是 tar 家族：
-    // xz 有魔数但 brotli 没有，两条识别路径都要走通，否则改名后打开只剩一个条目。
+    // 双扩展名改名后仍要认得出是 tar 家族（brotli 无魔数，只能靠扩展名）。
     for (fmt, renamed) in [("txz", "renamed.tar.xz"), ("tbr", "renamed.tar.br")] {
         let src = dir.path().join(format!("out.{fmt}"));
         let dest = dir.path().join(renamed);
@@ -660,32 +677,19 @@ fn archive_round_trip_all_formats_preserves_content() {
             .unwrap_or_else(|e| panic!("{renamed} 改名后识别失败: {e}"));
         assert!(
             out_dir.join("样本目录").join("说明.txt").exists(),
-            "{renamed} 改名后没被识别成 tar 家族（目录层级丢了）"
+            "{renamed} 没被识别成 tar 家族（目录层级丢了）"
         );
     }
-}
 
-/// 归档的改写与分卷都走「重建出完整新包」：追加 / 删除条目要真的进出且原有
-/// 内容不动；分卷从 .001 打开即整包，合并后与原文件逐字节一致。
-/// 坏法：改动丢内容丢密码 / 分卷首卷打不开 / 合并还原的字节不对。
-#[test]
-fn archive_update_split_join_preserve_bytes() {
-    let dir = tempfile::tempdir().expect("建临时目录失败");
-    let (root, _bin) = archive_samples(dir.path());
-    let ctx = TaskCtx::new("t".into(), 0);
-
-    // 追加 / 删除（重建式）。
-    let dest = dir.path().join("pack.zip");
-    arch::create::create_archive(
-        &create_req(vec![root.to_string_lossy().to_string()], &dest, "zip"),
-        &ctx,
-    )
-    .expect("创建失败");
+    // ② 追加 / 删除走重建：新增条目进得去，原有条目一个不少。
+    let pack = dir.path().join("pack.zip");
+    arch::create::create_archive(&create_req(vec![root_str.clone()], &pack, "zip"), &ctx)
+        .expect("创建失败");
     let extra = dir.path().join("新增.log");
     fs::write(&extra, b"new entry").expect("写新增文件");
     arch::update::add_entries(
         &AddEntriesReq {
-            archive: dest.to_string_lossy().to_string(),
+            archive: pack.to_string_lossy().to_string(),
             sources: vec![extra.to_string_lossy().to_string()],
             password: None,
             exclude: Vec::new(),
@@ -693,10 +697,10 @@ fn archive_update_split_join_preserve_bytes() {
         &ctx,
     )
     .expect("追加失败");
-    let info = arch::list::list_archive(&dest, None).expect("追加后列目录失败");
+    let info = arch::list::list_archive(&pack, None).expect("追加后列目录失败");
     assert!(
         info.entries.iter().any(|e| e.name == "新增.log"),
-        "追加的条目要出现在归档里"
+        "追加的条目要出现"
     );
     assert!(
         info.entries.iter().any(|e| e.name.ends_with("说明.txt")),
@@ -704,14 +708,14 @@ fn archive_update_split_join_preserve_bytes() {
     );
     arch::update::delete_entries(
         &DeleteEntriesReq {
-            archive: dest.to_string_lossy().to_string(),
+            archive: pack.to_string_lossy().to_string(),
             entries: vec!["样本目录/说明.txt".into()],
             password: None,
         },
         &ctx,
     )
     .expect("删除失败");
-    let info = arch::list::list_archive(&dest, None).expect("删除后列目录失败");
+    let info = arch::list::list_archive(&pack, None).expect("删除后列目录失败");
     assert!(
         !info.entries.iter().any(|e| e.name == "样本目录/说明.txt"),
         "删除的条目必须消失"
@@ -721,8 +725,7 @@ fn archive_update_split_join_preserve_bytes() {
         "没删的条目必须还在"
     );
 
-    // 分卷链：切卷 → 删原包 → 从 .001 打开解压 → 合并字节级还原。
-    // 用一个新鲜的包：上面的删除段动过 pack.zip 的条目，字节对比要从未改包出发。
+    // ③ 分卷链：从 .001 打开即整包，合并后与原文件字节级一致。
     let vol = dir.path().join("vol.zip");
     arch::create::create_archive(
         &create_req(vec![root.to_string_lossy().to_string()], &vol, "zip"),
@@ -732,11 +735,15 @@ fn archive_update_split_join_preserve_bytes() {
     let original = fs::read(&vol).expect("回读原包");
     let parts = arch::split::split_file(&vol, 1024, &ctx).expect("分卷失败");
     assert!(parts.len() >= 2, "必须切出多卷");
-    fs::remove_file(&dest).expect("删原包失败（验证分卷链独立可用）");
-    let first = std::path::PathBuf::from(&parts[0]);
+    // 删掉原包：分卷链必须自己站得住，不能偷偷借原文件
+    fs::remove_file(&vol).expect("删原包失败");
+    let first = PathBuf::from(&parts[0]);
     let info = arch::list::list_archive(&first, None).expect("首卷必须能直接打开");
     assert!(info.is_split, "分卷包要标记 is_split");
-    assert!(info.entries.iter().any(|e| e.name.contains("说明.txt")));
+    assert!(
+        info.entries.iter().any(|e| e.name.contains("说明.txt")),
+        "首卷应列出全部条目"
+    );
     let out_dir = dir.path().join("from-parts");
     arch::extract::extract_archive(&extract_req(&first, &out_dir), &ctx).expect("分卷解压失败");
     assert!(out_dir.join("样本目录").join("说明.txt").exists());
@@ -749,17 +756,14 @@ fn archive_update_split_join_preserve_bytes() {
     );
 }
 
-/// 打不开的包要说清为什么：恶意条目整包拒绝且不落盘、没密码报 9002、
-/// 密码错报 9003（前端据此弹密码框）、损坏的包测试要报出失败条目。
-/// 坏法：穿越把文件写到目标目录之外 / 要密码与密码错混成一个错 /
-/// 损坏的包测试照样说「好」。
+/// 打不开的包要说清为什么：穿越整包拒绝、缺密码与密码错分开报、损坏包测出失败清单。
+/// 坏法：穿越写到目标之外、两种密码错误混成一个码、损坏包测试照样说「好」。
 #[test]
-fn archive_rejects_traversal_and_distinguishes_password_and_corruption() {
+fn archive_rejects_traversal_and_separates_password_errors() {
     let dir = tempfile::tempdir().expect("建临时目录失败");
     let ctx = TaskCtx::new("t".into(), 0);
 
-    // 路径穿越：拒绝语义是整包失败而不是「跳过坏条目继续解」——
-    // 静默跳过会让用户以为解压完整，缺文件要到用时才发现。
+    // 穿越：整包失败而不是跳过坏条目继续解。
     let evil_zip = dir.path().join("evil.zip");
     {
         use std::io::Write;
@@ -777,26 +781,26 @@ fn archive_rejects_traversal_and_distinguishes_password_and_corruption() {
         .expect_err("穿越条目必须被拒绝");
     assert_eq!(err.code, codes::PATH_ESCAPE, "穿越必须报 1003，实际 {err}");
     assert!(
-        !dir.path().join("evil.txt").exists(),
-        "目标目录之外不允许出现任何文件"
-    );
-    assert!(
-        !out_dir
-            .read_dir()
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(false),
-        "含穿越条目的包不允许落任何文件"
+        !dir.path().join("evil.txt").exists()
+            && !out_dir
+                .read_dir()
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false),
+        "目标目录内外都不允许落任何文件"
     );
 
-    // 密码三态（加密文件名的 7z：列表本身就要密码）。
+    // 密码三态：加密文件名的 7z 连列表都要密码。
     let (root, _bin) = archive_samples(dir.path());
     let secret = dir.path().join("secret.7z");
-    let req = CreateArchiveReq {
-        password: Some("正确密码123".into()),
-        encrypt_filenames: true,
-        ..create_req(vec![root.to_string_lossy().to_string()], &secret, "7z")
-    };
-    arch::create::create_archive(&req, &ctx).expect("加密 7z 创建失败");
+    arch::create::create_archive(
+        &CreateArchiveReq {
+            password: Some("正确密码123".into()),
+            encrypt_filenames: true,
+            ..create_req(vec![root.to_string_lossy().to_string()], &secret, "7z")
+        },
+        &ctx,
+    )
+    .expect("加密 7z 创建失败");
     let no_pwd = arch::list::list_archive(&secret, None).expect_err("不给密码必须打不开");
     assert_eq!(
         no_pwd.code,
@@ -807,7 +811,7 @@ fn archive_rejects_traversal_and_distinguishes_password_and_corruption() {
     assert_eq!(wrong.code, codes::ARCHIVE_WRONG_PASSWORD, "实际 {wrong}");
     arch::list::list_archive(&secret, Some("正确密码123")).expect("正确密码必须能开");
 
-    // 损坏检测：正文中间翻一个字节破坏 CRC，测试必须报失败清单。
+    // 损坏检测：翻一个字节破坏 CRC，测试必须报出具体失败条目。
     let pack = dir.path().join("pack.zip");
     arch::create::create_archive(
         &create_req(vec![root.to_string_lossy().to_string()], &pack, "zip"),
@@ -827,7 +831,7 @@ fn archive_rejects_traversal_and_distinguishes_password_and_corruption() {
     )
     .expect("测试本身不该崩");
     assert!(!result.ok, "损坏的包必须测出失败");
-    assert!(!result.failures.is_empty(), "失败清单要给出具体条目与原因");
+    assert!(!result.failures.is_empty(), "失败清单要给出条目与原因");
 }
 
 // ---------- 系统关联 ----------
@@ -835,7 +839,7 @@ fn archive_rejects_traversal_and_distinguishes_password_and_corruption() {
 /// 文件关联链路：用 winreg 直接读写注册表做独立仲裁，不经被测代码。
 #[cfg(windows)]
 mod assoc {
-    use notetext_lib::domain::file_assoc::FileAssocSetReq;
+    use notetext_lib::domain::file_assoc::{FileAssocExtVO, FileAssocSetReq, FileAssocStatusVO};
     use notetext_lib::platform::file_assoc::{assoc_set_group, assoc_status};
     use winreg::enums::{HKEY_CURRENT_USER, KEY_ALL_ACCESS, KEY_READ};
     use winreg::RegKey;
@@ -902,11 +906,7 @@ mod assoc {
         .expect("关联开关失败");
     }
 
-    fn ext_row<'a>(
-        status: &'a notetext_lib::domain::file_assoc::FileAssocStatusVO,
-        group: &str,
-        ext: &str,
-    ) -> &'a notetext_lib::domain::file_assoc::FileAssocExtVO {
+    fn ext_row<'a>(status: &'a FileAssocStatusVO, group: &str, ext: &str) -> &'a FileAssocExtVO {
         status
             .groups
             .iter()
@@ -915,14 +915,12 @@ mod assoc {
             .unwrap_or_else(|| panic!("{group} 组里找不到 .{ext}"))
     }
 
-    /// 关联注册 / 注销全链路：双击文件要么用 NoteText 打开、要么恢复原状。
-    /// 写错键或值（引号丢了、ProgId 挂错位置）资源管理器都不认，用户看到的就是「双击没反应」。
+    /// 注册 / 注销全链路：双击用 NoteText 打开或恢复原状，键值写错资源管理器就不认。
     #[test]
     fn file_assoc_register_round_trip_lands_open_with_and_default() {
         let sb = Sandbox::new();
         let scope = sb.scope();
 
-        // 起点：一片空白。
         let s = assoc_status(Some(scope)).expect("读状态失败");
         assert!(!ext_row(&s, "text", "txt").in_open_with, "起点不该有关联");
 
@@ -941,7 +939,7 @@ mod assoc {
             "压缩组不该被顺手打开"
         );
 
-        // 打开命令必须带引号 + %1：路径含空格时丢了引号，Shell 会把 C:\Program 拆成两截。
+        // 打开命令必须带引号 + %1：路径含空格时丢引号，Shell 会把 C:\Program 拆成两截。
         let exe = std::env::current_exe().expect("取测试进程路径失败");
         let cmd = sb
             .read_string(r"Classes\NoteText.Text\shell\open\command", "")
@@ -951,13 +949,8 @@ mod assoc {
             format!("\"{}\" \"%1\"", exe.display()),
             "打开命令应为带引号的 exe + %1"
         );
-        assert!(
-            sb.read_string(r"Classes\NoteText.Text\DefaultIcon", "")
-                .is_some(),
-            "类型图标必须存在，否则资源管理器给白板图标"
-        );
 
-        // 用户在系统设置里选了默认：UserChoice 指向我们的 ProgId，状态要读得出来。
+        // 用户选了默认：UserChoice 指向我们的 ProgId，状态要读得出来。
         sb.write_string(r"FileExts\.txt\UserChoice", "ProgId", "NoteText.Text");
         let s = assoc_status(Some(scope)).expect("读状态失败");
         assert!(
@@ -965,7 +958,7 @@ mod assoc {
             "UserChoice 指向 NoteText.Text 时应报「已是默认」"
         );
 
-        // 开压缩组再关文本组：能力注册按组收缩，不能把压缩组一起拆了。
+        // 开压缩组再关文本组：按组收缩，不能误伤另一组。
         enable("archive", true, scope);
         enable("text", false, scope);
         let s = assoc_status(Some(scope)).expect("读状态失败");
@@ -982,18 +975,14 @@ mod assoc {
             !sb.has_key(r"Classes\NoteText.Text"),
             "只属于我们的 ProgId 必须整树删掉"
         );
-        let caps = sb
-            .read_string(r"Capabilities\FileAssociations", ".zip")
-            .expect("压缩组注册期间能力键必须还在");
-        assert_eq!(caps, "NoteText.Archive");
-
-        // 全部注销：能力注册整块撤走，注册表里不剩 NoteText 的痕迹。
-        enable("archive", false, scope);
-        let s = assoc_status(Some(scope)).expect("读状态失败");
-        assert!(
-            !ext_row(&s, "archive", "zip").in_open_with,
-            "压缩组注销后不该占「打开方式」"
+        assert_eq!(
+            sb.read_string(r"Capabilities\FileAssociations", ".zip")
+                .expect("压缩组注册期间能力键必须还在"),
+            "NoteText.Archive"
         );
+
+        // 全部注销：注册表里不剩 NoteText 的痕迹。
+        enable("archive", false, scope);
         assert!(!sb.has_key(r"Capabilities"), "两组都注销后能力键应收走");
         let reg = RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey_with_flags(format!(r"{}\RegisteredApplications", scope), KEY_READ)

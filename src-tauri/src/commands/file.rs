@@ -65,6 +65,20 @@ pub async fn save_file_as(
     }
 }
 
+/// CSV / TSV 表格预览：后端解码 + 切行，前端不碰原始字节。
+/// 标 async 的原因与归档一致——大文件的文本解码不能在主线程上做。
+#[tauri::command(async)]
+pub fn read_table_preview(
+    state: State<'_, AppState>,
+    path: String,
+    encoding: Option<String>,
+) -> AppResult<crate::domain::file::TablePreviewVO> {
+    state
+        .services
+        .file
+        .read_table_preview(&path, encoding.as_deref())
+}
+
 /// 列目录。
 #[tauri::command]
 pub fn read_dir(
@@ -93,6 +107,12 @@ pub fn stat_file(
 #[tauri::command]
 pub async fn open_file_dialog(suggested_dir: Option<String>) -> AppResult<Option<String>> {
     crate::commands::dialog::open_dialog(suggested_dir, false).await
+}
+
+/// 打开多个文件对话框（批量解压）。
+#[tauri::command]
+pub async fn open_files_dialog(suggested_dir: Option<String>) -> AppResult<Vec<String>> {
+    crate::commands::dialog::open_files_dialog(suggested_dir).await
 }
 
 /// 打开目录对话框。

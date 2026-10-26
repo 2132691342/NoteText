@@ -250,7 +250,8 @@ export const useEditorStore = defineStore('editor', () => {
     const tab = tabs.value.find((t) => t.id === id)
     if (!tab || !tab.path || tab.path.startsWith('draft:')) return
     try {
-      const c = await api.readFile(tab.path)
+      // 截断标签按原样读前段：全量读会在 >32MB 的文件上直接报错，重载永远失败
+      const c = await api.readFile(tab.path, undefined, tab.truncated ? { mode: 'head' } : undefined)
       // 只更新元数据，正文由组件层按 fs:changed 事件决定是否替换
       // （用户正在编辑时不强制覆盖，见 composables/useExternalChange.ts）。
       tab.encoding = c.encoding

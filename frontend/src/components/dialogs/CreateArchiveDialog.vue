@@ -6,7 +6,14 @@
       <!-- 源清单 -->
       <div class="nt-field">
         <span class="nt-label">{{ t('archive.sources') }}</span>
-        <div class="nt-carch-srcs">
+        <!-- 源清单：可从资源管理器直接拖进来（.stop 阻止 window 级拖放把文件开成标签） -->
+        <div
+          class="nt-carch-srcs"
+          :class="{ 'is-drop': dragOver }"
+          @dragover.stop.prevent="dragOver = true"
+          @dragleave.stop="dragOver = false"
+          @drop.stop.prevent="onDrop"
+        >
           <div v-for="(s, i) in sources" :key="s" class="nt-carch-src">
             <NtIcon :name="isDir[i] ? 'folder' : 'file'" size="sm" />
             <span class="nt-carch-src-name" :title="s">{{ baseName(s) }}</span>
@@ -125,9 +132,24 @@
       <!-- 单文件格式的限制提示 -->
       <p v-if="!caps.container" class="nt-carch-warn">{{ t('archive.singleFileOnly') }}</p>
 
+      <!-- 提交后的实时进度：大包压缩常常要几分钟，只有一个 toast 等于没有反馈 -->
+      <div v-if="activeTask" class="nt-carch-progress">
+        <ElProgress
+          :percentage="pct"
+          :stroke-width="6"
+          :status="activeTask.status === 'failed' ? 'exception' : undefined"
+        />
+        <div class="nt-carch-progress-row">
+          <span class="nt-carch-progress-name">{{ activeTask.current ?? activeTask.title }}</span>
+          <ElButton v-if="busy" size="small" @click="archive.cancel(activeTask.id)">
+            {{ t('archive.stop') }}
+          </ElButton>
+        </div>
+      </div>
+
       <div class="nt-carch-actions">
         <ElButton size="small" @click="emit('close')">{{ t('common.cancel') }}</ElButton>
-        <ElButton size="small" type="primary" :disabled="!canCreate" :loading="submitting"
+        <ElButton size="small" type="primary" :disabled="!canCreate || busy" :loading="submitting"
           @click="onCreate">{{ t('archive.createNow') }}</ElButton>
       </div>
     </div>
@@ -135,18 +157,20 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   ElButton,
   ElCheckbox,
   ElInput,
   ElOption,
+  ElProgress,
   ElSelect,
 } from 'element-plus'
 import NtModal from '@/components/common/NtModal.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { api, normalizeError } from '@/api'
+import { useArchiveStore } from '@/stores/archive'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
 import { baseName } from '@/utils'
@@ -157,6 +181,22 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const toast = useToastStore()
 const dialogs = useDialogStore()
+const archive = useArchiveStore()
+
+/** 本窗口提交的创建任务：进度就地显示，完成后自动关窗。 */
+const taskId = ref('')
+const activeTask = computed(() => archive.tasks.find((x) => x.id === taskId.value) ?? null)
+const busy = computed(() => {
+  const s = activeTask.value?.status
+  return s === 'queued' || s === 'running' || s === 'paused'
+})
+const pct = computed(() => Math.max(0, Math.round((activeTask.value?.progress ?? 0) * 100)))
+watch(
+  () => activeTask.value?.status,
+  (s) => {
+    if (s === 'done') emit('close')
+  },
+)
 
 /** 预填源：树右键 / 命令入口经 dialogs.open 的 seedExtra 传入。 */
 const seedSources = (dialogs.seedExtra.sources as string[] | undefined) ?? []
@@ -203,21 +243,26 @@ const canCreate = computed(() => {
 })
 
 async function pickFiles() {
-  const picked = await pickMany()
-  if (!picked) return
-  for (const p of picked) addSource(p)
+  const picked = await api.openFilesDialog(destDir.value || undefined)
+  for (const p of picked ?? []) addSource(p)
 }
 async function pickFolder() {
   const p = await api.openFolderDialog()
   if (p) addSource(p)
 }
-/** 多选文件：普通打开对话框一次一个，循环走。 */
-async function pickMany(): Promise<string[] | null> {
-  const out: string[] = []
-  const first = await api.openFileDialog(destDir.value || undefined)
-  if (!first) return null
-  out.push(first)
-  return out
+
+/** 拖入的文件：WebView2 的 File 带 path；拿不到路径的（浏览器 dev）跳过并提示。 */
+const dragOver = ref(false)
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  const files = [...(e.dataTransfer?.files ?? [])]
+  let missed = 0
+  for (const f of files) {
+    const p = (f as File & { path?: string }).path
+    if (p) addSource(p)
+    else missed += 1
+  }
+  if (missed > 0) toast.warn(t('archive.dropNoPath'))
 }
 
 function addSource(p: string) {
@@ -248,7 +293,7 @@ async function onCreate() {
   submitting.value = true
   try {
     const mb = splitPreset.value === 'custom' ? Number(customMb.value) : Number(splitPreset.value)
-    await api.archive.create({
+    taskId.value = await api.archive.create({
       sources: sources.value,
       dest: `${destDir.value.replace(/[\\/]+$/, '')}\\${destName.value.trim()}.${formatExt.value}`,
       format: formatId.value,
@@ -262,7 +307,6 @@ async function onCreate() {
       comment: comment.value || null,
     })
     toast.ok(t('archive.queued'))
-    emit('close')
   } catch (e) {
     toast.bad(normalizeError(e).message)
   } finally {
@@ -326,6 +370,40 @@ async function onCreate() {
   border: 1px solid var(--nt-border);
   border-radius: var(--nt-radius-sm);
   padding: var(--nt-sp-1);
+  transition: border-color var(--nt-dur-fast) var(--nt-ease), background-color var(--nt-dur-fast) var(--nt-ease);
+}
+
+/* 拖入反馈：描边转主色，告诉用户「松手就加进来」 */
+.nt-carch-srcs.is-drop {
+  border-color: var(--nt-primary);
+  background: var(--nt-primary-soft);
+}
+
+.nt-carch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nt-sp-1);
+  padding: var(--nt-sp-2) var(--nt-sp-3);
+  background: var(--nt-elev-2);
+  border: 1px solid var(--nt-border);
+  border-radius: var(--nt-radius-sm);
+}
+
+.nt-carch-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nt-sp-2);
+  min-width: 0;
+}
+
+.nt-carch-progress-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--nt-fs-hint);
+  color: var(--nt-ink-3);
 }
 
 .nt-carch-src {
