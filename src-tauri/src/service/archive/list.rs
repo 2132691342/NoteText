@@ -6,18 +6,13 @@ use crate::domain::archive_format::ArchiveFormat;
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::archive::parts::{open_source, ReadSeek};
 use crate::service::archive::{
-    detect_format, err_zip, password_error, tar_codec, to_slash, wrap_tar_codec,
+    detect_format, err_undetectable, err_zip, password_error, tar_codec, to_slash, wrap_tar_codec,
 };
 use std::path::{Path, PathBuf};
 
 /// 打开归档并列出条目。password 为 None 或空串视为无密码。
 pub fn list_archive(path: &Path, password: Option<&str>) -> AppResult<ArchiveInfoVO> {
-    let format = detect_format(path).ok_or_else(|| {
-        AppError::new(
-            codes::ARCHIVE_UNSUPPORTED,
-            "识别不出压缩格式：文件可能不是压缩包或已损坏",
-        )
-    })?;
+    let format = detect_format(path).ok_or_else(|| err_undetectable(path))?;
     let pwd = password.filter(|p| !p.is_empty());
     let parts = split_parts(path);
     let use_parts = parts.len() > 1;

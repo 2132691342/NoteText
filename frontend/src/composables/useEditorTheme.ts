@@ -35,11 +35,11 @@ export function useEditorTheme(host: Ref<HTMLElement | null>) {
           '&': {
             backgroundColor: 'var(--nt-editor-bg)',
             color: 'var(--nt-ink)',
-            fontSize: 'var(--nt-fs-md)',
+            fontSize: 'var(--nt-editor-fs, var(--nt-fs-md))',
           },
           '.cm-content': {
             caretColor: 'var(--nt-editor-cursor)',
-            fontFamily: 'var(--nt-font-editor)',
+            fontFamily: 'var(--nt-editor-font, var(--nt-font-editor))',
             padding: 'var(--nt-sp-2) 0',
           },
           '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--nt-editor-cursor)' },
@@ -99,12 +99,22 @@ export function useEditorTheme(host: Ref<HTMLElement | null>) {
     ]
   }
 
-  /** 字号 / 字体变化：直接写宿主元素的样式，比 reconfigure 便宜。 */
+  /**
+   * 字号 / 字体落到宿主元素的两个变量上。
+   *
+   * 为什么用变量而不是直接写 font-size：编辑器里除了 `.cm-editor` 还有 gutter、
+   * 搜索面板等子层，写死在宿主上的字号被子层自己的字号覆盖；
+   * 变量由主题扩展与组件 CSS 共同引用，改一处全链生效。
+   */
   function applyFont() {
     const el = host.value
     if (!el) return
-    el.style.fontFamily = 'var(--nt-font-editor)'
-    el.style.fontSize = `calc(${settings.config.editor.font_size}px * var(--nt-fs-scale) * var(--nt-vw-scale))`
+    const cfg = settings.config.editor
+    el.style.setProperty(
+      '--nt-editor-fs',
+      `calc(${cfg.font_size}px * var(--nt-fs-scale) * var(--nt-vw-scale))`,
+    )
+    el.style.setProperty('--nt-editor-font', cfg.font_family || 'var(--nt-font-editor)')
   }
 
   return { themeExtensions, applyFont }

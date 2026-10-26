@@ -93,8 +93,9 @@ dialogs.open('json', seedText, extra)
 | `nt-stats` | 编辑器 → 状态栏 | 行数 |
 | `nt-history` | 编辑器 → 工具栏 | 撤销可用性 |
 | `nt-editor-ready` | 编辑器 → 命令层 | 实例挂载完成 |
-| `nt-reload-doc` | 命令层 → 编辑器 | 让组件替换正文（重新载入） |
+| `editor-goto-line` | 面板 → 编辑区 | 书签 / 符号 / 查找结果跳行；由 `EditorArea` 接住（标签可能还没挂载，等实例注册后再跳） |
 | `bookmarks-changed` | 任意 → 书签面板 / gutter | 书签集合变了 |
+| `snippets-changed` / `macros-changed` | 工具浮窗 / 命令层 → 侧栏面板 | 片段 / 宏集合变了，面板重查 |
 | `nt-marks-changed` | 动作层 → 编辑器 | 5 色标记变了，重绘装饰 |
 | `nt-drag-state` | `useFileDrop` → 编辑区 | 拖放提示层显隐 |
 

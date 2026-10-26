@@ -111,27 +111,20 @@ for (const f of walk(SRC, /\.(ts|vue)$/)) {
   })
 }
 
-let bad = 0
-
-/** 打一小节：空节打「(无)」，有内容逐行列出并计入问题数。 */
-function section(title, items) {
-  console.log(`\n=== ${title} (${items.length}) ===`)
-  if (!items.length) {
-    console.log('(无)')
-    return
-  }
-  bad += items.length
-  for (const it of items) console.log(it)
+const problems = []
+function report(title, items) {
+  for (const it of items) problems.push(`[${title}] ${it}`)
 }
 
-console.log(`key 统计: zh=${zh.size} en=${en.size} 被引用=${used.size}`)
-
-section('引用了但 zh-CN 缺', [...used].filter(([k]) => !zh.has(k)).map(([k, f]) => `${k}  <- ${[...f].join(', ')}`))
-section('引用了但 en 缺', [...used.keys()].filter((k) => !en.has(k)))
-section('只在 zh-CN 有', [...zh].filter((k) => !en.has(k)))
-section('只在 en 有', [...en].filter((k) => !zh.has(k)))
-section('模板里的裸中文', hardcoded)
-section('提示里直接传了 key 而非 t(key)', rawKeyCalls)
+report(
+  '引用了但没定义',
+  [...used].filter(([k]) => !zh.has(k)).map(([k, f]) => `${k}  <- ${[...f].join(', ')}`),
+)
+report('en 缺 key', [...used.keys()].filter((k) => !en.has(k)))
+report('zh-CN 多出 key', [...zh].filter((k) => !en.has(k)))
+report('en 多出 key', [...en].filter((k) => !zh.has(k)))
+report('模板里的裸中文', hardcoded)
+report('提示直接传 key', rawKeyCalls)
 
 // 后端错误码：Rust 侧 message 固定中文，前端必须按码各给一份文案（errCode 段）
 const rustCodes = new Set()
@@ -149,9 +142,8 @@ function missingCodes(src) {
   )
   return [...rustCodes].sort().filter((c) => !have.has(c))
 }
-console.log(`\n后端错误码: ${rustCodes.size}`)
-section('zh-CN 缺的错误码文案', missingCodes(zhSrc))
-section('en 缺的错误码文案', missingCodes(enSrc))
+report('zh-CN 缺的错误码文案', missingCodes(zhSrc))
+report('en 缺的错误码文案', missingCodes(enSrc))
 
 // 编码清单：后端给 id，显示名在 locales 的 encodingLabel 段
 const encSrc = readFileSync(join(RUST_SRC, 'service/encoding.rs'), 'utf8')
@@ -163,12 +155,12 @@ function missingEnc(src) {
   )
   return [...encIds].sort().filter((id) => !have.has(id))
 }
-console.log(`\n编码清单: ${encIds.size}`)
-section('zh-CN 缺的编码显示名', missingEnc(zhSrc))
-section('en 缺的编码显示名', missingEnc(enSrc))
+report('zh-CN 缺的编码显示名', missingEnc(zhSrc))
+report('en 缺的编码显示名', missingEnc(enSrc))
 
-const orphan = [...zh].filter((k) => !used.has(k))
-console.log(`\n未被静态引用的 key: ${orphan.length}（动态拼接属正常，仅供参考）`)
-
-console.log(bad === 0 ? '\n全部通过' : `\n问题合计: ${bad}`)
-process.exit(bad === 0 ? 0 : 1)
+if (problems.length) {
+  for (const p of problems) console.log(p)
+  console.log(`\n${problems.length} 处问题`)
+  process.exit(1)
+}
+console.log(`i18n 通过：key ${zh.size}，错误码 ${rustCodes.size}，编码 ${encIds.size}`)

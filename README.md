@@ -1,7 +1,8 @@
 # NoteText
 
 **轻量级 Windows 桌面文本编辑器。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
-安装包 ~5MB，内置代码编辑、查找替换、编码转换、JSON 工具、Diff 对比、Markdown 预览与文档预览。
+安装包 10MB 以内（CI 有体积门禁），内置代码编辑、查找替换、编码转换、JSON 工具、
+Diff 对比、Markdown 预览、文档预览与压缩归档。
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
@@ -11,9 +12,9 @@
 
 ## 定位
 
-内核是 CodeMirror 6 + Rust 文件域，项目只做三件事：
+内核是 CodeMirror 6 + Rust 文件域，项目只做四件事：
 把编辑器的每一类操作接顺、把开发者高频的文本处理工具内置、
-把「关窗再开回到原样」这件事做扎实。
+把「关窗再开回到原样」这件事做扎实、把常用压缩格式的打包解包内置进来。
 不自研插件系统、不做多窗口、不做云同步——这条边界让功能面收得住，
 代价是高级需求要靠外部工具。
 
@@ -89,9 +90,9 @@ $env:NOTETEXT_HOME = "$env:TEMP\nt-dev"
 ### 本地验证
 
 ```bash
-pwsh scripts/check.ps1                 # 快门：格式 → 编译 → 测试
-pwsh scripts/check.ps1 -Full           # 全量门禁：+ i18n 审计 + clippy + 前端构建
-pwsh scripts/check.ps1 -List           # 列出全部测试名
+pwsh scripts/check.ps1                 # 日常：格式 → 编译 → 8 条链路
+pwsh scripts/check.ps1 -Test archive   # 只跑名字含关键字的链路
+pwsh scripts/check.ps1 -Full           # 门禁：+ i18n 审计 + clippy + 前端构建
 node scripts/i18n-audit.mjs            # 单独查国际化
 ```
 
@@ -102,7 +103,7 @@ NoteText/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── commands/          # Tauri invoke 入口（薄）
-│   │   ├── service/           # 业务编排：file / editor / tools / userdata / batch / session
+│   │   ├── service/           # 业务编排：file / editor / tools / userdata / batch / session / archive
 │   │   ├── repo/              # 一张表一个 repo
 │   │   ├── domain/            # DO / REQ / VO（四层禁止内联结构体）
 │   │   ├── db/                # SQLite 打开 + 迁移（WAL）
@@ -112,7 +113,7 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id / text
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/chain_tests.rs   # 9 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
+│   └── tests/chain_tests.rs   # 8 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
@@ -174,14 +175,14 @@ NoteText/
 
 ## 测试
 
-9 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按六组排列
+8 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按六组排列
 （文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联）。**每个测试函数名就是它守护的那件坏事**，
-失败时报文直接指出坏在哪。全量 < 1 秒；同一域的相近故事合并成一条，
+失败时报文直接指出坏在哪。全量约 1 秒；同一域的相近故事合并成一条，
 一条测试就是一条完整的用户故事。
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --lib --test chain_tests
-pwsh scripts/check.ps1 -List        # 列出全部测试名
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
+pwsh scripts/check.ps1 -Test archive   # 只跑名字含关键字的链路
 ```
 
 判据见 [AGENTS.md §3](AGENTS.md) 与 [specs/12](specs/12-testing.md)：

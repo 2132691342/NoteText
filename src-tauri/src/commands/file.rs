@@ -95,6 +95,12 @@ pub async fn open_file_dialog(suggested_dir: Option<String>) -> AppResult<Option
     crate::commands::dialog::open_dialog(suggested_dir, false).await
 }
 
+/// 多选文件对话框：出参是路径数组，用户取消时是空数组而不是 null。
+#[tauri::command]
+pub async fn open_files_dialog(suggested_dir: Option<String>) -> AppResult<Vec<String>> {
+    crate::commands::dialog::open_files_dialog(suggested_dir).await
+}
+
 /// 打开目录对话框。
 #[tauri::command]
 pub async fn open_folder_dialog(suggested_dir: Option<String>) -> AppResult<Option<String>> {

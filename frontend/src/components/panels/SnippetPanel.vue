@@ -49,16 +49,20 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElInput, ElSelect, ElOption } from 'element-plus'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { api, normalizeError } from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { useEditorStore } from '@/stores/editor'
+import { doInsert } from '@/composables/useEditorActions'
+import { askText } from '@/components/common/askText'
 import type { SnippetVO } from '@/types/api'
 
 const { t } = useI18n()
 const toast = useToastStore()
+const editor = useEditorStore()
 
 const items = ref<SnippetVO[]>([])
 const langs = ref<string[]>([])
@@ -81,10 +85,13 @@ onMounted(load)
 // 筛选变化即时重查：后端按语言 + 关键字过滤，前端不再做二次筛选。
 watch([lang, keyword], () => void load())
 
+/** 插入到光标处：直接走编辑器动作，不再绕一层没人在听的 DOM 事件。 */
 function onInsert(s: SnippetVO) {
-  document.dispatchEvent(
-    new CustomEvent('snippet-insert', { detail: { text: s.content, name: s.name } }),
-  )
+  if (!doInsert(editor.activeId, s.content)) {
+    toast.warn(t('tool.clipNoEditor'))
+    return
+  }
+  toast.ok(t('toast.snippetInserted', { name: s.name }))
 }
 
 function onMenu(e: MouseEvent, s: SnippetVO) {
@@ -98,11 +105,30 @@ function onInsertClicked() {
   if (s) onInsert(s)
 }
 
-function onEdit() {
+/** 重命名：就地改名字，内容 / 语言 / 缩写原样带回，不丢字段。 */
+async function onEdit() {
   const s = menuItem.value
   menu.value = null
   if (!s) return
-  document.dispatchEvent(new CustomEvent('snippet-edit', { detail: { id: s.id } }))
+  const name = await askText({
+    title: t('common.rename'),
+    value: s.name,
+    placeholder: s.name,
+  })
+  const next = name?.trim()
+  if (!next || next === s.name) return
+  try {
+    await api.saveSnippet({
+      id: s.id,
+      name: next,
+      language: s.language,
+      content: s.content,
+      abbrev: s.abbrev,
+    })
+    await load()
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  }
 }
 
 async function onRemove() {
@@ -113,7 +139,12 @@ async function onRemove() {
   await load()
 }
 
-document.addEventListener('snippets-changed', () => void load())
+/** 别处改了片段集合（工具浮窗保存 / 导入）就重查。挂载登记、卸载摘掉。 */
+function onChanged() {
+  void load()
+}
+onMounted(() => document.addEventListener('snippets-changed', onChanged))
+onBeforeUnmount(() => document.removeEventListener('snippets-changed', onChanged))
 </script>
 
 <style scoped>

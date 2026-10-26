@@ -35,7 +35,7 @@ import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { useEditorStore } from '@/stores/editor'
-import { getText } from '@/composables/useEditorRegistry'
+import { getText, docVersionOf, bumpDocVersion } from '@/composables/useEditorRegistry'
 
 const { t } = useI18n()
 const editor = useEditorStore()
@@ -50,6 +50,8 @@ interface Symbol {
 const symbols = computed<Symbol[]>(() => {
   const tab = editor.active
   if (!tab) return []
+  // 注册表是普通 Map：不读一次版本号，computed 求值一次后就永不失效。
+  docVersionOf(tab.id)
   const text = getText(tab.id)
   if (!text) return []
   return extract(text, tab.language)
@@ -79,8 +81,8 @@ function onJump(s: Symbol) {
 }
 
 function scan() {
-  // computed 已依赖 editor.active，这里触发一次响应式刷新即可。
-  editor.active && editor.setPosition(editor.active.id, { ...editor.active.position })
+  // 手动刷新走版本号：setPosition 改的不是 symbols 的依赖，推不动它。
+  if (editor.activeId != null) bumpDocVersion(editor.activeId)
 }
 
 onMounted(scan)

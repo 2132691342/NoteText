@@ -295,6 +295,8 @@ export interface UIConfig {
   show_sidebar: boolean
   sidebar_width: number
   toolbar_icon_size: number
+  /** 界面字体三档：sans / yahei / mono。 */
+  ui_font: string
   zoom_level: number
   close_to_tray: boolean
   restore_session: boolean

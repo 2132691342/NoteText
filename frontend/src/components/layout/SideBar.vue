@@ -37,6 +37,7 @@
       <BookmarkPanel v-else-if="tab === 'bookmarks'" />
       <SnippetPanel v-else-if="tab === 'snippets'" />
       <FunctionPanel v-else-if="tab === 'functions'" />
+      <MacroPanel v-else-if="tab === 'macros'" />
       <FindResultsPanel v-else-if="tab === 'findResults'" />
       <MonitorPanel v-else-if="tab === 'monitor'" />
     </div>
@@ -57,6 +58,7 @@ import FileTreePanel from '@/components/panels/FileTreePanel.vue'
 import BookmarkPanel from '@/components/panels/BookmarkPanel.vue'
 import SnippetPanel from '@/components/panels/SnippetPanel.vue'
 import FunctionPanel from '@/components/panels/FunctionPanel.vue'
+import MacroPanel from '@/components/panels/MacroPanel.vue'
 import FindResultsPanel from '@/components/panels/FindResultsPanel.vue'
 import MonitorPanel from '@/components/panels/MonitorPanel.vue'
 import { useSettingsStore } from '@/stores/settings'
@@ -66,7 +68,15 @@ const { t } = useI18n()
 const settings = useSettingsStore()
 const commands = useCommandStore()
 
-const TABS = ['files', 'bookmarks', 'snippets', 'functions', 'findResults', 'monitor'] as const
+const TABS = [
+  'files',
+  'bookmarks',
+  'snippets',
+  'functions',
+  'macros',
+  'findResults',
+  'monitor',
+] as const
 type TabId = (typeof TABS)[number]
 
 /** 当前页签：跟随会话里存的 sidebar_tab，启动即回到上次的位置。 */
@@ -92,6 +102,8 @@ function iconOf(id: TabId): string {
       return 'list'
     case 'functions':
       return 'braces'
+    case 'macros':
+      return 'play'
     default:
       return 'activity'
   }

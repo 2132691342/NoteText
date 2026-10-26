@@ -35,6 +35,23 @@ pub async fn open_dialog(
     Ok(picked.map(|p| p.to_string()))
 }
 
+/// 多选文件对话框：压缩 / 批量操作一次挑一批文件。
+pub async fn open_files_dialog(suggested_dir: Option<String>) -> AppResult<Vec<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let app = handle()?;
+    let mut builder = app.dialog().file().set_title("选择文件");
+    if let Some(dir) = suggested_dir.filter(|s| !s.is_empty()) {
+        builder = builder.set_directory(dir);
+    }
+    // 取消返回空表而不是错误：调用方把空表当「用户没选」。
+    Ok(builder
+        .blocking_pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.to_string())
+        .collect())
+}
+
 /// 保存文件对话框。
 pub async fn save_dialog(suggested_name: Option<String>) -> AppResult<Option<String>> {
     use tauri_plugin_dialog::DialogExt;

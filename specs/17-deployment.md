@@ -19,7 +19,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 
 | 工作流 | 触发 | 做什么 |
 |---|---|---|
-| `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 跑 `pwsh scripts/check.ps1 -Full`；失败时脚本把「哪条链坏了、错在哪一行」写进 job summary |
+| `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 跑 `pwsh scripts/check.ps1 -Full`；失败时脚本在控制台摘出「哪条链坏了、错在哪一行」 |
 | `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 跑 `pwsh scripts/check.ps1 -Full`（rustfmt / check / clippy / 测试 / i18n 审计 / 前端构建）→ `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
 
 **「推 main 不发版、只有推 tag 才发版」是靠两个工作流各自的触发条件锁死的**：
@@ -85,7 +85,7 @@ release profile 设了 `strip = "symbols"` 与 `panic = "abort"`，
 |---|---|---|
 | `installMode` | `currentUser` | 不需要管理员权限；多用户机器不互相干扰 |
 | `languages` | `SimpChinese`, `English` | 目标用户是中英双语 |
-| `fileAssociations` | 文本组：txt / md / log / json / yml / yaml / toml / ini / csv / xml；压缩组：zip / 7z / tar / tgz / gz / bz2 / xz / zst / lz4 / br | 常见的纯文本与压缩类型（与 `domain/file_assoc.rs` 的分组清单同步） |
+| `fileAssociations` | 文本组 10 个：txt / md / log / json / yml / yaml / toml / ini / csv / xml；压缩组 16 个：zip / 7z / tar / tgz / txz / tbz2 / tbz / tzst / tlz4 / tbr / gz / bz2 / xz / zst / lz4 / br | 常见的纯文本与压缩类型（与 `domain/file_assoc.rs` 的分组清单逐条同步） |
 
 **文件关联用 `role: "Viewer"`**：出现在「打开方式」列表里，
 不抢占用户已有的默认程序。抢占默认是安装器最招人骂的行为之一。

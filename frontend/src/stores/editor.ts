@@ -13,6 +13,7 @@ import type {
   ViewType,
 } from '@/types/api'
 import { useToastStore } from './toast'
+import { useSettingsStore } from './settings'
 import { tr } from '@/i18n'
 import { baseName } from '@/utils'
 import { isTextKind, kindOf } from '@/utils/fileKind'
@@ -69,15 +70,27 @@ export const useEditorStore = defineStore('editor', () => {
   const active = computed(() => tabs.value.find((t) => t.id === activeId.value) ?? null)
   const dirtyCount = computed(() => tabs.value.filter((t) => t.dirty).length)
 
-  /** 新建空标签。`draftId` 非空表示从草稿恢复。 */
+  /**
+   * 新建空标签。`draftId` 非空表示从草稿恢复。
+   *
+   * 编码与行尾取文件配置里的默认值：设置页改了默认值，新建文件就该按它落盘，
+   * 否则那三项设置永远是「改了也不生效」。
+   */
   function newTab(opts?: { title?: string; draftId?: string }): Tab {
+    const file = useSettingsStore().config.file
+    const ending: Tab['line_ending'] =
+      file.new_line_ending === 'system'
+        ? navigator.userAgent.includes('Windows')
+          ? 'crlf'
+          : 'lf'
+        : (file.new_line_ending as Tab['line_ending'])
     const tab: Tab = {
       id: nextId++,
       path: opts?.draftId ? `draft:${opts.draftId}` : '',
       title: opts?.title ?? '',
       language: 'text',
-      encoding: 'utf-8',
-      line_ending: 'crlf',
+      encoding: file.default_encoding === 'auto' ? 'utf-8' : file.default_encoding,
+      line_ending: ending,
       has_bom: false,
       dirty: false,
       read_only: false,

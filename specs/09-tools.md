@@ -12,7 +12,7 @@
 
 | 能力 | 实现 |
 |---|---|
-| 格式化 / 压缩 | 自写 `pretty_json(v, indent)`：serde_json 的 `to_string_pretty` 固定两空格，而设置里允许 0–8 |
+| 格式化 / 压缩 | 自写 `pretty_json(v, indent)`：serde_json 的 `to_string_pretty` 固定两空格，而工具窗的缩进输入允许 0–8 |
 | 键排序 | `sort_json` 递归排序对象键（对比两份配置时先排序，diff 才看得出差异） |
 | 校验 | `serde_json::from_str` 的 `Error` 带 `line()` / `column()`——只说「格式错误」用户找不到在哪 |
 | JSONPath | 极简实现：`$` / `$.a.b` / `$[0]` / `$..key` / `$.a[*]` |
@@ -127,10 +127,14 @@ MD5 / SHA-1 / SHA-256 三种，**全部手写实现**（标准库不暴露原始
 代码块里的 `$` 不当公式（跳过 `pre` / `code` 的文本节点）；
 Mermaid 渲染失败退回源码——比留一块空白好，用户能看出是哪句写错了。
 
-**排版口径**（`content.css` 的 `.nt-md-doc`）：一条 52em 的左对齐阅读栏。
+**排版口径**（`content.css` 的 `.nt-md-doc`）：一条 72em 的居中阅读栏。
 所有块级元素只吃 `max-width`，不吃固定宽度；长 URL / 长路径靠
 `overflow-wrap: anywhere` 断行，代码块与宽表格在**自身内部**横向滚动。
 分屏窄到 380px 时，预览面板也不该出现整页横向滚动条。
+
+**宽度上限而不是定宽**：上限只写 em 时，窗口一宽余量全堆在右侧，
+读起来像内容被挤到一边；铺满 + 居中把余量分到两侧。
+编辑 / 预览的分屏比例与代码分屏共用 `editor.splitRatio`，会话只存一个数。
 
 **标题锚点**：markdown-it 默认不生成 `id`，文档自带的目录点了没反应。
 渲染器按 GitHub 的 slug 规则给每个标题补 `id`（小写、去标点、空格转连字符、

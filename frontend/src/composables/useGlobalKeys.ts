@@ -2,7 +2,7 @@
 // 三入口收敛（AGENTS.md §2.10）：菜单、工具栏、按键都走命令表，
 import { onMounted, onUnmounted } from 'vue'
 import { DEFAULT_KEYBINDINGS, useCommandStore } from '@/stores/commands'
-import { useSettingsStore } from '@/stores/settings'
+import { useSettingsStore, ZOOM_MAX, ZOOM_MIN } from '@/stores/settings'
 
 /** 键盘事件 → Tauri accelerator 字符串（`Control+Shift+F` 形态）。 */
 export function toAccelerator(e: KeyboardEvent): string {
@@ -148,6 +148,24 @@ export function useGlobalKeys() {
     commands.run(id)
   }
 
-  onMounted(() => window.addEventListener('keydown', onKeyDown, { capture: true }))
-  onUnmounted(() => window.removeEventListener('keydown', onKeyDown, { capture: true }))
+  /**
+   * Ctrl + 滚轮缩放字号：鼠标在手时最顺手的一档，与工具栏的 ± 同一套刻度。
+   * 必须 passive:false——浏览器默认把 Ctrl+滚轮当整页缩放，不拦就会两套缩放打架。
+   */
+  function onWheel(e: WheelEvent) {
+    if (!e.ctrlKey || e.deltaY === 0) return
+    e.preventDefault()
+    const cur = settings.config.ui.zoom_level
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur + (e.deltaY < 0 ? 10 : -10)))
+    if (next !== cur) settings.updateUI({ zoom_level: next })
+  }
+
+  onMounted(() => {
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    window.addEventListener('wheel', onWheel, { capture: true, passive: false })
+  })
+  onUnmounted(() => {
+    window.removeEventListener('keydown', onKeyDown, { capture: true })
+    window.removeEventListener('wheel', onWheel, { capture: true })
+  })
 }

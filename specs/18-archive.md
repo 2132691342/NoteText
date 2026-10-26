@@ -30,7 +30,7 @@ service/archive/
 ├── extract.rs        解压（条目过滤、覆盖三策略、防穿越）
 ├── list.rs           打开归档：条目表 + 魔数探测 + tar 流识别
 ├── update.rs         追加 / 删除条目（重建式，仅 7z / zip）
-├── convert.rs        格式转换（解到内存条目再按目标格式写）
+├── convert.rs        格式转换（先解到临时目录，再按目标格式重新打包）
 ├── split.rs          文件分卷 / 合并
 ├── preview.rs        条目预览（文本 / 图片二选一）
 ├── test_archive.rs   完整性测试
@@ -78,12 +78,16 @@ Condvar。zip 单条目几 GB 的文件同样按块过检查点——`io::copy` 
 txz），否则用户打开看到的是一个叫 `archive.tar` 的条目而不是目录树。
 brotli 没有魔数，`.tar.br` 走扩展名路径后再探 tar，两条路都通。
 魔数认不出再退扩展名。tar 本身魔数在偏移 257，单列判断。
+探测彻底失败时走 `err_undetectable`：RAR 魔数（`Rar!\x1a\x07`）单独给一句
+「用 7-Zip 转成 zip / 7z」，其余才说「可能不是压缩包或已损坏」——
+把「实现了没有」和「文件坏了」混成一句话，用户会拿别的工具一开发现文件好好的。
 
 ### 条目名净化（解压安全底线）
 
 `sanitize_entry_name` 拒绝绝对路径、盘符、`..` 段——zip 系目录穿越
 （Zip Slip）是压缩工具最经典的漏洞，归档里来的一律当不可信输入。
-守护测试：`archive_extract_rejects_path_traversal`（手工构造带恶意条目名的 zip）。
+守护测试：`archive_rejects_escape_and_distinguishes_password_from_corruption`
+（手工构造带恶意条目名的 zip，要求整包拒绝且目标目录内外都不落文件）。
 
 ### 密码三态
 
@@ -129,6 +133,9 @@ tar 系追加要重写整条流，收益为负。
 | 任务面板 | `ArchiveTasksDialog`（Ctrl+Alt+T）+ 状态栏活动任务指示 |
 | 系统关联双击 | 关联 .zip 等之后双击 / 拖到 exe：`useShellIntent` 分流到浏览浮窗（specs/17） |
 
+创建浮窗的「添加文件…」走 `open_files_dialog`（原生多选）：一次只能挑一个文件时，
+把一个装着几十个文件的目录打进包里要来回点几十次。
+
 事件驱动不轮询：`stores/archive.ts` 订阅两个事件维护任务快照，队列 250ms
 心跳推全量。格式下拉、能力徽标（加密 / 固实 / 分卷）全部来自
 `get_archive_formats` 与 `OpenArchiveVO`，前端不写死格式清单。
@@ -136,8 +143,7 @@ tar 系追加要重写整条流，收益为负。
 条目表是**定高虚拟列表**（`composables/useVirtualList.ts` + `base.css`
 的 `.nt-vlist-*` 三件套）：几万条目也只渲染滚动窗口内的几十行，
 `base.css` 的占位块撑滚动高度、窗口层 transform 平移。全量 `v-for`
-在十万条目级会把 WebView2 渲染线程打满——打开浮窗即冻结，这是
-2.0 早期「解压前卡死」的另一半根因（前一半是同步命令占主线程）。
+在十万条目级会把 WebView2 渲染线程打满，打开浮窗即冻结。
 打开 / 预览期间给文案态（`archive.opening` / `archive.previewLoading`），
 固实 7z 预览单条目要解整块，没有反馈会被当成死机。
 

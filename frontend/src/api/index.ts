@@ -211,6 +211,9 @@ export const api = {
   },
   openFileDialog: (suggestedDir?: string) =>
     call<string | null>('open_file_dialog', { suggested_dir: suggestedDir ?? null }),
+  /** 多选文件：取消时后端给空数组，调用方按长度判「没选」。 */
+  openFilesDialog: async (suggestedDir?: string) =>
+    (await call<string[]>('open_files_dialog', { suggested_dir: suggestedDir ?? null })) ?? [],
   openFolderDialog: (suggestedDir?: string) =>
     call<string | null>('open_folder_dialog', { suggested_dir: suggestedDir ?? null }),
   saveFileDialog: (suggestedName?: string) =>

@@ -7,9 +7,9 @@
       <div class="nt-field">
         <span class="nt-label">{{ t('archive.sources') }}</span>
         <div class="nt-carch-srcs">
-          <div v-for="(s, i) in sources" :key="s" class="nt-carch-src">
-            <NtIcon :name="isDir[i] ? 'folder' : 'file'" size="sm" />
-            <span class="nt-carch-src-name" :title="s">{{ baseName(s) }}</span>
+          <div v-for="(s, i) in sources" :key="s.path" class="nt-carch-src">
+            <NtIcon :name="s.dir ? 'folder' : 'file'" size="sm" />
+            <span class="nt-carch-src-name" :title="s.path">{{ baseName(s.path) }}</span>
             <button class="nt-icon-btn" @click="removeSource(i)">
               <NtIcon name="x" size="sm" />
             </button>
@@ -149,7 +149,7 @@ import NtIcon from '@/components/common/NtIcon.vue'
 import { api, normalizeError } from '@/api'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
-import { baseName } from '@/utils'
+import { baseName, dirName, joinPath } from '@/utils'
 import type { ArchiveFormatVO } from '@/types/api'
 
 const emit = defineEmits<{ close: [] }>()
@@ -158,10 +158,15 @@ const { t } = useI18n()
 const toast = useToastStore()
 const dialogs = useDialogStore()
 
+/** 源清单的一项：路径 + 是否目录（图标用，也提示「这一项会递归打包」）。 */
+interface SrcItem {
+  path: string
+  dir: boolean
+}
+
 /** 预填源：树右键 / 命令入口经 dialogs.open 的 seedExtra 传入。 */
 const seedSources = (dialogs.seedExtra.sources as string[] | undefined) ?? []
-const sources = ref<string[]>([...seedSources])
-const isDir = ref<boolean[]>([])
+const sources = ref<SrcItem[]>(seedSources.map((p) => ({ path: p, dir: false })))
 const destName = ref('')
 const destDir = ref('')
 const formatId = ref('7z')
@@ -178,9 +183,15 @@ const comment = ref('')
 const submitting = ref(false)
 
 const formats = ref<ArchiveFormatVO[]>([])
-void api.archive.formats().then((fs) => {
-  formats.value = fs ?? []
-})
+void api.archive
+  .formats()
+  .then((fs) => {
+    formats.value = fs ?? []
+  })
+  .catch(() => {
+    // 拉不到能力表就按「只有 zip」兜底：下拉空了用户连格式都选不了。
+    formats.value = []
+  })
 const writeFormats = computed(() => formats.value.filter((f) => f.capabilities.write))
 const caps = computed(
   () =>
@@ -203,37 +214,42 @@ const canCreate = computed(() => {
 })
 
 async function pickFiles() {
-  const picked = await pickMany()
-  if (!picked) return
+  const picked = await api.openFilesDialog(destDir.value || undefined)
   for (const p of picked) addSource(p)
 }
 async function pickFolder() {
-  const p = await api.openFolderDialog()
-  if (p) addSource(p)
-}
-/** 多选文件：普通打开对话框一次一个，循环走。 */
-async function pickMany(): Promise<string[] | null> {
-  const out: string[] = []
-  const first = await api.openFileDialog(destDir.value || undefined)
-  if (!first) return null
-  out.push(first)
-  return out
+  const p = await api.openFolderDialog(destDir.value || undefined)
+  if (p) addSource(p, true)
 }
 
-function addSource(p: string) {
-  if (sources.value.includes(p)) return
-  sources.value = [...sources.value, p]
+/** 补目录标记：归档对话框要给「这是文件夹，会递归打包」的视觉区分。 */
+async function syncDir(item: SrcItem) {
+  try {
+    const m = await api.statFile(item.path)
+    item.dir = m.is_dir
+  } catch {
+    /* 读不到就按文件画：图标错一下不影响打包 */
+  }
+}
+
+function addSource(p: string, dir = false) {
+  if (sources.value.some((s) => s.path === p)) return
+  const item: SrcItem = { path: p, dir }
+  sources.value = [...sources.value, item]
   if (sources.value.length === 1) {
-    destDir.value = p.includes('\\') ? p.slice(0, p.lastIndexOf('\\')) : ''
+    destDir.value = dirName(p)
     destName.value = baseName(p).replace(/\.[^.\\/]*$/, '')
   }
-  void api.statFile(p).then((m) => {
-    isDir.value = [...isDir.value]
-    isDir.value[sources.value.indexOf(p)] = m.is_dir
-  })
+  if (!dir) void syncDir(item)
 }
+
 function removeSource(i: number) {
   sources.value = sources.value.filter((_, j) => j !== i)
+}
+
+// 预填源同样要知道是不是目录：右键一个文件夹点「压缩」时图标要显示成文件夹。
+for (const item of sources.value) {
+  if (!item.dir) void syncDir(item)
 }
 async function pickDir() {
   const p = await api.openFolderDialog(destDir.value || undefined)
@@ -249,8 +265,8 @@ async function onCreate() {
   try {
     const mb = splitPreset.value === 'custom' ? Number(customMb.value) : Number(splitPreset.value)
     await api.archive.create({
-      sources: sources.value,
-      dest: `${destDir.value.replace(/[\\/]+$/, '')}\\${destName.value.trim()}.${formatExt.value}`,
+      sources: sources.value.map((s) => s.path),
+      dest: joinPath(destDir.value, `${destName.value.trim()}.${formatExt.value}`),
       format: formatId.value,
       method: formatId.value === 'zip' ? method.value : null,
       level: Number(level.value),

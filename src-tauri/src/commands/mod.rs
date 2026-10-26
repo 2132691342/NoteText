@@ -28,6 +28,7 @@ macro_rules! command_handlers {
             commands::file::read_dir,
             commands::file::stat_file,
             commands::file::open_file_dialog,
+            commands::file::open_files_dialog,
             commands::file::open_folder_dialog,
             commands::file::save_file_dialog,
             commands::file::detect_encoding,

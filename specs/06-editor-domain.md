@@ -100,6 +100,7 @@ offset_at_line_col(text, line, col) -> Option<usize>
 | `activeLineComp` | 当前行高亮 |
 | `bracketComp` | 括号配对着色 |
 | `whitespaceComp` | 空白符显示 |
+| `selectionMatchComp` | 选中同词高亮（设置里可关，所以不能只在挂载时读一次） |
 | `guidesComp` | 缩进参考线 + 括号配色 + 行尾标记（「看法」三件合一体） |
 | `bookmarkComp` | 书签 gutter（行号左侧一列点） |
 | `marksComp` | 5 色词标记装饰 |
@@ -132,6 +133,10 @@ offset_at_line_col(text, line, col) -> Option<usize>
 **光标移动不录**：回放时每一步都会重算光标，录进去只会让宏变脆。
 
 回放期间置 `playing` 守卫，阻断录制钩子——否则回放产生的变更会被自己录进去。
+
+宏的可见入口是侧栏「宏」面板（specs/16）：录制结束保存后立刻出现在列表里，
+支持回放 / 改名 / 删除。命令表只负责录与放，列表不塞进菜单——
+回放要对着当前光标，看不见自己在回放哪个宏时，用户不敢点。
 
 ### 列编辑模式
 

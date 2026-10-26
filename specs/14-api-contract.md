@@ -12,7 +12,7 @@
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
 | 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
-| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `empty_lists_serialize_to_array_not_null`） |
+| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的会话链路） |
 
 ## 文件
 
@@ -25,6 +25,7 @@
 | `read_dir` | `dir` | `DirEntry[]` |
 | `stat_file` | `path` | `FileMeta` |
 | `open_file_dialog` | `suggested_dir?` | `string \| null` |
+| `open_files_dialog` | `suggested_dir?` | `string[]`（取消是空表） |
 | `open_folder_dialog` | `suggested_dir?` | `string \| null` |
 | `save_file_dialog` | `suggested_name?` | `string \| null` |
 | `detect_encoding` | `bytes: number[]` | `DetectResultVO` |

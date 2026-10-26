@@ -1,10 +1,10 @@
 //! 统一错误类型：所有跨 invoke 边界的错误都由它承载。
-//! 码值是数字字符串而非 int；段位见 docs/ERROR-CODES.md。
+//! 码值是数字字符串而非 int，段位见 specs/15。
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// 错误码常量集中在这里。
+/// 跨边界的错误：业务码 + 人话 + 底层原因。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppError {
     /// 业务码（数字字符串）。前端按它分流到具体提示与动作。
@@ -93,7 +93,7 @@ impl From<serde_json::Error> for AppError {
 /// 快捷构造：`AppResult<T>` = `Result<T, AppError>`。
 pub type AppResult<T> = Result<T, AppError>;
 
-/// 模块级错误常量：调用点写 `Err(ErrPathEmpty)?` 比 new() 短，且文案只此一处。
+/// 错误码常量：调用点只引用常量，具体文案与处置在 specs/15 与前端 `errCode`。
 pub mod codes {
     // 1xxx 文件 / 路径 / 剪贴板（系统通用）
     pub const PATH_EMPTY: &str = "1000";

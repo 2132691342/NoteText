@@ -6,6 +6,8 @@ import { useFileTreeStore } from '@/stores/fileTree'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
 import { getText, commitBaseline } from '@/composables/useEditorRegistry'
+import { doReplaceDoc } from '@/composables/useEditorActions'
+import { useSettingsStore } from '@/stores/settings'
 import { askUnsaved } from '@/components/dialogs/UnsavedDialog.vue'
 import { baseName } from '@/utils'
 
@@ -19,6 +21,27 @@ import { baseName } from '@/utils'
  */
 function tr(key: string, named: Record<string, unknown> = {}): string {
   return i18n.global.t(key, named)
+}
+
+/**
+ * 写盘前的正文整理：去掉行尾空白、补末尾换行。
+ *
+ * 整理结果同时写回编辑器缓冲区——只改磁盘不改缓冲区会让「已保存」
+ * 与屏幕上看到的内容不一致，下一次保存又会重复整理一遍。
+ */
+function textForSave(id: number): string {
+  const file = useSettingsStore().config.file
+  let text = getText(id)
+  if (!text) return text
+  if (file.trim_trailing_ws) {
+    text = text
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+$/, ''))
+      .join('\n')
+  }
+  if (file.ensure_final_newline && !text.endsWith('\n')) text += '\n'
+  if (text !== getText(id)) doReplaceDoc(id, text)
+  return text
 }
 
 /** 保存一个标签。返回 true = 真的写盘成功。 */
@@ -37,7 +60,7 @@ export async function saveTabById(id: number): Promise<boolean> {
     return false
   }
   try {
-    await api.writeFile(tab.path, getText(id), tab.encoding, tab.line_ending, tab.has_bom)
+    await api.writeFile(tab.path, textForSave(id), tab.encoding, tab.line_ending, tab.has_bom)
     commitBaseline(id)
     editor.markDirty(id, false)
     tree.markDirty(tab.path, false)
@@ -59,7 +82,7 @@ export async function saveTabAsById(id: number): Promise<boolean> {
   if (!tab) return false
   try {
     const res = await api.saveFileAs(
-      getText(id),
+      textForSave(id),
       tab.title || tr('tab.untitled'),
       tab.encoding,
       tab.line_ending,

@@ -10,18 +10,15 @@ use crate::service::archive::create::create_archive;
 use crate::service::archive::ctx::TaskCtx;
 use crate::service::archive::extract::extract_archive;
 use crate::service::archive::list::list_archive;
-use crate::service::archive::{collect_sources, detect_format, to_slash, unique_path};
+use crate::service::archive::{
+    collect_sources, detect_format, err_undetectable, to_slash, unique_path,
+};
 use std::path::PathBuf;
 
 /// 追加文件到归档。
 pub fn add_entries(req: &AddEntriesReq, ctx: &TaskCtx) -> AppResult<UpdateArchiveVO> {
     let src = PathBuf::from(&req.archive);
-    let format = detect_format(&src).ok_or_else(|| {
-        AppError::new(
-            codes::ARCHIVE_UNSUPPORTED,
-            "识别不出压缩格式：文件可能不是压缩包或已损坏",
-        )
-    })?;
+    let format = detect_format(&src).ok_or_else(|| err_undetectable(&src))?;
     let adds = collect_sources(&req.sources, &req.exclude)?;
     if adds.is_empty() {
         return Err(AppError::new(
@@ -35,12 +32,7 @@ pub fn add_entries(req: &AddEntriesReq, ctx: &TaskCtx) -> AppResult<UpdateArchiv
 /// 从归档删除条目。
 pub fn delete_entries(req: &DeleteEntriesReq, ctx: &TaskCtx) -> AppResult<UpdateArchiveVO> {
     let src = PathBuf::from(&req.archive);
-    let format = detect_format(&src).ok_or_else(|| {
-        AppError::new(
-            codes::ARCHIVE_UNSUPPORTED,
-            "识别不出压缩格式：文件可能不是压缩包或已损坏",
-        )
-    })?;
+    let format = detect_format(&src).ok_or_else(|| err_undetectable(&src))?;
     if req.entries.is_empty() {
         return Err(AppError::new(
             codes::ARCHIVE_BAD_REQUEST,

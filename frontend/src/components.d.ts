@@ -48,6 +48,7 @@ declare module 'vue' {
     KeybindingsPanel: typeof import('./components/settings/KeybindingsPanel.vue')['default']
     LineOpToolDialog: typeof import('./components/dialogs/LineOpToolDialog.vue')['default']
     LogViewerDialog: typeof import('./components/dialogs/LogViewerDialog.vue')['default']
+    MacroPanel: typeof import('./components/panels/MacroPanel.vue')['default']
     MarkdownEditor: typeof import('./components/editor/MarkdownEditor.vue')['default']
     MenuBar: typeof import('./components/layout/MenuBar.vue')['default']
     Minimap: typeof import('./components/editor/Minimap.vue')['default']

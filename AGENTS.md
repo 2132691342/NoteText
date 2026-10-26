@@ -28,7 +28,7 @@
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
-| 测试 | testing（标准库） | 一包一入口、一个子测试一种坏法；`scripts/check.ps1` 收口全部验证 |
+| 测试 | 标准库 `#[test]` + tempfile | 单文件 8 条长链路（specs/12）；`scripts/check.ps1` 收口全部验证 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
@@ -167,7 +167,7 @@ Rust 的 nil slice 序列化成 `null`，前端按数组读就是
 
 - 出参里的切片与 map 字段**构造时一律初始化**（`Vec::new()` / `BTreeMap::new()`）
 - 前端接住数组字段时同样按「可能是 null」处理（`res.entries ?? []`）
-- `tests/chain_tests.rs` 的 `empty_lists_serialize_to_array_not_null` 守护这一点
+- `tests/chain_tests.rs` 的会话链路守护这一点（空列表必须序列化成 `[]`）
 
 #### 2.3.3 前端目录（强制）
 
@@ -448,11 +448,11 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），9 条测试按
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），8 条测试按
   「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」六组排列，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
-- 全量测试亚秒级，**不设「只跑一条链」的开关**——加了省不了多少时间，却要多记一个参数
+- 全量测试亚秒级；局部改动可以只跑一条链路（`-Test <关键字>`），不必等整套门禁
 
 ### 3.3 验证入口
 
@@ -460,43 +460,36 @@ mod dialog_stub;
 
 | 命令 | 跑什么 | 什么时候用 |
 |---|---|---|
-| `pwsh scripts/check.ps1` | rustfmt → cargo check → 全量测试 | 日常快门 |
+| `pwsh scripts/check.ps1` | rustfmt → cargo check → 8 条链路 | 日常 |
+| `pwsh scripts/check.ps1 -Test archive` | 只跑名字含该关键字的链路 | 改一个子系统时 |
 | `pwsh scripts/check.ps1 -Full` | + i18n 审计 + clippy `-D warnings` + 前端构建 | 改了前端 / 提交前 |
-| `pwsh scripts/check.ps1 -List` | 列出全部测试名 | 不知道入口叫什么时 |
 
-- **默认安静**：失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
+- **默认安静**：成功时不打测试清单，失败时脚本自己从日志里摘出摘要（测试名 + `.rs:行号`）
 - `scripts/i18n-audit.mjs` 可以单独跑：`node scripts/i18n-audit.mjs`
   它查五件事——key 引用是否都有定义、zh/en 是否对齐、模板里有没有裸中文、
   后端错误码是否两边都有文案、提示里是否直接传了 key。
-  这五类问题都是编译期抓不到的
+  这五类问题都是编译期抓不到的；通过时只打一行统计
 
 ### 3.4 测试索引
 
-单个文件 `src-tauri/tests/chain_tests.rs`；每个函数名就是它守护的那句坏事，
-失败时报文直接指出坏在哪，不必对着行号往回找。简单纯函数断言不入链（工具箱的
-JSON / 哈希 / 注释这类单函数行为不设测试）；每一条都守护
-「用户文件没了 / 界面崩白屏」级别的事故。
-
 | 分组 | 测试 | 坏法 |
 |---|---|---|
-| 文件 | `file_read_write_roundtrip_preserves_encoding_and_atomic_write` | 行尾没按原样写回 / BOM 丢或多字节 / 强制编码打开仍是乱码 / 选错编码打不开 / 临时文件堆积 / 打错路径在磁盘留痕 |
-| | `file_tree_ops_reject_destructive_requests` | 重命名无声覆盖文件 / 树成环 / 路径逃逸 / 陈旧路径让整批删除失败 / 新建同名清空已有内容 |
-| 会话 | `first_launch_seeds_defaults_and_session_round_trip_restores_tabs` | 首启没写默认配置 / 空列表序列化成 null 白屏 / 重启丢标签顺序与窗口尺寸 / 关光标签丢会话行 |
-| 批量 | `batch_two_phase_applies_only_confirmed_plans` | 扫描就落盘 / 改掉没勾选的文件 / 重命名覆盖已有文件 / 该落地的没落地 |
-| 备份 | `backup_round_trip_restores_user_tables_and_keeps_local_rows` | 备份只导出不导入（换机丢数据）/ 导入抹掉本机已有数据 |
-| 压缩 | `archive_round_trip_all_formats_preserves_content` | 某个格式压缩往返丢内容 / 中文名乱 / 目录层级塌 / 改名后的 .tar.xz .tar.br 认不出 tar 家族 |
-| | `archive_update_split_join_preserve_bytes` | 追加 / 删除条目后丢内容 / 分卷首卷打不开 / 合并还原的字节不对 |
-| | `archive_rejects_traversal_and_distinguishes_password_and_corruption` | 恶意条目把文件写到目标目录之外 / 要密码与密码错混成一个错 / 损坏的包测试照样说「好」 |
-| 系统关联 | `file_assoc_register_round_trip_lands_open_with_and_default` | 双击关联文件打不开（open 命令丢引号 / ProgId 挂错键）/ 注销后留悬空默认 / 注销一组误伤另一组 |
+| 文件 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 |
+| | `file_ops_refuse_overwrite_cycle_escape_and_partial_delete` | 无声覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
+| 会话 | `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays` | 空列表序列化成 null 白屏 / 标签顺序与活跃项丢失 / 关光标签丢会话行 |
+| 批量 | `batch_preview_then_apply_touches_only_confirmed_files` | 扫描就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |
+| 备份 | `backup_export_import_restores_tables_and_keeps_local_rows` | 备份导不回来（换机丢数据）/ 导入抹掉本机数据 |
+| 压缩 | `archive_lifecycle_covers_all_formats_update_and_split` | 某格式往返丢内容 / 中文名与层级塌 / 改名后认不出 tar 家族 / 合并后字节变了 |
+| | `archive_rejects_escape_and_distinguishes_password_from_corruption` | 恶意条目写到目标目录外 / 缺密码与密码错混成一个 / 损坏包测试照样说「好」 |
+| 系统关联 | `file_assoc_toggle_registers_and_restores_shell_entries` | 双击没反应（open 命令丢引号 / ProgId 挂错）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：
 
 | 改动位置 | 命令 |
 |---|---|
 | 某个域的行为 | `pwsh scripts/check.ps1` |
-| 不知道入口叫什么 | `pwsh scripts/check.ps1 -List` |
-| 拿不准 | `pwsh scripts/check.ps1` |
-| 改了前端 | `pwsh scripts/check.ps1 -Full` |
+| 只改了压缩 / 只改了一条链路 | `pwsh scripts/check.ps1 -Test <关键字>` |
+| 拿不准 | `pwsh scripts/check.ps1 -Full` |
 
 
 ---

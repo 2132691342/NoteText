@@ -13,8 +13,8 @@ import NtIcon from '@/components/common/NtIcon.vue'
 import { useEditorStore, viewTypeOf } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
 import { useSettingsStore } from '@/stores/settings'
-import { get } from '@/composables/useEditorRegistry'
-import { getText } from '@/composables/useEditorRegistry'
+import { get, docVersionOf } from '@/composables/useEditorRegistry'
+import { doGotoLine } from '@/composables/useEditorActions'
 import { api } from '@/api'
 import { ellipsisMiddle } from '@/utils'
 import { hasRichPreview, isTextKind, kindOf } from '@/utils/fileKind'
@@ -53,7 +53,8 @@ async function onOpenRecent(path: string) {
 function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'code' {
   const kind = kindOf(tab.path, tab.view_type === 'hex')
   if (tab.view_type === 'hex' || kind === 'binary') return 'hex'
-  if (kind === 'markdown') return tab.showing_preview ? 'doc' : 'markdown'
+  // 分屏时一律回到三态编辑器：只读预览器没有第二栏，分屏按钮会变成假动作。
+  if (kind === 'markdown') return tab.showing_preview && !tab.split ? 'doc' : 'markdown'
   if (hasRichPreview(kind)) return 'doc'
   return tab.showing_preview ? 'doc' : 'code'
 }
@@ -114,11 +115,20 @@ const mainView = computed(() => {
 const lineCount = computed(() => {
   const id = editor.activeId
   if (id == null) return 0
-  const text = getText(id)
-  return text === '' ? 0 : text.split('\n').length
+  // 先读版本号建立依赖：注册表是普通 Map，直接 getText 的话值永远停在首帧。
+  docVersionOf(id)
+  // 行数从 EditorState 取：几 MB 的正文每次按键都 split 一遍会卡输入。
+  return get(id)?.state.doc.lines ?? 0
 })
 
-// ---- 分屏比例拖拽 ----
+// ---- 分屏比例 ----
+/** 标签槽在分屏时的固定宽度：主栏占 `1 - splitRatio`，副栏吃满剩余。 */
+function slotStyle(tab: Tab) {
+  // Markdown 的分屏由 MarkdownEditor 自己排版，这里不给它定宽。
+  const on = editor.active?.id === tab.id && tab.split && viewOfTab(tab) === 'code'
+  return on ? { flex: `0 0 ${((1 - editor.splitRatio) * 100).toFixed(2)}%` } : undefined
+}
+
 function startSplitDrag(e: MouseEvent) {
   const startX = e.clientX
   const startRatio = editor.splitRatio
@@ -135,6 +145,25 @@ function startSplitDrag(e: MouseEvent) {
   document.addEventListener('mouseup', onUp)
 }
 
+/**
+ * 面板里的「跳到某行」（书签 / 符号 / 查找结果）。
+ *
+ * 面板只发意图，跳转必须落在这里：它知道标签有没有挂载。首次激活的标签
+ * 还没注册编辑器实例，等几帧再跳，否则事件发出去时没人接。
+ */
+async function onGotoLine(e: Event) {
+  const d = (e as CustomEvent).detail as { tabId?: number; line?: number } | undefined
+  if (d?.tabId == null || !d.line) return
+  editor.activate(d.tabId)
+  for (let i = 0; i < 12; i += 1) {
+    if (get(d.tabId)) {
+      doGotoLine(d.tabId, d.line)
+      return
+    }
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+}
+
 // ---- 拖放提示层 ----
 // 外部拖放的监听与打开链路在 useFileDrop（WebView 原生 drop 事件），这里只消费它的开关信号。
 const dragging = ref(false)
@@ -146,9 +175,11 @@ function onDragState(e: Event) {
 onMounted(() => {
   void loadRecent()
   document.addEventListener('nt-drag-state', onDragState)
+  document.addEventListener('editor-goto-line', onGotoLine)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('nt-drag-state', onDragState)
+  document.removeEventListener('editor-goto-line', onGotoLine)
 })
 </script>
 
@@ -206,6 +237,7 @@ onBeforeUnmount(() => {
         v-show="tab.id === editor.activeId"
         :key="tab.id"
         class="nt-editor-slot"
+        :style="slotStyle(tab)"
       >
         <template v-if="mounted.has(tab.id)">
           <div v-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">

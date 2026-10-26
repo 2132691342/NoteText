@@ -25,7 +25,7 @@ App.vue
     └── EditorView.vue
 ├── MenuBar.vue           菜单栏 32px：十一个一级菜单（数据来自命令表）
 ├── ToolBar.vue           工具栏 34px：高频图标钮 + 「更多」下拉
-├── SideBar.vue           侧栏：六个面板的容器，宽度可拖
+├── SideBar.vue           侧栏：七个面板的容器，宽度可拖
 ├── TabBar.vue            标签栏 32px：标签 + 脏标记 + 关闭钮
 ├── EditorArea.vue        编辑区：按 view_type 分发 + 分屏 + 拖放提示
 │   └── CodeEditor.vue    CodeMirror 容器（compartments）
@@ -68,7 +68,7 @@ App.vue
 | 编码 | 6 | 当前编码、行尾、转 UTF-8（带 / 不带 BOM）、以指定编码重新打开、编码转换器 |
 | 语言 | 2 | 语法语言选择、按扩展名识别 |
 | 压缩 | 6 | 新建压缩包（Ctrl+Alt+A）/ 解压压缩包（Ctrl+Alt+X）/ 打开浏览 / 测试 / 文件分卷与合并 / 压缩任务（Ctrl+Alt+T）（specs/18） |
-| 工具 | 22 | JSON / 哈希 / 正则 / 行编辑 / 格式转换 / 剪贴板 / Hex / 取色 / 日志 / 批量操作 / 宏 / 一键快操作（格式化、压缩、转义、去转义、转 YAML/TOML/XML） |
+| 工具 | 24 | JSON / 哈希 / 正则 / 行编辑 / 格式转换 / 剪贴板 / Hex / 取色 / 日志 / 批量操作 / 宏 / 监控 / 一键快操作（格式化、压缩、转义、去转义、转 YAML/TOML/XML） |
 | 对比 | 3 | 文本对比、目录对比、与剪贴板对比 |
 
 `settings` 与 `help` 两组不进下拉：它们是路由目标，渲染成菜单条右侧的入口。
@@ -77,7 +77,7 @@ App.vue
 「压缩」从「工具」里拆出来，是为了让最高频的几类操作各自成家——
 一个菜单挂 30 项时，用户每次都要从头扫一遍。
 
-## 侧栏六个面板
+## 侧栏七个面板
 
 | 面板 | 组件 | 数据 |
 |---|---|---|
@@ -85,6 +85,7 @@ App.vue
 | 书签 | `panels/BookmarkPanel.vue` | `list_bookmarks`（后端带该行正文） |
 | 片段 | `panels/SnippetPanel.vue` | `list_snippets`（语言 + 关键字在后端过滤） |
 | 函数 | `panels/FunctionPanel.vue` | 前端正则提取符号（不引 tree-sitter） |
+| 宏 | `panels/MacroPanel.vue` | `list_macros`；回放走 `playSteps`（编辑动作必须由编辑器执行），改名 / 删除就地完成 |
 | 查找结果 | `panels/FindResultsPanel.vue` | 复用「在文件中查找」写入的 `findResults` store，浮窗关掉后结果仍在 |
 | 监控 | `panels/MonitorPanel.vue` | `read_file` 行区间增量轮询（800ms） |
 
@@ -148,6 +149,7 @@ App.vue
 | `AppearancePanel` | 主题三档、界面字号缩放、界面字体 |
 | `EditorPanel` | 字号 / 字体 / 制表符 / 11 个开关 / 自动保存 |
 | `FilePanel` | 默认编码、行尾、保存行为、忽略规则（chip 列表） |
+| `SystemPanel` | 系统文件关联：两组扩展各自「加入打开方式 / 设为默认」，直读 HKCU 状态 |
 | `KeybindingsPanel` | 默认键位表 + 覆盖录制（冲突即提示，不静默覆盖） |
 | `AboutPanel` | 版本 / 数据目录 / 日志目录 / 备份导入导出 |
 
@@ -166,6 +168,9 @@ CodeEditor.vue
 │   ├── tabSizeComp    制表符宽度
 │   ├── lineNumComp    行号
 │   ├── foldComp       代码折叠
+│   ├── activeLineComp 当前行高亮
+│   ├── bracketComp    括号配对着色
+│   ├── selectionMatchComp 选中同词高亮
 │   ├── bookmarkComp   书签 gutter
 │   ├── marksComp      5 色词标记装饰
 │   ├── guidesComp     缩进参考线 / 括号配色 / 行尾标记
@@ -209,6 +214,7 @@ CodeEditor.vue
 | `composables/useQuickActions.ts` | 一键快操作：选中即用、结果原地替换（格式化 / 压缩 / 转义 / 格式互转） |
 | `composables/useShellIntent.ts` | 托盘新建 / 外部打开文件（含冷启动拉取与压缩包分流），挂 App 根 |
 | `composables/useClipboardHistory.ts` | 编辑器内复制文本的本地历史 |
+| `composables/useVirtualList.ts` | 大列表的定高虚拟滚动（归档条目表 / 日志 / 目录差异） |
 
 ## 取舍
 

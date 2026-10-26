@@ -203,9 +203,15 @@ async function open() {
 
 /** 已知压缩扩展名集合：剥「同名子文件夹」名用（a.tar.gz → a），清单来自后端不写死。 */
 const archiveExts = ref<Set<string>>(new Set())
-void api.archive.formats().then((fs) => {
-  archiveExts.value = new Set((fs ?? []).flatMap((f) => f.extensions))
-})
+void api.archive
+  .formats()
+  .then((fs) => {
+    archiveExts.value = new Set((fs ?? []).flatMap((f) => f.extensions))
+  })
+  .catch(() => {
+    // 拉不到清单时退到常见后缀：否则默认目录会变成 `a.zip` 这样的怪名字。
+    archiveExts.value = new Set(['zip', '7z', 'tar', 'gz', 'tgz', 'xz', 'bz2', 'zst', 'rar'])
+  })
 
 /** 剥掉末尾最多两层压缩后缀（.tar.gz 两层 / .tgz 一层）。 */
 function stripArchiveExt(name: string): string {

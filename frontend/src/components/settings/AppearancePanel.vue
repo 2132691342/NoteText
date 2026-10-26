@@ -56,19 +56,10 @@ const zoom = computed({
   set: (v) => settings.updateUI({ zoom_level: v }),
 })
 
+/** 界面字体：存配置（重启后还在），不直接写内联样式——那样离开页面就丢。 */
 const fontFamily = computed({
-  get: () => {
-    const f = getComputedStyle(document.documentElement).getPropertyValue('--nt-font-ui')
-    return f.includes('YaHei') ? 'yahei' : f.includes('Mono') ? 'mono' : 'sans'
-  },
-  set: (v) => {
-    const map: Record<string, string> = {
-      sans: "var(--font-sans)",
-      yahei: "'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif",
-      mono: "var(--font-mono)",
-    }
-    document.documentElement.style.setProperty('--nt-font-ui', map[v] ?? map.sans)
-  },
+  get: () => settings.config.ui.ui_font,
+  set: (v) => settings.updateUI({ ui_font: v }),
 })
 </script>
 

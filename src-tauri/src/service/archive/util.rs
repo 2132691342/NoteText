@@ -93,6 +93,37 @@ fn probe_tar_stream(path: &Path, codec: ArchiveFormat) -> bool {
     n >= 262 && &head[257..262] == b"ustar"
 }
 
+/// 探测不出格式时的统一错误。
+///
+/// RAR 是「认得但没实现」的格式：不给单独一句话，用户看到的是
+/// 「文件可能损坏」，然后拿别的工具一开发现好好的——这类提示比报错更糟。
+pub fn err_undetectable(path: &Path) -> AppError {
+    if has_rar_magic(path) {
+        return AppError::new(
+            codes::ARCHIVE_UNSUPPORTED,
+            "RAR 暂不支持内置解压：请用系统程序打开，或先用 7-Zip 转成 zip / 7z",
+        );
+    }
+    AppError::new(
+        codes::ARCHIVE_UNSUPPORTED,
+        "识别不出压缩格式：文件可能不是压缩包或已损坏",
+    )
+}
+
+/// RAR 魔数：v4 `Rar!\x1a\x07\x00`，v5 `Rar!\x1a\x07\x01\x00`（前 7 字节已可区分）。
+fn has_rar_magic(path: &Path) -> bool {
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = [0u8; 8];
+    let n = f.read(&mut head).unwrap_or(0);
+    if n < 7 {
+        return false;
+    }
+    let magic = &head[..7];
+    magic == b"Rar!\x1a\x07\x01" || magic == b"Rar!\x1a\x07\x00"
+}
+
 /// 解析格式 id；引擎分派前的唯一入口。
 pub fn parse_format(s: &str) -> AppResult<ArchiveFormat> {
     ArchiveFormat::from_ext(s).ok_or_else(|| {

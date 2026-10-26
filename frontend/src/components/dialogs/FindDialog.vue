@@ -245,7 +245,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useSettingsStore } from '@/stores/settings'
 import { useToastStore } from '@/stores/toast'
-import { getText, get } from '@/composables/useEditorRegistry'
+import { getText, get, docVersionOf } from '@/composables/useEditorRegistry'
 import { doApplyChanges, doSelectRange, doMarkSelection, doClearMarks } from '@/composables/useEditorActions'
 import { globMatch } from '@/utils'
 import { api } from '@/api'
@@ -365,11 +365,12 @@ onUnmounted(() => {
 })
 
 watch([query, matchCase, wholeWord, regex, extended, inSelection], () => scan())
-// 正文变了要重扫：用户边查边改，命中位置会失效。
+// 正文变了要重扫：命中偏移在改字之后全部失效，不重扫就会替换到错误位置。
+// 依赖必须是版本号——getText 读的是普通 Map，读它建立不起响应依赖。
 watch(
   () => {
     const id = editor.activeId
-    return id == null ? '' : getText(id).length
+    return id == null ? 0 : docVersionOf(id)
   },
   () => scan(),
 )

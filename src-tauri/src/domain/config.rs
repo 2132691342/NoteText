@@ -133,7 +133,9 @@ pub struct UIConfig {
     pub show_sidebar: bool,
     pub sidebar_width: u32,
     pub toolbar_icon_size: u32,
-    /// 缩放（百分比，50–200）。
+    /// 界面字体三档：sans / yahei / mono（只影响界面，不动编辑器等宽字体）。
+    pub ui_font: String,
+    /// 字号缩放百分比（80–140，与外观设置滑块同一档位）。
     pub zoom_level: u32,
     /// 关闭到托盘。
     pub close_to_tray: bool,
@@ -156,6 +158,7 @@ impl Default for UIConfig {
             show_sidebar: true,
             sidebar_width: 260,
             toolbar_icon_size: 24,
+            ui_font: "sans".into(),
             zoom_level: 100,
             close_to_tray: false,
             restore_session: true,

@@ -76,23 +76,23 @@
       </button>
       <template #dropdown>
         <ElDropdownMenu>
-          <ElDropdownItem command="json">{{ t('tool.json') }}</ElDropdownItem>
-          <ElDropdownItem command="diff">{{ t('tool.diffText') }}</ElDropdownItem>
-          <ElDropdownItem command="hash">{{ t('tool.hash') }}</ElDropdownItem>
-          <ElDropdownItem command="regex">{{ t('tool.regex') }}</ElDropdownItem>
-          <ElDropdownItem command="encoding">{{ t('tool.encoding') }}</ElDropdownItem>
-          <ElDropdownItem command="lineOp">{{ t('tool.lineOp') }}</ElDropdownItem>
-          <ElDropdownItem command="clipboard" divided>{{ t('tool.clipboard') }}</ElDropdownItem>
-          <ElDropdownItem command="hex">{{ t('tool.hexViewer') }}</ElDropdownItem>
-          <ElDropdownItem command="batchFindReplace">
+          <ElDropdownItem command="tools.json">{{ t('tool.json') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.diff">{{ t('tool.diffText') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.hash">{{ t('tool.hash') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.regex">{{ t('tool.regex') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.encoding">{{ t('tool.encoding') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.lineOp">{{ t('tool.lineOp') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.clipboard" divided>{{ t('tool.clipboard') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.hex">{{ t('tool.hexViewer') }}</ElDropdownItem>
+          <ElDropdownItem command="tools.batchFindReplace">
             {{ t('tool.batchFindReplace') }}
           </ElDropdownItem>
-          <ElDropdownItem command="batchRename">{{ t('tool.batchRename') }}</ElDropdownItem>
-          <ElDropdownItem command="archiveCreate" divided>
+          <ElDropdownItem command="tools.batchRename">{{ t('tool.batchRename') }}</ElDropdownItem>
+          <ElDropdownItem command="archive.create" divided>
             {{ t('menu.archiveCreate') }}
           </ElDropdownItem>
-          <ElDropdownItem command="archiveExtract">{{ t('menu.archiveExtract') }}</ElDropdownItem>
-          <ElDropdownItem command="archiveTasks">{{ t('menu.archiveTasks') }}</ElDropdownItem>
+          <ElDropdownItem command="archive.extract">{{ t('menu.archiveExtract') }}</ElDropdownItem>
+          <ElDropdownItem command="archive.tasks">{{ t('menu.archiveTasks') }}</ElDropdownItem>
         </ElDropdownMenu>
       </template>
     </ElDropdown>
@@ -197,8 +197,8 @@ async function onSave() {
 }
 
 function onTool(cmd: string) {
-  // 压缩入口的命令 id 在 archive 组，不带 tools. 前缀。
-  commands.run(cmd.startsWith('archive') ? cmd : `tools.${cmd}`)
+  // 下拉项直接带完整命令 id：前缀拼在模板里看不出来，拼错就是「点了没反应」。
+  commands.run(cmd)
 }
 </script>
 

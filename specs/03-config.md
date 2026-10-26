@@ -16,14 +16,11 @@
 
 配置量大几十倍时才需要拆，现在没有。
 
-### 分层
+### 只有一层
 
-```
-config.json（预留，固定项）      启动期读，DB 之前就要有的东西
-  └─ 目前没有内容：日志级别之类也在 DB 里，DB 打不开时本来就要 fail-fast
-
-settings 表 app_config 键       界面偏好，改一项整块回写
-```
+启动期的固定项（日志目录、数据目录）来自路径解析而不是配置文件；
+其余偏好全在 `settings` 表的 `app_config` 键里。**不再另开 JSON 配置文件**：
+DB 打不开时本来就 fail-fast，不存在「DB 没起来但日志要先配好」的窗口。
 
 ### 派生量不落库
 
@@ -31,9 +28,10 @@ settings 表 app_config 键       界面偏好，改一项整块回写
 |---|---|
 | `resolvedTheme` | `theme === "system"` 时跟随 `prefers-color-scheme`，实时更新 |
 | `--nt-fs-scale` | `ui.zoom_level / 100`，只写 CSS 变量 |
+| `--nt-editor-fs` | `editor.font_size × --nt-fs-scale`，写 CSS 变量管编辑器字号 |
 | `--nt-vw-scale` | 窗口宽 ÷ 1440，上下限 0.8~1.35 |
 
-这三个都只写 CSS 变量，不进配置——进配置就要考虑「用户改了这个，
+这几个都只写 CSS 变量，不进配置——进配置就要考虑「用户改了这个，
 那个要不要跟着变」，而派生量的定义就是「跟着变」。
 
 ### 回写策略
@@ -60,7 +58,7 @@ function update(patch: Partial<AppConfig>) {
 
 ### 配置项全表
 
-四组，共 44 项。**每一项都在设置界面有对应控件**——没有暗藏的开关。
+四组，共 45 项。**每一项都在设置界面有对应控件**——没有暗藏的开关。
 
 #### EditorConfig（18 项）
 
@@ -98,7 +96,7 @@ function update(patch: Partial<AppConfig>) {
 | `remember_last_folder` | bool | true | 记住上次打开的文件夹 |
 | `last_folder` | String | 空 | 上次的文件夹（由上一项决定是否更新） |
 
-#### UIConfig（12 项）
+#### UIConfig（13 项）
 
 | 项 | 类型 | 默认 | 作用 |
 |---|---|---|---|
@@ -108,7 +106,8 @@ function update(patch: Partial<AppConfig>) {
 | `show_sidebar` | bool | true | 侧栏显隐 |
 | `sidebar_width` | u32 | 260 | 侧栏宽度（px，180–480） |
 | `toolbar_icon_size` | u32 | 24 | 工具栏图标尺寸 |
-| `zoom_level` | u32 | 100 | 界面缩放百分比（80–140） |
+| `ui_font` | String | `sans` | 界面字体：`sans` / `yahei` / `mono`（只改 `--nt-font-ui`） |
+| `zoom_level` | u32 | 100 | 字号缩放百分比（80–140；工具栏、Ctrl+滚轮、设置滑块同一档） |
 | `close_to_tray` | bool | false | 关闭到托盘 |
 | `restore_session` | bool | true | 启动恢复上次会话 |
 | `recent_limit` | u32 | 20 | 最近文件保留条数 |

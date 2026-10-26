@@ -8,8 +8,8 @@ use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::archive::ctx::TaskCtx;
 use crate::service::archive::parts::ReadSeek;
 use crate::service::archive::{
-    copy_with_ctx, detect_format, err_sevenz, err_zip, password_error, sanitize_entry_name,
-    split_parts, tar_codec, to_slash, unique_path, wrap_tar_codec,
+    copy_with_ctx, detect_format, err_sevenz, err_undetectable, err_zip, password_error,
+    sanitize_entry_name, split_parts, tar_codec, to_slash, unique_path, wrap_tar_codec,
 };
 use std::fs::File;
 use std::io::{Read, Write};
@@ -18,12 +18,7 @@ use std::path::{Path, PathBuf};
 /// 解压入口。按格式分派；entries 为 None 时解压全部。
 pub fn extract_archive(req: &ExtractArchiveReq, ctx: &TaskCtx) -> AppResult<ExtractArchiveVO> {
     let src = PathBuf::from(&req.archive);
-    let format = detect_format(&src).ok_or_else(|| {
-        AppError::new(
-            codes::ARCHIVE_UNSUPPORTED,
-            "识别不出压缩格式：文件可能不是压缩包或已损坏",
-        )
-    })?;
+    let format = detect_format(&src).ok_or_else(|| err_undetectable(&src))?;
     let dest_root = PathBuf::from(&req.dest);
     let dest = if req.create_subdir {
         // 子目录名 = 归档主名（去全部压缩后缀：a.tar.gz → a）

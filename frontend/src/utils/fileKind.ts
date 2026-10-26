@@ -78,3 +78,12 @@ export function isTextKind(kind: FileKind): boolean {
 export function hasRichPreview(kind: FileKind): boolean {
   return kind === 'docx' || kind === 'pdf' || kind === 'sheet' || kind === 'image' || kind === 'legacyDoc'
 }
+
+/**
+ * 能不能分屏：只有 CodeMirror 承载的正文可以（纯文本 / Markdown / HTML）。
+ * 表格、PDF、图片这些预览器没有「第二栏」的概念，按了不该假装生效。
+ */
+export function canSplitView(kind: FileKind, viewType: string): boolean {
+  if (viewType === 'hex') return false
+  return kind === 'text' || kind === 'markdown' || kind === 'html'
+}

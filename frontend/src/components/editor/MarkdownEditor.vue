@@ -65,7 +65,22 @@ type Mode = 'edit' | 'split' | 'preview'
  * 分屏 / 预览。不做「记住上次模式」：切过一次就永远不再给源码，
  * 下次打开的人会以为文件坏了。
  */
-const mode = ref<Mode>('edit')
+/** 分屏状态与标签上的 `split` 同一份真相：工具栏的「分屏」按钮、Ctrl+\ 也能开合。 */
+const mode = ref<Mode>(props.tab.split ? 'split' : 'edit')
+
+// 双向同步：MarkdownEditor 顶栏的「编辑 / 分屏 / 预览」与标签的 split 标记互写。
+watch(mode, (m) => {
+  const on = m === 'split'
+  if (props.tab.split !== on) props.tab.split = on
+})
+
+watch(
+  () => props.tab.split,
+  (on) => {
+    if (on && mode.value !== 'split') mode.value = 'split'
+    else if (!on && mode.value === 'split') mode.value = 'edit'
+  },
+)
 /** 渲染落点：阅读栏本体。宽度与内边距归 `.nt-md-doc`，滚动归 `.nt-md-preview`。 */
 const doc = ref<HTMLElement | null>(null)
 const exporting = ref(false)
@@ -86,8 +101,18 @@ const source = computed(() => {
 md.setDark(settings.resolvedTheme === 'dark')
 
 // ---- 分屏比例：拖中缝，比例记在本次会话里 ----
-/** 编辑栏占比（0.25–0.75）。太窄的两栏都读不了。 */
-const ratio = ref(0.5)
+/**
+ * 编辑栏占比（0.25–0.75）。
+ *
+ * 与代码分屏共用 `editor.splitRatio`（存的是副栏占比）：两个视图的中缝
+ * 位置一致，会话恢复也只需存一个数。太窄的两栏都读不了。
+ */
+const ratio = computed({
+  get: () => 1 - editor.splitRatio,
+  set: (v: number) => {
+    editor.splitRatio = 1 - v
+  },
+})
 
 /**
  * 分屏时编辑栏的宽度。

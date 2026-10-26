@@ -8,6 +8,10 @@ import { setLocale, tr } from '@/i18n'
 import type { AppConfig } from '@/types/api'
 import { useToastStore } from './toast'
 
+/** 界面字号缩放上下限（百分比）：工具栏、快捷键、滚轮、设置页共用一档，避免各写一套。 */
+export const ZOOM_MIN = 80
+export const ZOOM_MAX = 140
+
 /** 与后端 `AppConfig::default()` 逐字段对应（Rust 侧改默认值必须同步这里）。 */
 function defaultConfig(): AppConfig {
   return {
@@ -50,6 +54,7 @@ function defaultConfig(): AppConfig {
       show_sidebar: true,
       sidebar_width: 260,
       toolbar_icon_size: 24,
+      ui_font: 'sans',
       zoom_level: 100,
       close_to_tray: false,
       restore_session: true,
@@ -91,6 +96,7 @@ export const useSettingsStore = defineStore('settings', () => {
     loaded.value = true
     applyTheme()
     applyZoom()
+    applyFont()
   }
 
   /** 改一项配置：立即生效 + 防抖回写。 */
@@ -99,6 +105,7 @@ export const useSettingsStore = defineStore('settings', () => {
     config.value = { ...config.value, ...patch }
     applyTheme()
     applyZoom()
+    applyFont()
     scheduleSave()
   }
 
@@ -114,9 +121,11 @@ export const useSettingsStore = defineStore('settings', () => {
     scheduleSave()
   }
 
-  /** 改 UI 配置的一项。 */
+  /** 改 UI 配置的一项：字号 / 界面字体要立刻落到 CSS 变量上，否则改了没反应。 */
   function updateUI(patch: Partial<AppConfig['ui']>) {
     config.value.ui = { ...config.value.ui, ...patch }
+    if (patch.zoom_level !== undefined) applyZoom()
+    if (patch.ui_font !== undefined) applyFont()
     scheduleSave()
   }
 
@@ -143,6 +152,7 @@ export const useSettingsStore = defineStore('settings', () => {
     config.value = { ...defaultConfig(), keybindings }
     applyTheme()
     applyZoom()
+    applyFont()
     await save()
   }
 
@@ -161,6 +171,21 @@ export const useSettingsStore = defineStore('settings', () => {
     // 界面字号缩放：只改一个 CSS 变量，全站字号刻度等比跟随。
     const root = document.documentElement
     root.style.setProperty('--nt-fs-scale', String(config.value.ui.zoom_level / 100))
+  }
+
+  /** 界面字体三档：只改 --nt-font-ui，编辑器等宽字体不受影响。 */
+  const UI_FONTS: Record<string, string> = {
+    sans: 'var(--font-sans)',
+    yahei: "'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif",
+    mono: 'var(--font-mono)',
+  }
+
+  function applyFont() {
+    const key = config.value.ui.ui_font
+    document.documentElement.style.setProperty(
+      '--nt-font-ui',
+      UI_FONTS[key] ?? UI_FONTS.sans,
+    )
   }
 
   // 系统主题切换：`system` 模式下实时跟随。

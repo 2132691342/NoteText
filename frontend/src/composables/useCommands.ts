@@ -3,7 +3,7 @@
 import { useCommandStore, type Command } from '@/stores/commands'
 import { useEditorStore } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'
-import { useSettingsStore } from '@/stores/settings'
+import { useSettingsStore, ZOOM_MAX, ZOOM_MIN } from '@/stores/settings'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
 import { useI18n } from 'vue-i18n'
@@ -31,6 +31,7 @@ import {
   doReplaceDoc,
 } from '@/composables/useEditorActions'
 import { baseName, nextUntitledIndex, readClipboard, dirName, joinPath, extName } from '@/utils'
+import { canSplitView, kindOf } from '@/utils/fileKind'
 import { pushClip } from '@/composables/useClipboardHistory'
 import { askText, confirmText } from '@/components/common/askText'
 import { askPick } from '@/components/common/askPick'
@@ -357,18 +358,24 @@ export function registerCommands() {
         if (id == null) return
         // 有未保存修改先问：静默重载会把用户刚写的東西丢掉。
         const tab = editor.tabs.find((t) => t.id === id)
-        if (tab?.dirty) {
+        if (!tab?.path || tab.path.startsWith('draft:')) return
+        if (tab.dirty) {
           const ok = await confirmText({
             title: t('menu.reload'),
             message: t('dialog.reloadBody', { name: tab.title || baseName(tab.path) }),
           })
           if (!ok) return
         }
-        await editor.reload(id)
-        // 通知编辑器组件替换正文：store 的 reload 只更新元数据。
-        document.dispatchEvent(
-          new CustomEvent('nt-reload-doc', { detail: { tabId: id } }),
-        )
+        try {
+          // 元数据与正文一起换：store 的 reload 只碰元数据，
+          // 不把正文推进编辑器的话，编辑区会永远停在旧内容。
+          const content = await api.readFile(tab.path)
+          editor.applyContent(tab, content)
+          doReplaceDoc(id, content.text)
+          toast.ok(t('toast.fileReloaded', { name: tab.title || baseName(tab.path) }))
+        } catch (e) {
+          toast.bad(t('toast.reloadFailed', { reason: normalizeError(e).message }))
+        }
       },
     },
     {
@@ -719,14 +726,16 @@ export function registerCommands() {
       group: 'view',
       labelKey: 'menu.zoomIn',
       key: 'Control+=',
-      run: () => settings.updateUI({ zoom_level: Math.min(200, settings.config.ui.zoom_level + 10) }),
+      run: () =>
+        settings.updateUI({ zoom_level: Math.min(ZOOM_MAX, settings.config.ui.zoom_level + 10) }),
     },
     {
       id: 'view.zoomOut',
       group: 'view',
       labelKey: 'menu.zoomOut',
       key: 'Control+-',
-      run: () => settings.updateUI({ zoom_level: Math.max(50, settings.config.ui.zoom_level - 10) }),
+      run: () =>
+        settings.updateUI({ zoom_level: Math.max(ZOOM_MIN, settings.config.ui.zoom_level - 10) }),
     },
     {
       id: 'view.resetZoom',
@@ -770,7 +779,13 @@ export function registerCommands() {
       enabled: () => hasTab(),
       run: () => {
         const tab = editor.active
-        if (tab) editor.setSplit(tab.id, !tab.split)
+        if (!tab) return
+        // 表格 / PDF / 图片没有第二栏：给一句解释，别让按钮看起来「按了没反应」。
+        if (!canSplitView(kindOf(tab.path, tab.view_type === 'hex'), tab.view_type)) {
+          toast.warn(t('toast.splitUnsupported'))
+          return
+        }
+        editor.setSplit(tab.id, !tab.split)
       },
     },
     {

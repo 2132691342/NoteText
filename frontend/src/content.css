@@ -1028,7 +1028,7 @@
    Markdown 预览
    ============================================================
    由 markdown-it 生成的 HTML，类名以 nt-md- 开头。
-   排版口径：一条 52em 的阅读栏（`.nt-md-doc` 贴左），
+   排版口径：一条 72em 的居中阅读栏（`.nt-md-doc`），
    层级靠「字号 + 字重 + 间距」三件套区分，不靠色块。
    所有块级元素只吃 max-width，不吃固定宽度：分屏窄到 380px 时，
    长句、长链接、宽代码块都要在容器内换行或自带横向滚动，
@@ -1040,11 +1040,13 @@
 }
 
 .nt-md-doc {
-  /* 左对齐、不居中：正文与代码编辑器一样从左上角起排。
-     居中会在宽面板里造出两条对称的空白，看起来像「内容跑到屏幕中间」。 */
-  max-width: 52em;
-  margin: 0;
-  padding: var(--nt-sp-6) var(--nt-sp-5) var(--nt-sp-10);
+  /* 阅读栏：铺满可用宽度，上限 72em（约 1000px）。
+     上限只管「别拉太长」，居中负责把余量分到两侧——
+     贴左会在宽窗口里留出一条大空白，看起来像排版坏了。 */
+  width: 100%;
+  max-width: min(100%, 72em);
+  margin: 0 auto;
+  padding: var(--nt-sp-6) clamp(var(--nt-sp-4), 4vw, var(--nt-sp-10)) var(--nt-sp-10);
   /* 中文没有词边界，长 URL / 长路径靠 anywhere 断行；
      break-word 兜住旧 WebView 对 anywhere 支持不佳的场景。 */
   overflow-wrap: anywhere;

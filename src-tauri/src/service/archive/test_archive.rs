@@ -8,8 +8,8 @@ use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::archive::ctx::TaskCtx;
 use crate::service::archive::parts::{open_source, ReadSeek};
 use crate::service::archive::{
-    detect_format, err_sevenz, err_zip, password_error, split_parts, tar_codec, to_slash,
-    wrap_tar_codec,
+    detect_format, err_sevenz, err_undetectable, err_zip, password_error, split_parts, tar_codec,
+    to_slash, wrap_tar_codec,
 };
 use std::fs::File;
 use std::io::{Read, Write};
@@ -18,12 +18,7 @@ use std::path::Path;
 /// 测试入口。
 pub fn test_archive(req: &TestArchiveReq, ctx: &TaskCtx) -> AppResult<TestArchiveVO> {
     let src = Path::new(&req.archive);
-    let format = detect_format(src).ok_or_else(|| {
-        AppError::new(
-            codes::ARCHIVE_UNSUPPORTED,
-            "识别不出压缩格式：文件可能不是压缩包或已损坏",
-        )
-    })?;
+    let format = detect_format(src).ok_or_else(|| err_undetectable(src))?;
     let mut out = TestArchiveVO {
         ok: false,
         tested: 0,

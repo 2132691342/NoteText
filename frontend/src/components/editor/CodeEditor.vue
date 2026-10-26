@@ -222,6 +222,8 @@ const foldComp = new Compartment()
 const activeLineComp = new Compartment()
 const bracketComp = new Compartment()
 const whitespaceComp = new Compartment()
+// 选中同词高亮：设置里能开关，所以不能只在挂载时读一次配置。
+const selectionMatchComp = new Compartment()
 // 视觉辅助三件：缩进参考线 / 括号配对着色 / 行尾标记。
 // 三者都是「看法」，合成一个 compartment 整体 reconfigure。
 const guidesComp = new Compartment()
@@ -285,8 +287,6 @@ function baseExtensions(editable: boolean) {
     rectangularSelection(),
     crosshairCursor(),
     scrollPastEnd(),
-    // 选中即高亮同词：日志/代码里找「这个词还出现在哪」非常高频。
-    cfg().highlight_selection ? highlightSelectionMatches() : [],
     keymap.of([
       ...closeBracketsKeymap,
       ...defaultKeymap,
@@ -369,10 +369,16 @@ onMounted(async () => {
       whitespaceComp.of(
         cfg().show_whitespace ? highlightWhitespace() : placeholder(''),
       ),
+      // 选中即高亮同词：日志 / 代码里找「这个词还出现在哪」非常高频。
+      selectionMatchComp.of(
+        cfg().highlight_selection ? highlightSelectionMatches() : [],
+      ),
     ],
   })
 
   view = new EditorView({ state, parent: host.value })
+  // 先落字号 / 字体变量再注册：否则首帧用的是令牌缺省值，字号设置看起来「没生效」。
+  applyFont()
   register(props.tab.id, view, view.state.doc)
   document.dispatchEvent(new CustomEvent('nt-editor-ready', { detail: { tabId: props.tab.id } }))
 
@@ -519,6 +525,11 @@ watch(() => cfg().bracket_matching, (v) =>
 watch(() => cfg().show_whitespace, (v) =>
   view?.dispatch({
     effects: whitespaceComp.reconfigure(v ? highlightWhitespace() : placeholder('')),
+  }),
+)
+watch(() => cfg().highlight_selection, (v) =>
+  view?.dispatch({
+    effects: selectionMatchComp.reconfigure(v ? highlightSelectionMatches() : []),
   }),
 )
 watch(
@@ -1007,13 +1018,14 @@ if (marksRendererMine.value) {
   overflow: hidden;
 }
 
-/* 编辑器表面：与界面分离，代码区可独立压暗 */
+/* 编辑器表面：与界面分离，代码区可独立压暗。
+   字号与字体族读 applyFont 写的两个变量，缺省回落到全局令牌。 */
 .nt-code-editor :deep(.cm-editor) {
   height: 100%;
   background: var(--nt-editor-bg);
   color: var(--nt-ink);
-  font-family: var(--nt-font-editor);
-  font-size: var(--nt-fs-md);
+  font-family: var(--nt-editor-font, var(--nt-font-editor));
+  font-size: var(--nt-editor-fs, var(--nt-fs-md));
 }
 
 .nt-code-editor :deep(.cm-editor.cm-focused) {
@@ -1022,7 +1034,7 @@ if (marksRendererMine.value) {
 
 .nt-code-editor :deep(.cm-scroller) {
   line-height: 1.55;
-  font-family: var(--nt-font-editor);
+  font-family: var(--nt-editor-font, var(--nt-font-editor));
 }
 
 .nt-code-editor :deep(.cm-gutters) {

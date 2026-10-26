@@ -8,18 +8,13 @@ use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::archive::create::create_archive;
 use crate::service::archive::ctx::TaskCtx;
 use crate::service::archive::extract::extract_archive;
-use crate::service::archive::{detect_format, parse_format, unique_path};
+use crate::service::archive::{detect_format, err_undetectable, parse_format, unique_path};
 use std::path::PathBuf;
 
 /// 转换归档格式。目标已存在时按 rename 规则加序号，不覆盖。
 pub fn convert_archive(req: &ConvertArchiveReq, ctx: &TaskCtx) -> AppResult<ConvertArchiveVO> {
     let src = PathBuf::from(&req.archive);
-    let from = detect_format(&src).ok_or_else(|| {
-        AppError::new(
-            codes::ARCHIVE_UNSUPPORTED,
-            "识别不出源压缩格式：文件可能不是压缩包或已损坏",
-        )
-    })?;
+    let from = detect_format(&src).ok_or_else(|| err_undetectable(&src))?;
     let to = parse_format(&req.format)?;
     if from == to {
         return Err(AppError::new(

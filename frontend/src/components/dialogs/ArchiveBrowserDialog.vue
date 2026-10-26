@@ -169,9 +169,14 @@ const convertTo = ref('')
 const converting = ref(false)
 
 const formats = ref<ArchiveFormatVO[]>([])
-void api.archive.formats().then((fs) => {
-  formats.value = fs ?? []
-})
+void api.archive
+  .formats()
+  .then((fs) => {
+    formats.value = fs ?? []
+  })
+  .catch(() => {
+    formats.value = []
+  })
 const archiveExts = computed(() => new Set(formats.value.flatMap((f) => f.extensions)))
 
 /** 剥掉末尾最多两层压缩后缀（.tar.gz 两层 / .tgz 一层），与后端 strip_archive_ext 对齐。 */
@@ -205,9 +210,18 @@ const allChecked = computed(
   () => visibleEntries.value.length > 0 && visibleEntries.value.every((e) => checked.value.has(e.name)),
 )
 
-onMounted(() => {
-  open()
+onMounted(async () => {
+  // 没有预填路径（菜单里的「打开浏览」没选包）：先让用户选，别拿空路径去问后端。
+  if (!path.value) {
+    const p = await api.openFileDialog()
+    if (!p) {
+      emit('close')
+      return
+    }
+    path.value = p
+  }
   extractDir.value = dirName(path.value)
+  void open()
 })
 
 async function open() {

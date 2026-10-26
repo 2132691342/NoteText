@@ -39,12 +39,13 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { api, normalizeError } from '@/api'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
+import { askText } from '@/components/common/askText'
 import type { BookmarkVO } from '@/types/api'
 
 const { t } = useI18n()
@@ -103,18 +104,35 @@ async function onClearAll() {
   await load()
 }
 
+/**
+ * 改别名：`add_bookmark` 对 (path, line) 是 upsert，
+ * 带上同一个行号再写一次 label 就是「重命名」，不需要额外命令。
+ */
 async function onRename() {
-  // 别名编辑走 dialog host：这里只发意图。
   const b = menuItem.value
   menu.value = null
   if (!b) return
-  document.dispatchEvent(
-    new CustomEvent('bookmark-rename', { detail: { id: b.id, label: b.label } }),
-  )
+  const label = await askText({
+    title: t('common.rename'),
+    value: b.label,
+    placeholder: b.line_text,
+  })
+  if (label == null) return
+  try {
+    await api.addBookmark({ path: b.path, line: b.line, label: label.trim() })
+    await load()
+    document.dispatchEvent(new CustomEvent('bookmarks-changed'))
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  }
 }
 
-// 其他面板改完书签后广播刷新。
-document.addEventListener('bookmarks-changed', () => void load())
+// 其他面板改完书签后广播刷新。挂载时登记、卸载时摘掉：否则来回切页签会越积越多。
+function onChanged() {
+  void load()
+}
+onMounted(() => document.addEventListener('bookmarks-changed', onChanged))
+onBeforeUnmount(() => document.removeEventListener('bookmarks-changed', onChanged))
 </script>
 
 <style scoped>
