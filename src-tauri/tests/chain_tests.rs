@@ -1,5 +1,7 @@
-//! 集成测试：8 条长链路，覆盖文件 / 文件树护栏 / 会话 / 批量 / 备份 / 压缩 / 系统关联。
-//! 一条测试一个用户故事；失败消息点名坏在哪一步，坏法索引见 specs/12-testing.md。
+//! 集成测试：覆盖文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联 / 只读归档的长链路。
+//! 一条测试一个用户故事，失败消息点名坏在哪一步；单元级契约见各模块 `#[cfg(test)]`。
+//!
+//! 运行：cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests [关键字]
 
 #![allow(dead_code)]
 
@@ -128,10 +130,68 @@ fn pack_and_unpack(dir: &Path, src: &Path, format: &str, tag: &str) -> (PathBuf,
     (archive, out)
 }
 
+/// 手工构造 cpio newc 单条目样本：头字段偏移算错一个字节解出来就是垃圾。
+fn build_cpio(body: &[u8], name: &[u8]) -> Vec<u8> {
+    let mut cpio = Vec::new();
+    let push = |out: &mut Vec<u8>, name_len: usize, size: usize| {
+        let h = format!(
+            "070701{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}{:08X}",
+            0u32,
+            0o100644u32,
+            0u32,
+            0u32,
+            1u32,
+            0u32,
+            size as u32,
+            0u32,
+            0u32,
+            0u32,
+            0u32,
+            name_len,
+            0u32,
+        );
+        out.extend_from_slice(h.as_bytes());
+    };
+    push(&mut cpio, name.len(), body.len());
+    cpio.extend_from_slice(name);
+    while cpio.len() % 4 != 0 {
+        cpio.push(0);
+    }
+    cpio.extend_from_slice(body);
+    while cpio.len() % 4 != 0 {
+        cpio.push(0);
+    }
+    push(&mut cpio, b"TRAILER!!!\0".len(), 0);
+    cpio.extend_from_slice(b"TRAILER!!!\0");
+    while cpio.len() % 4 != 0 {
+        cpio.push(0);
+    }
+    cpio
+}
+
+/// 手工构造 ar 单条目样本。
+fn build_ar(data: &[u8], name: &str) -> Vec<u8> {
+    let mut ar = b"!<arch>\n".to_vec();
+    let h = format!(
+        "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n",
+        name,
+        "1700000000",
+        "0",
+        "0",
+        "100644",
+        data.len()
+    );
+    ar.extend_from_slice(h.as_bytes());
+    ar.extend_from_slice(data);
+    if data.len() % 2 == 1 {
+        ar.push(b'\n');
+    }
+    ar
+}
+
 // ---------- 文件 ----------
 
-/// 打开→保存→重开：行尾按原样写回、BOM 剥掉再补回、强制编码解得对、写盘不留临时文件。
-/// 这些一旦漂移，用户看到的是「文件越存越坏」。
+/// 文件往返：行尾原样写回、BOM 补回、强制编码解得对、原子写不留临时文件。
 #[test]
 fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     let (dir, state) = boot();
@@ -209,8 +269,7 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     assert!(leftovers.is_empty(), "不应留下临时文件：{leftovers:?}");
 }
 
-/// 文件树护栏：重命名不许覆盖 / 不许成环 / 不许逃逸，批量删除对陈旧路径只记账，
-/// 新建同名不许清空已有内容。任一条失守都是「用户的文件被无声销毁」。
+/// 文件树护栏：改名不许覆盖 / 成环 / 逃逸，批量删除对陈旧路径只记账，同名新建拒绝清空。
 #[test]
 fn file_ops_refuse_overwrite_cycle_escape_and_partial_delete() {
     let (dir, state) = boot();
@@ -298,8 +357,7 @@ fn file_ops_refuse_overwrite_cycle_escape_and_partial_delete() {
 
 // ---------- 会话 ----------
 
-/// 首启写默认配置、空列表序列化成 []、会话往返保标签顺序与窗口尺寸、
-/// 关光标签后会话行仍在。空列表变 null 前端就是白屏。
+/// 会话往返：首启默认配置、空列表序列化成 []、标签顺序与窗口尺寸恢复、关光标签留会话行。
 #[test]
 fn session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays() {
     let (_dir, state) = boot();
@@ -374,8 +432,7 @@ fn session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays() {
 
 // ---------- 批量 ----------
 
-/// 两阶段契约：扫描只看不改、应用只改勾选的文件、重命名冲突标出并整体拒绝、
-/// 无冲突的计划真落地。
+/// 批量两阶段：扫描只看不改、应用只改勾选文件、重命名冲突整体拒绝、无冲突计划才落地。
 #[test]
 fn batch_preview_then_apply_touches_only_confirmed_files() {
     let (dir, state) = boot();
@@ -476,8 +533,7 @@ fn batch_preview_then_apply_touches_only_confirmed_files() {
 
 // ---------- 备份 ----------
 
-/// 备份导出再导入，五个用户数据表都要回来；不在备份里的本机数据必须原样保留。
-/// 只导出不导入等于换机即丢数据，导入抹掉本机数据等于反向丢数据。
+/// 备份导出再导入：五类用户数据都回来，不在备份里的本机数据原样保留。
 #[test]
 fn backup_export_import_restores_tables_and_keeps_local_rows() {
     let (_dir, state) = boot();
@@ -583,8 +639,7 @@ fn backup_export_import_restores_tables_and_keeps_local_rows() {
 
 // ---------- 压缩 ----------
 
-/// 归档完整生命周期：15 种格式创建→解压逐字节一致（含中文名与嵌套层级）、
-/// 改名后仍认得出 tar 家族、追加与删除条目、分卷从 .001 打开再合并还原。
+/// 归档完整生命周期：15 种格式创建→解压逐字节一致、改名仍认 tar 家族、追加/删除条目、分卷合并还原。
 #[test]
 fn archive_lifecycle_covers_all_formats_update_and_split() {
     let dir = tempfile::tempdir().expect("建临时目录失败");
@@ -706,8 +761,7 @@ fn archive_lifecycle_covers_all_formats_update_and_split() {
     );
 }
 
-/// 打不开的包要说清为什么：穿越条目整包拒绝且不落盘、没密码报 9002、
-/// 密码错报 9003（前端据此弹密码框）、损坏包要测出失败条目。
+/// 解压护栏：穿越条目整包拒绝且不落盘、缺密码/错密码区分报错、损坏包测出失败条目。
 #[test]
 fn archive_rejects_escape_and_distinguishes_password_from_corruption() {
     let dir = tempfile::tempdir().expect("建临时目录失败");
@@ -930,4 +984,111 @@ mod assoc {
             .is_ok();
         assert!(!registered, "RegisteredApplications 里的条目必须移除");
     }
+}
+
+// ---------- 只读扩展 + CAB ----------
+
+/// 只读格式与 CAB：能列能解的必须真正读出来，不能写的必须明确拒绝。
+#[test]
+fn archive_readonly_formats_list_extract_and_refuse_create() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let ctx = task_ctx();
+    let (root, _bin) = sample_tree(dir.path());
+    let root_s = root.to_string_lossy().to_string();
+
+    // CAB：写 → 列 → 解，三件事都要对得上（Windows 安装包最常见的容器）。
+    let cab = dir.path().join("pack.cab");
+    arch::create::create_archive(&create_req(vec![root_s.clone()], &cab, "cab"), &ctx)
+        .unwrap_or_else(|e| panic!("CAB 创建失败：{e}"));
+    let listing = arch::list::list_archive(&cab, None).expect("CAB 列表失败");
+    let names: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
+    assert!(
+        names.iter().any(|n| n.ends_with("说明.txt")),
+        "CAB 条目表缺 说明.txt，实际 {names:?}"
+    );
+    let out = dir.path().join("x-cab");
+    arch::extract::extract_archive(&extract_req(&cab, &out), &ctx)
+        .unwrap_or_else(|e| panic!("CAB 解压失败：{e}"));
+    assert_eq!(
+        fs::read(out.join("样本目录").join("说明.txt")).expect("CAB 解压后缺 说明.txt"),
+        b"hello note text\r\nsecond line\n",
+        "CAB 往返后文本内容变了"
+    );
+
+    // 只读格式：创建必须报「不支持创建」而不是走到一半才失败。
+    for fmt in ["rar", "lzh", "cpio", "ar"] {
+        let dest = dir.path().join(format!("bad.{fmt}"));
+        let err = arch::create::create_archive(&create_req(vec![root_s.clone()], &dest, fmt), &ctx)
+            .expect_err(&format!("{fmt} 不该被允许创建"));
+        assert_eq!(err.code, codes::ARCHIVE_UNSUPPORTED, "{fmt} 实际报 {err}");
+        assert!(!dest.exists(), "{fmt} 创建失败不该留下半个文件");
+    }
+
+    // 只读容器（cpio / ar）头部偏移算错一个字节解出来就是垃圾：手工构造后必须列得出、解得出。
+    let cpio_path = dir.path().join("pack.cpio");
+    fs::write(&cpio_path, build_cpio(b"hello cpio", b"readme.txt")).expect("写 cpio 失败");
+    let cpio_list = arch::list::list_archive(&cpio_path, None).expect("cpio 列表失败");
+    assert_eq!(cpio_list.entries[0].name, "readme.txt", "cpio 条目名读错");
+    arch::extract::extract_archive(&extract_req(&cpio_path, &dir.path().join("x-cpio")), &ctx)
+        .unwrap_or_else(|e| panic!("cpio 解压失败：{e}"));
+
+    let ar_path = dir.path().join("pack.ar");
+    fs::write(&ar_path, build_ar(b"ar-body-data", "control.tar")).expect("写 ar 失败");
+    let ar_list = arch::list::list_archive(&ar_path, None).expect("ar 列表失败");
+    assert_eq!(ar_list.entries[0].name, "control.tar", "ar 条目名读错");
+    arch::extract::extract_archive(&extract_req(&ar_path, &dir.path().join("x-ar")), &ctx)
+        .unwrap_or_else(|e| panic!("ar 解压失败：{e}"));
+}
+
+/// 只读容器的解析层：手工构造 cpio 与 ar，条目名与内容都要原样读出来。
+///
+/// 这两条不依赖任何外部工具生成样本，因此能长期跑；它们守护的是
+/// RAR / LHA 真实包：列得出名字、解得出原文，预览也能读前几行。
+#[test]
+fn archive_reads_real_rar_and_lha_packages() {
+    let dir = tempfile::tempdir().expect("建临时目录失败");
+    let ctx = task_ctx();
+    let fx = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures");
+
+    let rar = fx.join("unicode.rar");
+    let listing = arch::list::list_archive(&rar, None).expect("RAR 列表失败");
+    assert_eq!(listing.entries.len(), 1, "RAR 应只列出 1 个条目");
+    assert_eq!(listing.format, "rar");
+    let out = dir.path().join("x-rar");
+    let res = arch::extract::extract_archive(&extract_req(&rar, &out), &ctx)
+        .unwrap_or_else(|e| panic!("RAR 解压失败：{e}"));
+    assert_eq!(res.file_count, 1, "RAR 应解出 1 个文件");
+    assert_eq!(res.total_size, 17, "RAR 解出的字节数不对");
+
+    let lzh = fx.join("sample.lzh");
+    let listing = arch::list::list_archive(&lzh, None).expect("LHA 列表失败");
+    assert_eq!(listing.format, "lzh");
+    assert_eq!(listing.entries[0].name, "readme.txt", "LHA 条目名读错");
+    let out = dir.path().join("x-lzh");
+    arch::extract::extract_archive(&extract_req(&lzh, &out), &ctx)
+        .unwrap_or_else(|e| panic!("LHA 解压失败：{e}"));
+    assert_eq!(
+        fs::read(out.join("readme.txt")).expect("LHA 解压后缺条目"),
+        b"hello lzh",
+        "LHA 解出来的内容不对"
+    );
+
+    // 只读格式的预览也要能用：用户在浏览浮窗里点一下条目就该看到前几行。
+    let preview = arch::preview::preview_entry(
+        &notetext_lib::domain::archive::PreviewEntryReq {
+            archive: lzh.to_string_lossy().to_string(),
+            entry: "readme.txt".into(),
+            password: None,
+            max_bytes: 8,
+        },
+        &ctx,
+    )
+    .expect("LHA 预览失败");
+    assert_eq!(
+        preview.content.as_deref(),
+        Some("hello lz"),
+        "LHA 预览读到的内容不对"
+    );
 }

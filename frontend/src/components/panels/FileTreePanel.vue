@@ -75,6 +75,7 @@ const rootEntry = computed<DirEntry>(() => ({
   size: 0,
   modified_at: 0,
   read_only: false,
+  is_binary: false,
 }))
 
 /** 节点右键冒泡上来的意图：统一在这里开菜单。 */

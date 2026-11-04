@@ -46,8 +46,9 @@ export function useExternalChange() {
   onMounted(async () => {
     unlisten = await listen<string[]>('fs:changed', (ev) => {
       for (const path of ev.payload) schedule(path)
-      // 文件树刷新：外部新建 / 删除文件要反映出来。
-      if (tree.root) void tree.refresh(tree.root)
+      // 文件树只刷变化路径的父目录：整个工作目录重读会把「大文件所在目录」
+      // 变成每次保存都卡一下的源头。
+      if (tree.root) void tree.refreshPaths(ev.payload)
     })
   })
 
@@ -60,6 +61,12 @@ export function useExternalChange() {
   async function handlePath(path: string) {
     const tab = editor.findByPath(path)
     if (!tab) return
+    // 大文件模式的正文不驻留在编辑器里：刷新交给视图自己的页缓存失效，
+    // 这里只提示一句「文件已在外部修改」。
+    if (tab.big_file) {
+      toast.info(t('toast.fileChanged', { name: baseName(path) }))
+      return
+    }
     if (tab.dirty) {
       // 脏标签不覆盖：用户手里有未保存的修改，替用户做决定就是丢内容。
       toast.warn(t('toast.fileChangedDirty', { name: baseName(path) }))

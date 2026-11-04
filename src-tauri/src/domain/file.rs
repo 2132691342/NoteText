@@ -15,6 +15,9 @@ pub struct DirEntry {
     pub modified_at: i64,
     /// 是否只读（文件属性或权限决定）：保存前提示用户另存为。
     pub read_only: bool,
+    /// 疑似二进制（前 8KB 含 NUL）。目录项恒为 false：`read_dir` 不为每个文件开句柄嗅探，避免大文件让整棵树卡顿。
+    #[serde(default)]
+    pub is_binary: bool,
 }
 
 /// 文件元信息：打开前探测，用来决定编码检测与读取模式。
@@ -67,8 +70,7 @@ pub struct WriteResultVO {
 }
 
 /// CSV / TSV 表格预览：后端按编码解码后切成行，前端只负责画。
-/// 走这条路而不是把整包字节塞给渲染层：几十 MB 的导出表也能秒开，
-/// 且中文编码由后端探测（让 JS 自己猜编码必然乱码）。
+/// 走这条路而非把整包字节塞给渲染层：几十 MB 的导出表也能秒开，且中文编码由后端探测避免 JS 猜错。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TablePreviewVO {
     pub path: String,

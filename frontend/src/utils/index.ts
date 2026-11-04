@@ -213,6 +213,14 @@ const ARCHIVE_EXTS = new Set([
   'xz',
   'lz4',
   'br',
+  'cab',
+  // 只读容器：点开即进压缩浏览器（后端原生解压）
+  'rar',
+  'lzh',
+  'lha',
+  'cpio',
+  'ar',
+  'deb',
 ])
 
 /** 是否为可打开的归档文件（按扩展名；后端 open 时还会做魔数复核）。 */
@@ -223,4 +231,12 @@ export function isArchivePath(path: string): boolean {
 /** 是否为分卷序列首卷（.001）：树右键对它给「合并分卷」。 */
 export function isSplitFirstPart(path: string): boolean {
   return /^\d{3}$/.test(extName(path))
+}
+
+/** 把文本的行尾统一成目标样式（`lf` / `crlf` / `cr`）。 */
+export function normalizeEnding(text: string, target: string): string {
+  const lf = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  if (target === 'crlf') return lf.replace(/\n/g, '\r\n')
+  if (target === 'cr') return lf.replace(/\n/g, '\r')
+  return lf
 }

@@ -10,8 +10,15 @@
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EditorView } from '@codemirror/view'
+import { docVersionOf } from '@/composables/useEditorRegistry'
 
-const props = defineProps<{ view: EditorView; lineCount: number; visible: boolean }>()
+const props = defineProps<{
+  view: EditorView
+  lineCount: number
+  visible: boolean
+  /** 所属标签 id：正文变化靠版本号感知，不必每帧把全文拷一次。 */
+  tabId?: number
+}>()
 
 const cv = ref<HTMLCanvasElement | null>(null)
 /** 视口高亮：top/height 用比例，避免与像素换算耦合。 */
@@ -27,8 +34,14 @@ const viewStyle = computed(() => ({
 }))
 
 let raf = 0
+/** 上一次绘制时的正文档号：正文没变就不重画。 */
+let drawnVersion = -1
 
 function draw() {
+  if (props.tabId != null && docVersionOf(props.tabId) === drawnVersion) {
+    syncViewport()
+    return
+  }
   if (!props.visible) return
   const canvas = cv.value
   const view = props.view

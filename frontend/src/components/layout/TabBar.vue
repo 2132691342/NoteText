@@ -6,10 +6,15 @@
       v-for="tab in editor.tabs"
       :key="tab.id"
       class="nt-tab"
-      :class="{ 'is-on': tab.id === editor.activeId }"
+      :class="{ 'is-on': tab.id === editor.activeId, 'is-drag': dragId === tab.id }"
+      draggable="true"
       @click="editor.activate(tab.id)"
       @click.middle="onClose(tab)"
       @contextmenu.prevent="onMenu($event, tab)"
+      @dragstart="onDragStart($event, tab)"
+      @dragover.prevent="onDragOver(tab)"
+      @dragend="onDragEnd"
+      @drop.prevent="onDrop(tab)"
     >
       <span class="nt-dot" :class="{ 'is-clean': !tab.dirty }" />
       <span class="nt-tab-label" :title="tab.path || tab.title">{{ displayName(tab) }}</span>
@@ -56,6 +61,38 @@ const menuTab = ref<Tab | null>(null)
 
 function displayName(tab: Tab): string {
   return tab.title || t('tab.untitled')
+}
+
+/**
+ * 标签拖拽排序。用 HTML5 拖放而不是鼠标位移：
+ * 标签栏本身是横向滚动容器，手动算位移在滚动时会跳。
+ */
+const dragId = ref<number | null>(null)
+const dropId = ref<number | null>(null)
+
+function onDragStart(e: DragEvent, tab: Tab) {
+  dragId.value = tab.id
+  dropId.value = null
+  // 不设 dataTransfer 时部分 WebView 不会启动拖拽。
+  e.dataTransfer?.setData('text/plain', String(tab.id))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+
+function onDragOver(tab: Tab) {
+  if (dragId.value == null || dragId.value === tab.id) return
+  dropId.value = tab.id
+}
+
+function onDrop(tab: Tab) {
+  const from = editor.tabs.findIndex((x) => x.id === dragId.value)
+  const to = editor.tabs.findIndex((x) => x.id === tab.id)
+  if (from >= 0 && to >= 0) editor.moveTab(from, to)
+  onDragEnd()
+}
+
+function onDragEnd() {
+  dragId.value = null
+  dropId.value = null
 }
 
 function dirOf(path: string) {

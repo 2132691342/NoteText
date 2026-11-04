@@ -4,7 +4,8 @@
 use crate::app::AppState;
 use crate::domain::archive::{
     AddEntriesReq, ConvertArchiveReq, CreateArchiveReq, DeleteEntriesReq, ExtractArchiveReq,
-    JoinPartsReq, OpenArchiveVO, PreviewEntryReq, PreviewEntryVO, SplitFileReq, TestArchiveReq,
+    JoinPartsReq, OpenArchiveVO, OpenEntryReq, OpenEntryVO, PreviewEntryReq, PreviewEntryVO,
+    SplitFileReq, TestArchiveReq,
 };
 use crate::domain::archive_format::ArchiveFormatVO;
 use crate::domain::archive_task::ArchiveTaskVO;
@@ -30,6 +31,12 @@ pub fn preview_archive_entry(
     req: PreviewEntryReq,
 ) -> AppResult<PreviewEntryVO> {
     state.services.archive.preview(&req)
+}
+
+/// 解出单个条目到临时目录：前端拿到路径后直接用编辑器打开。
+#[tauri::command(async)]
+pub fn open_archive_entry(state: State<'_, AppState>, req: OpenEntryReq) -> AppResult<OpenEntryVO> {
+    state.services.archive.open_entry(&req)
 }
 
 /// 全格式能力表：创建对话框 / 帮助页共用。

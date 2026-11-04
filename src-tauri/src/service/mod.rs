@@ -3,6 +3,7 @@
 
 pub mod archive;
 pub mod batch;
+pub mod bigfile;
 pub mod editor;
 pub mod encoding;
 pub mod file;
@@ -17,6 +18,7 @@ use crate::db::Db;
 use crate::service::archive::queue::EventSink;
 use crate::service::archive::ArchiveService;
 use crate::service::batch::BatchService;
+use crate::service::bigfile::BigFileService;
 use crate::service::file::FileService;
 use crate::service::file_ops::FileOpsService;
 use crate::service::session::SessionService;
@@ -33,6 +35,7 @@ pub struct Services {
     pub userdata: Arc<UserDataService>,
     pub batch: Arc<BatchService>,
     pub archive: Arc<ArchiveService>,
+    pub bigfile: Arc<BigFileService>,
 }
 
 impl Services {
@@ -45,6 +48,7 @@ impl Services {
             userdata: Arc::new(UserDataService::new(db.clone())),
             batch: Arc::new(BatchService::new(db.clone())),
             archive: Arc::new(ArchiveService::new()),
+            bigfile: Arc::new(BigFileService::new()),
         }
     }
 

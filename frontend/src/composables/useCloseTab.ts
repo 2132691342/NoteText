@@ -54,8 +54,9 @@ export async function saveTabById(id: number): Promise<boolean> {
   if (!tab) return false
   // 未命名标签：先另存为拿到路径。
   if (!tab.path || tab.path.startsWith('draft:')) return saveTabAsById(id)
-  // 截断的标签只有部分内容：写回就是把剩余部分删掉，直接拒绝。
-  if (tab.truncated) {
+  // 截断 / 大文件模式的标签没有完整正文：写回就是把剩余部分删掉，直接拒绝。
+  // 大文件模式的保存出口是「另存为副本」（BackFileView 里的按钮）。
+  if (tab.truncated || tab.big_file) {
     toast.warn(tr('toast.saveBlockedTruncated'))
     return false
   }

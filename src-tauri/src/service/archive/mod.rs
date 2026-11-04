@@ -1,6 +1,7 @@
 //! 压缩子系统：纯算法引擎（create/extract/list/...）+ 任务队列（specs/18）。
 //! commands → 本模块 → 领域模型；引擎不碰 Tauri，事件经注入的 sink 发出，测试不拉起 WebView。
 
+pub mod cabinet;
 pub mod convert;
 pub mod create;
 pub mod ctx;
@@ -9,6 +10,7 @@ pub mod list;
 pub mod parts;
 pub mod preview;
 pub mod queue;
+pub mod readonly;
 pub mod split;
 pub mod test_archive;
 pub mod update;
@@ -24,13 +26,14 @@ pub use util::{
 
 use crate::domain::archive::{
     AddEntriesReq, ConvertArchiveReq, CreateArchiveReq, DeleteEntriesReq, ExtractArchiveReq,
-    JoinPartsReq, OpenArchiveVO, PreviewEntryReq, PreviewEntryVO, SplitFileReq, TestArchiveReq,
+    JoinPartsReq, OpenArchiveVO, OpenEntryReq, OpenEntryVO, PreviewEntryReq, PreviewEntryVO,
+    SplitFileReq, TestArchiveReq,
 };
 use crate::domain::archive_format::{
     ArchiveFormat, ArchiveFormatVO, CompressLevel, FormatCapabilitiesVO,
 };
 use crate::domain::archive_task::{ArchiveTaskVO, TaskKind};
-use crate::pkg::error::{AppError, AppResult};
+use crate::pkg::error::{codes, AppError, AppResult};
 use queue::{EventSink, TaskManager};
 use std::path::Path;
 use std::sync::Arc;
@@ -69,6 +72,46 @@ impl ArchiveService {
         preview::preview_entry(req, &ctx)
     }
 
+    /// 解出单个条目到临时目录并返回路径：压缩包里的文本「点开就能读」。
+    /// 落到临时目录而非原目录：用户只看一眼，不该在他工作目录里凭空多出一个文件；临时目录由系统回收。
+    pub fn open_entry(&self, req: &OpenEntryReq) -> AppResult<OpenEntryVO> {
+        let name = req.entry.trim().trim_start_matches('/');
+        if name.is_empty() {
+            return Err(AppError::new(codes::PATH_EMPTY, "条目名不能为空"));
+        }
+        // 条目名会被拼进落地路径：穿越名必须先拒。
+        let safe = util::sanitize_entry_name(name)?;
+        let dest = tempfile::Builder::new()
+            .prefix("notetext-entry-")
+            .tempdir()
+            .map_err(|e| AppError::wrap(codes::ARCHIVE_BAD_REQUEST, "建临时目录失败", e))?;
+        // 临时目录要在返回前变成「进程退出才回收」：写一个不会被自动删的文件。
+        let keep_dir = dest.keep();
+        let single = ExtractArchiveReq {
+            archive: req.archive.clone(),
+            dest: keep_dir.to_string_lossy().to_string(),
+            entries: Some(vec![name.to_string()]),
+            password: req.password.clone(),
+            overwrite: "overwrite".into(),
+            create_subdir: false,
+        };
+        let ctx = ctx::TaskCtx::new("open-entry".into(), 0);
+        extract::extract_archive(&single, &ctx)?;
+        let path = keep_dir.join(&safe);
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if size == 0 && !path.exists() {
+            return Err(AppError::new(
+                codes::FILE_NOT_FOUND,
+                "压缩包里没有这个条目：可能已被重命名或删除",
+            ));
+        }
+        Ok(OpenEntryVO {
+            path: path.to_string_lossy().to_string(),
+            size,
+            temporary: true,
+        })
+    }
+
     /// 全格式能力表：创建对话框 / 帮助页共用。
     pub fn formats(&self) -> Vec<ArchiveFormatVO> {
         ArchiveFormat::all()
@@ -78,7 +121,7 @@ impl ArchiveService {
                 extensions: f.extensions().iter().map(|e| e.to_string()).collect(),
                 capabilities: FormatCapabilitiesVO {
                     read: true,
-                    write: true,
+                    write: f.can_write(),
                     container: f.is_container(),
                     encryption: f.supports_encryption(),
                 },

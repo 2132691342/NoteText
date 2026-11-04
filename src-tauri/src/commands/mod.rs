@@ -3,6 +3,7 @@
 
 pub mod archive;
 pub mod batch;
+pub mod bigfile;
 pub mod clipboard;
 pub mod dialog;
 pub mod editor;
@@ -66,8 +67,14 @@ macro_rules! command_handlers {
             commands::batch::batch_apply_replace,
             commands::batch::batch_plan_rename,
             commands::batch::batch_apply_rename,
+            // 大文件（索引 / 分页 / 流式查找 / 按行另存）
+            commands::bigfile::open_big_file,
+            commands::bigfile::read_big_file_page,
+            commands::bigfile::find_in_big_file,
+            commands::bigfile::save_big_file_range,
             // 压缩 / 归档（specs/18）
             commands::archive::open_archive,
+            commands::archive::open_archive_entry,
             commands::archive::preview_archive_entry,
             commands::archive::get_archive_formats,
             commands::archive::create_archive,

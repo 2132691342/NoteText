@@ -19,7 +19,7 @@
 | 代码编辑器 | CodeMirror 6 | ^6.x（31 种语言识别，静态 + 动态按需加载） |
 | Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
 | 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
-| 文档预览 | XLSX · docx-preview · WebView2 内置 PDF 阅读器 | 按扩展名分流 |
+| 表格与图片预览 | XLSX | 按扩展名分流；Word / PDF / PPT 不在内置渲染范围内 |
 | 图表 | ECharts | ^5.5.x（按需引入，色值取 `--nt-ch-*`） |
 | 国际化 | Vue I18n | ^9.10.x（zh-CN 默认 + en；设置页可切换，EP 文案同步） |
 | 样式 | 原生 CSS 设计令牌 | `themes.css` + `ep-theme.css` + `base.css` + `content.css`；色值与尺寸只在 `themes.css` 定义 |
@@ -28,8 +28,8 @@
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
-| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
-| 测试 | 标准库 `#[test]` + tempfile | 单文件 8 条长链路（specs/12）；本地与 GitHub Actions 执行同一组命令 |
+| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli · cab · unrar-rs · delharc | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程；cab 读写 MSZIP，rar（含分卷/加密）与 lzh 只读 |
+| 测试 | 标准库 `#[test]` + tempfile | 单文件集成测试（`src-tauri/tests/chain_tests.rs`，10 条长链路）；纯函数级单测在各模块 `#[cfg(test)]`；本地与 GitHub Actions 执行同一组命令 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
@@ -46,9 +46,12 @@
   要支持 `{n,m}` 量词与命名组时换 regex crate。
 - **富文本编辑器**：没有对应场景（NoteText 是代码 / 纯文本向的），
   Markdown 走 markdown-it 一条链路，不再挂第二个编辑器运行时。
-- **PDF 渲染库**：打包 1.7MB 且要自己配 worker，配错就是白屏。
-  PDF 交给 WebView2 内置阅读器（`<embed type="application/pdf">` + asset 协议）：
-  流式读取、支持搜索与打印，还能绕过 `read_binary` 的 20MB 上限。
+- **办公文档渲染器**（docx-preview / PDF 渲染库 / PPT 解析）：每一类都是
+  1~2MB 且还原度有限，配错就是白屏。这类文件统一走「用系统默认程序打开」的卡片，
+  纯文本内容仍可在 Hex 视图里查看。Excel / CSV 例外——那类文件用户想看的就是表格本身。
+- **regex crate**（大文件查找）：分页视图的查找是逐块流式扫描，每次匹配都必须极快；
+  朴素子串搜索已能吃满内存带宽，引 regex 只会在热路径上多一层开销。
+  工具箱的正则测试器另有手写引擎（见上）。
 
 **视觉分层纪律不变**：Element Plus 只是基元供给方，视觉语言仍由 `themes.css` 的
 靛蓝五档令牌说了算——EP 的 CSS 变量经 `ep-theme.css` 全部接到 `--nt-*`，
@@ -445,7 +448,7 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），8 条测试按
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），10 条测试按
   「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」六组排列，编译只链接一次 lib
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
@@ -461,7 +464,7 @@ mod dialog_stub;
 | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Rust 格式门禁 |
 | `cargo check --manifest-path src-tauri/Cargo.toml --all-targets` | 全目标编译检查 |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | 静态检查 |
-| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` | 8 条链路测试 |
+| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` | 10 条链路测试 |
 
 `tauri::generate_context!()` 会在 Rust 编译期读取 `frontend/dist`；新 checkout 中该目录
 不存在，所以 `cargo check`、Clippy 与测试前都要先构建前端。
@@ -477,6 +480,8 @@ mod dialog_stub;
 | 备份 | `backup_export_import_restores_tables_and_keeps_local_rows` | 备份导不回来（换机丢数据）/ 导入抹掉本机数据 |
 | 压缩 | `archive_lifecycle_covers_all_formats_update_and_split` | 某格式往返丢内容 / 中文名与层级塌 / 改名后认不出 tar 家族 / 合并后字节变了 |
 | | `archive_rejects_escape_and_distinguishes_password_from_corruption` | 恶意条目写到目标目录外 / 缺密码与密码错混成一个 / 损坏包测试照样说「好」 |
+| | `archive_readonly_formats_list_extract_and_refuse_create` | 只读能力表与引擎能力漂移 / CAB 往返丢内容 / 创建只读格式留半文件 / 只读容器头偏移算错解出垃圾 |
+| | `archive_reads_real_rar_and_lha_packages` | RAR / LHA 头解析错导致空列表或乱码 / 只读格式能列不能解 |
 | 系统关联 | `file_assoc_toggle_registers_and_restores_shell_entries` | 双击没反应（open 命令丢引号 / ProgId 挂错）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：

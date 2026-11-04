@@ -52,7 +52,14 @@
       </button>
     </template>
 
-    <span v-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
+    <span
+      v-if="tab?.big_file"
+      class="nt-readout nt-status-readonly"
+      :title="t('bigfile.readonlyHint')"
+    >
+      {{ t('bigfile.mode') }}
+    </span>
+    <span v-else-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
       {{ t('status.partial') }}
     </span>
     <span v-else-if="tab?.read_only" class="nt-readout nt-status-readonly">
@@ -86,7 +93,7 @@ import { useArchiveStore } from '@/stores/archive'
 import { useDialogStore } from '@/stores/dialogs'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { getPosition } from '@/composables/useEditorRegistry'
-import { getText } from '@/composables/useEditorRegistry'
+import { get, getText } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
 import { debounce, formatSize } from '@/utils'
 import { encodingShort } from '@/utils/encoding'
@@ -127,11 +134,12 @@ const statsTitle = computed(() => {
  */
 const fetchStats = debounce(async () => {
   const id = editor.activeId
-  if (id == null) {
+  if (id == null || !get(id)) {
     detail.value = null
     return
   }
   try {
+    // 全文只取一次：`getText` 是 `toString()`，调两次等于复制两次。
     const s = await api.textStats(getText(id))
     detail.value = {
       chars: s.chars,
@@ -186,10 +194,16 @@ function onCursor(e: Event) {
   pos.value = { line: d.line, col: d.col, selection_len: d.selection_len }
 }
 
+/** 行数由编辑器推（O(1) 的 `doc.lines`）；详细统计等编辑器停手后单独问。 */
 function onStats(e: Event) {
   const d = (e as CustomEvent).detail as { tabId?: number; lines: number }
   if (!d || d.tabId !== editor.activeId) return
   lines.value = d.lines
+}
+
+function onDetailStats(e: Event) {
+  const d = (e as CustomEvent).detail as { tabId?: number }
+  if (!d || d.tabId !== editor.activeId) return
   void fetchStats()
 }
 
@@ -225,12 +239,14 @@ function onEditorReady(e: Event) {
 onMounted(() => {
   document.addEventListener('nt-cursor', onCursor)
   document.addEventListener('nt-stats', onStats)
+  document.addEventListener('nt-detail-stats', onDetailStats)
   document.addEventListener('nt-editor-ready', onEditorReady)
   syncFromEditor()
 })
 onUnmounted(() => {
   document.removeEventListener('nt-cursor', onCursor)
   document.removeEventListener('nt-stats', onStats)
+  document.removeEventListener('nt-detail-stats', onDetailStats)
   document.removeEventListener('nt-editor-ready', onEditorReady)
 })
 

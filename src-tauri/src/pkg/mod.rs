@@ -5,4 +5,5 @@ pub mod error;
 pub mod id;
 pub mod log;
 pub mod paths;
+pub mod stream;
 pub mod text;

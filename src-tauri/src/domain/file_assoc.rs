@@ -29,8 +29,8 @@ pub const GROUPS: &[AssocGroupDef] = &[
         prog_id: "NoteText.Archive",
         friendly_name: "NoteText Archive",
         extensions: &[
-            "zip", "7z", "tar", "tgz", "txz", "tbz2", "tbz", "tzst", "tlz4", "tbr", "gz", "bz2",
-            "xz", "zst", "lz4", "br",
+            "zip", "7z", "tar", "tgz", "txz", "tbz2", "tbz", "tzst", "tlz4", "tbr", "cab", "gz",
+            "bz2", "xz", "zst", "lz4", "br", "rar", "lzh", "lha", "cpio", "ar", "deb",
         ],
     },
 ];

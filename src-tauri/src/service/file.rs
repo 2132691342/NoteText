@@ -1,6 +1,5 @@
 //! 文件服务：读取 / 写入 / 目录树 / 元信息 / 编码探测。
-//! 四条决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；
-//! 大文件分模式读；CSV / TSV 预览走后端切行（不受二进制预览上限约束）。
+//! 决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；大文件分模式读；CSV 预览走后端切行。
 
 use std::fs;
 use std::path::Path;
@@ -17,8 +16,9 @@ use crate::pkg::error::{codes, AppError, AppResult};
 use crate::repo::recent::RecentRepo;
 use crate::service::encoding;
 
-/// 全量读取上限：超过则建议用 Head 模式。
-pub const MAX_FULL_READ: u64 = 32 * 1024 * 1024;
+/// 全量读取上限：超过它前端改走大文件分页视图（前端 FULL_READ_LIMIT 同值）。
+/// 64MB 是「CodeMirror 还能顺畅打字」与「常见日志能直接编辑」之间的折中。
+pub const MAX_FULL_READ: u64 = 64 * 1024 * 1024;
 
 /// 预览探测用的字节数：够判 BOM 与统计可解码比例。
 const SNIFF_BYTES: usize = 8192;
@@ -120,6 +120,8 @@ impl FileService {
                 size: if is_dir { 0 } else { meta.len() },
                 modified_at,
                 read_only: meta.permissions().readonly(),
+                // 目录项不嗅探二进制：见 `DirEntry::is_binary` 的说明。
+                is_binary: false,
             });
         }
 
@@ -229,7 +231,7 @@ impl FileService {
                 return Err(AppError::new(
                     codes::FILE_TOO_LARGE,
                     format!(
-                        "文件较大（{} MB），请选用「只读前段」打开",
+                        "文件较大（{} MB），已超过编辑器上限，请用大文件模式打开",
                         meta.len() / 1024 / 1024
                     ),
                 ));

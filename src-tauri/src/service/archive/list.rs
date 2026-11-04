@@ -38,6 +38,11 @@ pub fn list_archive(path: &Path, password: Option<&str>) -> AppResult<ArchiveInf
             let codec = tar_codec(path, format);
             list_tar(reader, codec)?
         }
+        ArchiveFormat::Cab => super::cabinet::list_cab(path)?,
+        ArchiveFormat::Rar => super::readonly::list_rar(path, pwd)?,
+        ArchiveFormat::Lzh => super::readonly::list_lzh(path)?,
+        ArchiveFormat::Cpio => super::readonly::list_cpio(path)?,
+        ArchiveFormat::Ar => super::readonly::list_ar(path)?,
         ArchiveFormat::Gz => list_single(path, "gz"),
         ArchiveFormat::Bz2 => list_single(path, "bz2"),
         ArchiveFormat::Zst => list_single(path, "zst"),

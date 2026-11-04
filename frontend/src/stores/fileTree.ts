@@ -54,20 +54,50 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     children.value = new Map()
   }
 
-  /** 重读一个目录（含其已展开的子目录）。 */
+  /**
+   * 重读一个目录（含其已展开的子目录）。
+   *
+   * 只刷「已知且展开」的子树：以前是无条件递归整棵树，一个深层变更
+   * 会把几十个目录重新 `read_dir` 一遍并逐个读 8KB 探测二进制——
+   * 工作目录里放一个大文件，整棵树就跟着卡。
+   */
   async function refresh(dir: string) {
     try {
       const entries = await api.readDir(dir)
       children.value.set(dir, entries)
-      // 已展开的子目录一起刷：外部改了一个深层文件，整条路径都该反映出来。
-      for (const e of entries) {
-        if (e.is_dir && expanded.value.has(e.path)) {
-          await refresh(e.path)
-        }
+      // 只沿已知展开的分支往下走，且子项必须仍在这个目录里（被删掉的跳过）。
+      const alive = new Set(entries.filter((e) => e.is_dir).map((e) => e.path))
+      const subdirs: string[] = []
+      for (const p of expanded.value) {
+        if (alive.has(p)) subdirs.push(p)
       }
+      await Promise.all(subdirs.map((p) => refresh(p)))
     } catch (e) {
       useToastStore().bad(tr('toast.dirReadFailed', { reason: normalizeError(e).message }))
     }
+  }
+
+  /**
+   * 按变更路径局部刷新：文件系统事件带来的是具体路径，
+   * 没必要整个工作目录重读一遍。只刷「变化路径的父目录」以及它已展开的子目录。
+   */
+  async function refreshPaths(paths: string[]) {
+    if (!root.value) return
+    const dirs = new Set<string>()
+    for (const p of paths) {
+      const cut = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'))
+      if (cut > 0) dirs.add(p.slice(0, cut))
+    }
+    // 没有父目录可算（相对路径）就退回整棵树。
+    if (dirs.size === 0) {
+      await refresh(root.value)
+      return
+    }
+    await Promise.all(
+      [...dirs]
+        .filter((d) => children.value.has(d))
+        .map((d) => refresh(d)),
+    )
   }
 
   function isExpanded(path: string) {
@@ -118,6 +148,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     open,
     close,
     refresh,
+    refreshPaths,
     isExpanded,
     toggle,
     markDirty,

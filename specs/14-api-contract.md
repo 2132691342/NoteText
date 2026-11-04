@@ -2,7 +2,7 @@
 
 ## 定位
 
-前端 `api/index.ts` 与后端 `commands/` 的对照表：105 个 invoke 命令的入参出参。
+前端 `api/index.ts` 与后端 `commands/` 的对照表：110 个 invoke 命令的入参出参。
 **改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定

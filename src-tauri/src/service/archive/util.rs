@@ -94,9 +94,7 @@ fn probe_tar_stream(path: &Path, codec: ArchiveFormat) -> bool {
 }
 
 /// 探测不出格式时的统一错误。
-///
-/// RAR 是「认得但没实现」的格式：不给单独一句话，用户看到的是
-/// 「文件可能损坏」，然后拿别的工具一开发现好好的——这类提示比报错更糟。
+/// RAR 是「认得但没实现」的格式：给单独一句指引，避免用户用别的工具一开发现好好的、却以为文件损坏。
 pub fn err_undetectable(path: &Path) -> AppError {
     if has_rar_magic(path) {
         return AppError::new(
@@ -161,6 +159,7 @@ pub fn method_id(m: CompressMethod) -> &'static str {
         CompressMethod::Xz => "xz",
         CompressMethod::Lz4 => "lz4",
         CompressMethod::Brotli => "brotli",
+        CompressMethod::MsZip => "mszip",
     }
 }
 
@@ -174,6 +173,7 @@ pub fn parse_method(s: &str) -> Option<CompressMethod> {
         "xz" => CompressMethod::Xz,
         "lz4" => CompressMethod::Lz4,
         "brotli" | "br" => CompressMethod::Brotli,
+        "mszip" => CompressMethod::MsZip,
         _ => return None,
     })
 }

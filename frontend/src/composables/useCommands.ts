@@ -30,7 +30,16 @@ import {
   doConvertIndent,
   doReplaceDoc,
 } from '@/composables/useEditorActions'
-import { baseName, nextUntitledIndex, readClipboard, dirName, joinPath, extName } from '@/utils'
+import {
+  baseName,
+  nextUntitledIndex,
+  readClipboard,
+  dirName,
+  joinPath,
+  extName,
+  isArchivePath,
+  normalizeEnding,
+} from '@/utils'
 import { canSplitView, kindOf } from '@/utils/fileKind'
 import { pushClip } from '@/composables/useClipboardHistory'
 import { askText, confirmText } from '@/components/common/askText'
@@ -129,6 +138,12 @@ export function registerCommands() {
   async function openPath(path: string): Promise<void> {
     if (settings.config.file.remember_last_folder) {
       settings.updateFile({ last_folder: path.replace(/\\[^\\]*$/, '') })
+    }
+    // 压缩包双击直接进归档浏览器：用户点它就是想看里面，不该先给一屏十六进制。
+    if (isArchivePath(path)) {
+      void api.touchRecent(path)
+      dialogs.open('archiveBrowser', '', { path })
+      return
     }
     const tab = await editor.openPath(path)
     if (tab) {
@@ -745,6 +760,19 @@ export function registerCommands() {
       run: () => settings.updateUI({ zoom_level: 100 }),
     },
     {
+      id: 'tree.reveal',
+      group: 'file',
+      labelKey: 'menu.revealInTree',
+      key: 'Control+Shift+E',
+      enabled: () => !!tree.root && !!editor.active?.path,
+      run: () => {
+        const p = editor.active?.path
+        if (!p || !tree.root) return
+        settings.updateUI({ show_sidebar: true })
+        window.dispatchEvent(new CustomEvent('nt-tree-reveal', { detail: { path: p } }))
+      },
+    },
+    {
       id: 'view.toggleSidebar',
       group: 'view',
       labelKey: 'menu.toggleSidebar',
@@ -1297,6 +1325,43 @@ export function registerCommands() {
       labelKey: 'menu.archiveTasks',
       key: 'Control+Alt+T',
       run: () => dialogs.open('archiveTasks'),
+    },
+
+    // ---- 批量：把已打开的全部标签统一到一种行尾 ----
+    {
+      id: 'edit.unifyLineEnding',
+      group: 'edit',
+      labelKey: 'menu.unifyLineEnding',
+      enabled: () => editor.tabs.some((t) => !!t.path && !t.read_only),
+      run: async () => {
+        const target = await askPick({
+          title: t('menu.unifyLineEnding'),
+          items: [
+            { value: 'lf', label: 'LF' },
+            { value: 'crlf', label: 'CRLF' },
+          ],
+        })
+        if (!target) return
+        let done = 0
+        let failed = 0
+        for (const tab of editor.tabs) {
+          if (!tab.path || tab.read_only || tab.big_file) continue
+          if (tab.line_ending === target) continue
+          // 只用编辑器里的正文写盘：脏标签的磁盘内容是旧的，覆盖它就是丢修改。
+          const text = normalizeEnding(getText(tab.id), target)
+          try {
+            await api.writeFile(tab.path, text, tab.encoding, target, tab.has_bom)
+            tab.line_ending = target as typeof tab.line_ending
+            commitBaseline(tab.id)
+            editor.markDirty(tab.id, false)
+            done += 1
+          } catch {
+            failed += 1
+          }
+        }
+        if (done > 0) toast.ok(t('toast.lineEndingUnified', { n: done, ending: target.toUpperCase() }))
+        if (failed > 0) toast.warn(t('toast.lineEndingFailed', { n: failed }))
+      },
     },
 
     // ---- 书签 / 帮助 ----

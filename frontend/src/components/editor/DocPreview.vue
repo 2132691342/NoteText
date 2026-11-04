@@ -1,12 +1,14 @@
-// 文档预览：markdown / xlsx / docx / pdf / 图片 / 纯文本各走一条链路。
+// 预览：markdown / xlsx / csv / 图片 / HTML / 纯文本各走一条链路。
 // 二进制不进 CodeMirror：解成文本是一屏乱码，而用户点开 .xlsx 想看的是表格。
+// Word / PDF / PPT 不做内置渲染：那类文件的内嵌渲染器体积大且还原度有限，
+// 统一给「用外部程序打开」的出路，比一个半成品预览诚实。
 :<template>
   <div class="nt-doc-preview">
     <div class="nt-doc-head">
       <span class="nt-readout">{{ fileName }}</span>
       <span v-if="meta" class="nt-readout nt-doc-meta" :title="meta">{{ meta }}</span>
       <div class="nt-doc-spacer" />
-      <!-- 缩放只对表格 / Word 有意义：PDF 与图片由它们自己管 -->
+      <!-- 缩放只对表格有意义：图片由自己那层容器管 -->
       <div v-if="showZoom" class="nt-doc-zoom">
         <button class="nt-icon-btn" :title="t('viewer.zoomOut')" @click="stepZoom(-1)">
           <NtIcon name="zoom-out" size="sm" />
@@ -33,7 +35,7 @@
     </div>
 
     <div v-if="kind === 'unsupported'" class="nt-empty">
-      <p>{{ legacyArchive ? t('viewer.archiveUnsupported') : t('tool.previewUnsupported') }}</p>
+      <p>{{ unsupportedTitle }}</p>
       <p class="nt-empty-hint">{{ t('tool.previewUnsupportedHint') }}</p>
       <div class="nt-empty-actions">
         <ElButton size="small" @click="emit('openHex')">{{ t('tool.hexViewer') }}</ElButton>
@@ -51,13 +53,6 @@
 
     <div v-else-if="kind === 'image'" class="nt-doc-image">
       <img :src="src" :alt="fileName" />
-    </div>
-
-    <!-- PDF 交给 WebView2 自带的阅读器：流式读取、支持滚动 / 缩放 / 搜索 / 打印，
-         不必把整个文件读成 base64 再交给 JS 解析（那还有 20MB 上限）。 -->
-    <div v-else-if="kind === 'pdf'" class="nt-doc-pdf">
-      <embed type="application/pdf" :src="assetUrl" />
-      <p class="nt-doc-foot">{{ t('tool.pdfHint') }}</p>
     </div>
 
     <!-- HTML：沙箱 iframe 静态预览。sandbox 全空 = 脚本、表单、同源全禁，
@@ -87,8 +82,7 @@
       v-else
       ref="host"
       class="nt-doc-host"
-      :class="{ 'nt-md-preview': kind === 'markdown', 'is-plain': kind === 'text', 'nt-docx-host': kind === 'docx' }"
-      :style="kind === 'docx' ? { zoom } : undefined"
+      :class="{ 'nt-md-preview': kind === 'markdown', 'is-plain': kind === 'text' }"
       @click="onHostClick"
     />
   </div>
@@ -105,7 +99,7 @@ import { useMarkdown } from '@/composables/useMarkdown'
 import { useSettingsStore } from '@/stores/settings'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { baseName, copyText, extName } from '@/utils'
-import { isArchiveLegacy, kindOf } from '@/utils/fileKind'
+import { kindOf } from '@/utils/fileKind'
 import { encodingShort } from '@/utils/encoding'
 import type { TablePreviewVO } from '@/types/api'
 import { docVersionOf, get } from '@/composables/useEditorRegistry'
@@ -120,20 +114,23 @@ const md = useMarkdown()
 
 const host = ref<HTMLElement | null>(null)
 const fileName = computed(() => baseName(props.path))
-/** 专有归档（rar / cab / iso …）：提示文案要说清「为什么打不开、下一步怎么做」。 */
-const legacyArchive = computed(() => isArchiveLegacy(props.path))
+/** 不内置渲染的文档：文案要说清「为什么不做」与「下一步怎么做」。 */
+const legacyDoc = computed(() => kindOf(props.path) === 'legacyDoc')
+const unsupportedTitle = computed(() =>
+  legacyDoc.value ? t('viewer.docNotBuiltIn') : t('tool.previewUnsupported'),
+)
 /** asset 协议 URL：图片与 PDF 都直接交给 Chromium 加载，不走 base64。 */
 const assetUrl = computed(() => convertFileSrc(props.path))
 const src = assetUrl
 
-type Kind = 'sheet' | 'docx' | 'pdf' | 'image' | 'markdown' | 'html' | 'text' | 'unsupported' | 'tooLarge' | 'loading'
+type Kind = 'sheet' | 'image' | 'markdown' | 'html' | 'text' | 'unsupported' | 'tooLarge' | 'loading'
 const kind = ref<Kind>('loading')
 
 /** 头部读数：表格是区域与行列数，Word 是页数。 */
 const meta = ref('')
 /** 缩放：只作用于表格与 Word，PDF/图片由各自组件管。 */
 const zoom = ref(1)
-const showZoom = computed(() => kind.value === 'sheet' || kind.value === 'docx')
+const showZoom = computed(() => kind.value === 'sheet')
 
 /** 工作表页签。单表不显示页签栏。 */
 const sheets = ref<string[]>([])
@@ -163,14 +160,6 @@ async function classify() {
       // CSV / TSV 走后端切行：几十 MB 的导出表也能开，编码也由后端探测
       if (isDelimited(props.path)) await renderDelimited(run)
       else await renderXlsx(run)
-      return
-    case 'docx':
-      kind.value = 'docx'
-      await renderDocx(run)
-      return
-    case 'pdf':
-      // 不预读字节：WebView2 的阅读器会自己按需请求 range。
-      kind.value = 'pdf'
       return
     case 'markdown':
       kind.value = 'markdown'
@@ -548,38 +537,6 @@ function buildSheetTable(
   return { html: parts.join(''), meta: `${ref} · ${totalRows} × ${totalCols}` }
 }
 
-async function renderDocx(run: number) {
-  if (!host.value) return
-  const data = await readBytes()
-  if (!data || run !== token) return
-  try {
-    const { renderAsync } = await import('docx-preview')
-    // experimental 打开后表格 / 图形 / 页眉页脚的还原度高得多；
-    // useBase64URL 让文档里的图片不依赖相对路径解析。
-    await renderAsync(data, host.value, undefined, {
-      className: 'docx',
-      inWrapper: true,
-      breakPages: true,
-      renderHeaders: true,
-      renderFooters: true,
-      renderFootnotes: true,
-      ignoreLastRenderedPageBreak: false,
-      experimental: true,
-      useBase64URL: true,
-    })
-    if (run !== token || !host.value) return
-    const pages = host.value.querySelectorAll('section.docx').length
-    // 空文档 / 只有域代码的文档：不报错也不出页面，留白屏最糟
-    if (pages === 0) {
-      reportBroken(new Error(t('viewer.docxEmpty')))
-      return
-    }
-    meta.value = t('viewer.pages', { n: pages })
-  } catch (e) {
-    reportBroken(e)
-  }
-}
-
 /** 预览器内部抛错：统一退到「没有内置预览」卡片，保住两条出路。 */
 function reportBroken(e: unknown) {
   toast.warn(normalizeError(e).message)
@@ -689,12 +646,6 @@ watch(() => props.path, () => {
   padding: var(--nt-sp-4);
 }
 
-/* Word：纸外底色比纸暗一档，滚动时能看出「这是一页纸」 */
-.nt-doc-host.nt-docx-host {
-  padding: var(--nt-sp-4);
-  background: var(--nt-elev-1);
-}
-
 /* 表格：自带边框，不留内边距——吸顶行要贴住滚动容器的顶边 */
 .nt-doc-host.nt-sheet-host {
   padding: 0;
@@ -774,15 +725,6 @@ watch(() => props.path, () => {
   background: var(--nt-elev-1);
 }
 
-/* PDF：交给 WebView2 的阅读器，它自己带工具栏与滚动条 */
-.nt-doc-pdf {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--nt-sp-1);
-}
-
 /* HTML：沙箱 iframe 铺满正文区。底色走编辑器面（随明暗），页面自己的背景色盖在上面 */
 .nt-doc-html {
   flex: 1;
@@ -801,16 +743,7 @@ watch(() => props.path, () => {
   background: var(--nt-editor-bg);
 }
 
-.nt-doc-pdf embed {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  border: 0;
-  border-radius: var(--nt-radius-sm);
-  background: var(--nt-elev-1);
-}
-
-/* 阅读器是系统组件：它内部的主题跟不了明暗，给一句兜底提示 */
+/* 预览底部的一句提示：沙箱 iframe / 老式文档兜底都靠它给下一步 */
 .nt-doc-foot {
   flex: none;
   margin: 0;
@@ -852,14 +785,4 @@ watch(() => props.path, () => {
   white-space: nowrap;
 }
 
-/* docx-preview 自己带白色纸张样式：深色主题下把纸压到工作区色 */
-.nt-doc-host :deep(.docx-wrapper) {
-  background: var(--nt-elev-1);
-  padding: var(--nt-sp-4) 0;
-}
-
-.nt-doc-host :deep(.docx-wrapper > section.docx) {
-  box-shadow: var(--nt-card-shadow);
-  margin-bottom: var(--nt-sp-4);
-}
 </style>

@@ -47,7 +47,7 @@ pub struct TabDO {
     pub scroll_ratio: f64,
     pub dirty: bool,
     pub split: bool,
-    /// 视图类型：code / markdown / richtext / hex / image / log。
+    /// 视图类型：code / markdown / hex / image / log / diff。
     pub view_type: String,
     pub updated_at: i64,
 }

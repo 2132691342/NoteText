@@ -33,7 +33,8 @@ App.vue
 ├── EditorArea.vue        编辑区：按形态分发 + 分屏 + 拖放提示
 │   ├── CodeEditor.vue    CodeMirror 容器（compartments）
 │   ├── MarkdownEditor.vue  Markdown 三态：编辑 / 分屏 / 预览
-│   ├── DocPreview.vue    只读预览：xlsx / csv / docx / pdf / 图片 / 文本，含「读不了」的出路卡片
+│   ├── DocPreview.vue    只读预览：xlsx / csv / 图片 / Markdown / HTML / 文本，含「读不了」的出路卡片
+│   ├── BigFileView.vue   大文件分页视图：行索引 + 虚拟滚动 + 流式查找 + 另存为副本
 │   └── Minimap.vue       小地图（canvas 轮廓，虚拟滚动跟随）
 └── StatusBar.vue         状态栏 26px：修改指示 / 光标 / 语言 / 编码 / 行尾 / 缩放
 ```

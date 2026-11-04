@@ -10,6 +10,8 @@ export default {
     cancel: 'Cancel',
   },
   menu: {
+    unifyLineEnding: 'Unify line endings of open files',
+    revealInTree: 'Reveal in file tree',
     file: 'File',
     edit: 'Edit',
     search: 'Search',
@@ -215,7 +217,9 @@ export default {
     actualSize: 'Actual size',
     zoomReset: 'Reset to 100%',
     sheetEmpty: 'This worksheet is empty',
-    archiveUnsupported: 'Built-in extraction is not available for this archive format — extract it with 7-Zip / WinRAR first',
+    docNotBuiltIn: 'Word / PDF / PPT documents are not rendered by the built-in viewer',
+    docNotBuiltInHint:
+      'Their renderers are large and approximate; the system default program is more reliable. Plain text is still viewable in the hex view',
     sheetTruncated: 'Showing the first {shown} rows of {total}',
     sheetTruncatedUnknown: 'Showing the first {shown} rows (file too large to count all rows)',
     docxEmpty: 'This Word document has no renderable content',
@@ -317,6 +321,8 @@ export default {
     joinParts: 'Join parts…',
   },
   archive: {
+    openInEditor: 'Open in editor',
+    openedTempCopy: 'Extracted a temporary copy of "{name}" and opened it in the editor',
     createTitle: 'Create archive',
     extractTitle: 'Extract archive',
     browserTitle: 'Archive contents',
@@ -440,6 +446,19 @@ export default {
     toastCancelled: '{kind} cancelled: {name}',
     toastFailed: '{kind} failed: {reason}',
   },
+  bigfile: {
+    mode: 'Large file mode',
+    lines: '{n} lines',
+    readonly: 'Read-only',
+    readonlyHint:
+      'Opened in paged view because the file is large. You can jump to any line and search the whole file; save a copy to edit.',
+    findPlaceholder: 'Find in large file…',
+    jump: 'Line {line}',
+    indexed: 'Line index ready',
+    indexing: 'Building line index…',
+    saveAs: 'Save a copy',
+    tooLargeForEditor: 'File is over {mb} MB, switched to large file mode (read-only)',
+  },
   dialog: {
     unsavedTitle: '"{name}" has unsaved changes',
     unsavedBody: 'Closing will discard those changes.',
@@ -459,6 +478,10 @@ export default {
     replaceOne: 'Replace',
     matches: 'matches',
     noMatches: 'No matches',
+    noMatch: 'No match',
+    wrapped: 'Reached the end, continued from the top',
+    hitCount: '{n} matches',
+    lineNumber: 'Line number',
     findUnavailable: 'Find is unavailable in this view (preview / hex, or the file failed to load)',
     ofTotal: '/ {total}',
     previous: 'Previous',
@@ -714,6 +737,8 @@ export default {
     faq: 'FAQ',
   },
   toast: {
+    lineEndingUnified: '{n} files now use {ending} line endings',
+    lineEndingFailed: '{n} files could not be written (likely locked)',
     systemAssocOn: 'Added to "Open with". To make NoteText the default, pick it once in system settings',
     systemAssocOff: 'Association removed',
     fileChangedDirty: '{name} changed on disk (unsaved local edits kept)',

@@ -16,6 +16,7 @@ declare module 'vue' {
     AskTextDialog: typeof import('./components/dialogs/AskTextDialog.vue')['default']
     BatchFindReplaceDialog: typeof import('./components/dialogs/BatchFindReplaceDialog.vue')['default']
     BatchRenameDialog: typeof import('./components/dialogs/BatchRenameDialog.vue')['default']
+    BigFileView: typeof import('./components/editor/BigFileView.vue')['default']
     BookmarkPanel: typeof import('./components/panels/BookmarkPanel.vue')['default']
     ClipboardDialog: typeof import('./components/dialogs/ClipboardDialog.vue')['default']
     CodeEditor: typeof import('./components/editor/CodeEditor.vue')['default']

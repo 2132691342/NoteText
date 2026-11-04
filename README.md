@@ -3,7 +3,7 @@
 **轻量级 Windows 桌面文本编辑器。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
 安装包 10MB 以内（CI 有体积门禁）。内置代码编辑、查找替换、12 种编码转换、
 JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
-15 种格式的压缩解压、批量操作与系统文件关联。
+20 种格式的压缩解压（可写 16 / 只读 4）、批量操作与系统文件关联。
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
@@ -40,10 +40,10 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
 | 小地图 | 配置开关；canvas 只画轮廓不画字，虚拟滚动跟随 |
 | 剪贴板历史 | 复制 / 剪切攒 50 条（编辑器事件与命令表都收集），点击回插 |
 | Hex 查看 | 16 字节一行（偏移 / hex / ASCII），只渲染可视区 |
-| 文档预览 | 按扩展名分流 xlsx / csv / tsv / docx / pdf / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本；CSV 走后端切行，几十 MB 的导出表也能开 |
+| 表格与图片预览 | 按扩展名分流 xlsx / xlsm / xls / ods / csv / tsv / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本；CSV 走后端切行，几十 MB 的导出表也能开。Word / PDF / PPT 不做内置渲染，统一给「用系统程序打开」的出路 |
 | 批量查找替换 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
-| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换）/ 测试 / 分卷合并 / 任务面板；7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ gz / bz2 / zst / xz / lz4 / br 十五种格式，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗；rar / lzh / cab / iso 无内置解压，预览器直接指引用 7-Zip（specs/18） |
+| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换 / 单条目直接在编辑器里打开）/ 测试 / 分卷合并 / 任务面板；**可写 16 种**：7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ cab / gz / bz2 / zst / xz / lz4 / br；**只读 4 种**（6 个扩展名：rar / lzh（含 lha）/ cpio / ar（含 deb））。双击压缩包直接进浏览浮窗，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗（specs/18） |
 | 文件分卷 | 任意文件按大小切卷 / 合并还原；压缩包创建时可直接分卷 |
 | 系统关联 | 设置 → 系统与关联：把 NoteText 挂进文本 / 压缩包的「打开方式」与默认应用候选，双击即开（specs/17） |
 | 文件树 | 懒展开 + 右键全套（新建 / 重命名 / 删除 / 剪切 / 复制 / 粘贴 / 副本 / 资源管理器 / 压缩 / 解压到… / 一键解压）+ 树内拖拽移动 |
@@ -55,14 +55,14 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
 | 会话恢复 | 启动恢复标签 / 光标 / 窗口大小；未保存草稿也恢复 |
 | 托盘与单实例 | 关闭到托盘；二次启动转交文件路径 |
 | 备份 | 导出 / 导入书签、片段、宏、草稿、最近文件 |
-| 大文件降级 | 超过 32MB 自动只读前段，状态栏标「已截断」，**拦截写回**；CSV / TSV 表格预览单独走切行链路，不受 20MB 二进制预览上限约束 |
+| 大文件 | 两级打开：≤64MB 进 CodeMirror 全功能可编辑；>64MB 自动切分页视图（行索引 + 虚拟滚动 + 全局流式查找 + 另存为副本），内存占用与文件体积无关，状态栏标「大文件模式」并拦截写回（specs/05） |
 
 ## 快速开始
 
 ### 环境要求
 
 - **Rust** 1.80+（stable，MSVC 工具链）
-- **Node.js** 18+
+- **Node.js** 22+
 - **Windows 10 1809+ / 11**（系统已内置 WebView2）
 - Tauri CLI：`cargo install tauri-cli --version "^2"`
 
@@ -115,7 +115,7 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id / text
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/chain_tests.rs   # 8 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
+│   └── tests/chain_tests.rs   # 长链路集成测试（单文件，编译 lib 而不链接 WebView）
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
@@ -143,7 +143,7 @@ NoteText/
 | 代码编辑 | CodeMirror 6（31 种语言识别，28 种语法高亮：13 静态 + 16 按需加载） |
 | Markdown | markdown-it + highlight.js + Mermaid + KaTeX（编辑 / 分屏 / 预览三态） |
 | 格式转换 | js-yaml、@iarna/toml、fast-xml-parser（JSON / YAML / TOML / XML 互转） |
-| 文档预览 | XLSX、docx-preview、WebView2 内置 PDF 阅读器 |
+| 表格与图片预览 | XLSX（xlsx / xls / ods）；图片交给 WebView2 原生解码 |
 | 图表 | ECharts 5.5 |
 | 国际化 | Vue I18n 9.10（zh-CN 默认 + en） |
 | 数据库 | SQLite（WAL，rusqlite bundled 无 CGO） |
@@ -166,28 +166,28 @@ NoteText/
 | [specs/02](specs/02-database.md) | 数据库：表结构、WAL、迁移 |
 | [specs/03](specs/03-config.md) | 配置：44 个配置项、派生量、回写时机 |
 | [specs/04](specs/04-desktop-shell.md) | 桌面壳：托盘、关闭策略、退出契约 |
-| [specs/05](specs/05-file-domain.md) | 文件域：读写、编码探测、表格预览、大文件降级 |
+| [specs/05](specs/05-file-domain.md) | 文件域：读写、编码探测、表格预览、大文件分页视图 |
 | [specs/06](specs/06-editor-domain.md) | 编辑器域：CodeMirror 装配、语言加载、形态分流 |
 | [specs/07](specs/07-frontend-state.md) | 前端状态与命令表 |
 | [specs/08](specs/08-user-data.md) | 用户数据：书签 / 片段 / 宏 / 草稿 / 最近文件 |
 | [specs/09](specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
 | [specs/10](specs/10-session-restore.md) | 会话恢复 |
 | [specs/11](specs/11-visual-tokens.md) | 视觉令牌与主题 |
-| [specs/12](specs/12-testing.md) | 测试与验证：8 条长链路、本地与 CI 门禁 |
+| [specs/12](specs/12-testing.md) | 测试与验证：长链路、本地与 CI 门禁 |
 | [specs/13](specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
-| [specs/14](specs/14-api-contract.md) | invoke 命令契约（107 个命令对照表） |
+| [specs/14](specs/14-api-contract.md) | invoke 命令契约（110 个命令对照表） |
 | [specs/15](specs/15-error-codes.md) | 错误码分段与处置动作 |
 | [specs/16](specs/16-page-structure.md) | 页面与组件地图 |
 | [specs/17](specs/17-deployment.md) | 构建与分发 |
-| [specs/18](specs/18-archive.md) | 压缩子系统：15 种格式、任务队列、安全底线 |
-| [specs/faq](specs/faq.md) | 开发排障速查 |
+| [specs/18](specs/18-archive.md) | 压缩子系统：20 种格式、任务队列、安全底线 |
+| [faq](assets/docs/faq.md) | 开发排障速查 |
 
 每篇规格只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。
 内置用户手册在 `assets/docs/`，面向用户；`specs/` 面向开发，两者不重复维护同一份话术。
 
 ## 测试
 
-8 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按六组排列
+10 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按六组排列
 （文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联）。**每个测试函数名就是它守护的那件坏事**，
 失败时报文直接指出坏在哪。全量约 1 秒；同一域的相近故事合并成一条，
 一条测试就是一条完整的用户故事。

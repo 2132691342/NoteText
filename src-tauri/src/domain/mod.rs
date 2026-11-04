@@ -5,6 +5,7 @@ pub mod archive;
 pub mod archive_format;
 pub mod archive_task;
 pub mod batch;
+pub mod bigfile;
 pub mod bookmark;
 pub mod config;
 pub mod diff;
@@ -25,8 +26,8 @@ pub mod snippet;
 pub use archive::{
     AddEntriesReq, ArchiveEntryVO, ArchiveInfoVO, ConvertArchiveReq, ConvertArchiveVO,
     CreateArchiveReq, CreateArchiveVO, DeleteEntriesReq, ExtractArchiveReq, ExtractArchiveVO,
-    JoinPartsReq, JoinPartsVO, OpenArchiveVO, PreviewEntryReq, PreviewEntryVO, SplitFileReq,
-    TestArchiveReq, TestArchiveVO, UpdateArchiveVO,
+    JoinPartsReq, JoinPartsVO, OpenArchiveVO, OpenEntryReq, OpenEntryVO, PreviewEntryReq,
+    PreviewEntryVO, SplitFileReq, TestArchiveReq, TestArchiveVO, UpdateArchiveVO,
 };
 pub use archive_format::{
     ArchiveFormat, ArchiveFormatVO, CompressLevel, CompressMethod, FormatCapabilitiesVO,
@@ -36,6 +37,10 @@ pub use batch::{
     BatchFailure, BatchFileHits, BatchFindReq, BatchFindVO, BatchRenameReq, BatchRenameVO,
     BatchReplaceReq, BatchReplaceVO, FindMode, RenameApplyReq, RenameMode, RenamePair,
     RenamePlanItem,
+};
+pub use bigfile::{
+    BigFileFindReq, BigFileFindVO, BigFileHitVO, BigFileMetaVO, BigFilePageReq, BigFilePageVO,
+    BigFileSaveReq,
 };
 pub use bookmark::{BookmarkAddReq, BookmarkDO, BookmarkVO};
 pub use config::{AppConfig, EditorConfig, FileConfig, UIConfig};

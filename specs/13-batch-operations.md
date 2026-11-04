@@ -63,7 +63,7 @@ pub struct BatchReplaceVO {
 
 ### 两条护栏复用文件域
 
-- 超过 `MAX_FULL_READ`（32MB）的文件跳过，不静默读进内存；
+- 超过 `MAX_FULL_READ`（64MB）的文件跳过，不静默读进内存；
 - 含 NUL 的疑似二进制文件跳过，替换会破坏结构。
 
 跳过的文件计入 `skipped`，不静默吞掉。

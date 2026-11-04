@@ -9,6 +9,7 @@ import Minimap from '@/components/editor/Minimap.vue'
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
 import DocPreview from '@/components/editor/DocPreview.vue'
 import HexView from '@/components/editor/HexView.vue'
+import BigFileView from '@/components/editor/BigFileView.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { useEditorStore, viewTypeOf } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
@@ -50,13 +51,26 @@ async function onOpenRecent(path: string) {
  * 二进制 → Hex；有专属预览器 → DocPreview；Markdown 默认进三态编辑器，
  * 用户按了「预览」才落到只读预览；其余进 CodeMirror。
  */
-function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'code' {
+function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'code' | 'big' {
+  // 大文件优先于一切：它不进 CodeMirror，也不做语法高亮。
+  if (tab.big_file) return 'big'
   const kind = kindOf(tab.path, tab.view_type === 'hex')
   if (tab.view_type === 'hex' || kind === 'binary') return 'hex'
   // 分屏时一律回到三态编辑器：只读预览器没有第二栏，分屏按钮会变成假动作。
   if (kind === 'markdown') return tab.showing_preview && !tab.split ? 'doc' : 'markdown'
   if (hasRichPreview(kind)) return 'doc'
   return tab.showing_preview ? 'doc' : 'code'
+}
+
+/** 大文件视图报到：把总行数与探测到的编码写回标签，状态栏才能显示读数。 */
+function onBigMeta(tab: Tab, meta: { total_lines: number; encoding: string; line_ending: string; has_bom: boolean }) {
+  tab.encoding = meta.encoding
+  tab.line_ending = meta.line_ending as Tab['line_ending']
+  tab.has_bom = meta.has_bom
+  tab.position = { ...tab.position, line: 1 }
+  document.dispatchEvent(
+    new CustomEvent('nt-stats', { detail: { tabId: tab.id, lines: meta.total_lines } }),
+  )
 }
 
 /** 切到十六进制：预览器给的是「这种格式读不了」时的兜底入口。 */
@@ -240,7 +254,13 @@ onBeforeUnmount(() => {
         :style="slotStyle(tab)"
       >
         <template v-if="mounted.has(tab.id)">
-          <div v-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">
+          <BigFileView
+            v-if="viewOfTab(tab) === 'big'"
+            :path="tab.path"
+            :encoding="tab.encoding"
+            @meta="onBigMeta(tab, $event)"
+          />
+          <div v-else-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">
             <HexView
               :path="tab.path"
               :can-edit="isTextKind(kindOf(tab.path))"
@@ -275,8 +295,9 @@ onBeforeUnmount(() => {
       </template>
 
       <Minimap
-        v-if="settings.config.editor.minimap && mainView"
+        v-if="settings.config.editor.minimap && mainView && !editor.active?.big_file"
         :view="mainView"
+        :tab-id="editor.activeId ?? undefined"
         :line-count="lineCount"
         :visible="true"
       />

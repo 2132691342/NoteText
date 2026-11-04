@@ -173,40 +173,38 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 
 | 形态 | 判定 | 容器 |
 |---|---|---|
+| `bigFile` | `stat.size > 64MB` 且是文本（`tab.big_file`） | `BigFileView.vue`（行索引 + 虚拟滚动 + 流式查找，只读） |
 | `binary` | 可执行 / 压缩包 / 媒体，或未知扩展名且 `stat.is_binary` | `HexView.vue`（虚拟滚动，只渲染可视区） |
-| `legacyDoc` | `.doc` `.ppt(x)` `.odt` `.rtf` `.epub` 等无内嵌渲染器的文档 | `DocPreview.vue` → 「没有内置预览」卡片 |
-| `archiveLegacy` | `.rar` `.lzh` `.cab` `.iso` 等无内置解压的归档 | `DocPreview.vue` → 「用 7-Zip 解压后再打开」卡片 + 外部程序入口 |
-| `image` `sheet` `docx` `pdf` | 扩展名表（`sheet` 内再分：CSV / TSV 走后端切行，xlsx 走 SheetJS） | `DocPreview.vue`（动态 import 对应预览器） |
+| `legacyDoc` | `.doc` `.docx` `.ppt(x)` `.rtf` `.odt` `.epub` `.pdf` 等 | `DocPreview.vue` → 「没有内置渲染」卡片 + 外部程序入口 |
+| `image` `sheet` | 扩展名表（`sheet` 内再分：CSV / TSV 走后端切行，xlsx 走 SheetJS） | `DocPreview.vue`（动态 import 对应预览器） |
 | `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
 | `html` | `.html` `.htm` `.xhtml` | `CodeEditor.vue`（可编辑）+ `DocPreview.vue` 沙箱 iframe 静态预览（`showing_preview`，不执行脚本） |
 | `text` | 其余 | `CodeEditor.vue` / `DocPreview.vue`（`showing_preview`） |
 
 **打开链路先 stat 再决定要不要读正文**：`read_file` 是「按文本解码」，
-PDF / 表格 / 图片走它只会得到乱码或解码错误。非文本形态只建标签，
-正文由预览器自己按字节读（`read_binary`，20MB 上限）。
+表格 / 图片 / 二进制走它只会得到乱码或解码错误。非文本形态只建标签，
+正文由预览器自己按字节读（`read_binary`，20MB 上限）；超过 64MB 的文本
+直接进大文件分页视图，正文根本不会整篇进内存。
 
 预览器全部动态 `import`：一个只写纯文本的人不该付 xlsx 的钱。
 
-**PDF 不进 JS**：`<embed type="application/pdf">` 指到 asset 协议，由 WebView2
-内置阅读器渲染——流式读取、无 20MB 上限、支持搜索与打印。代价是阅读器内部
-主题不受 `themes.css` 控制，所以旁边常驻「用外部程序打开」。三处配置缺一不可：
-`protocol-asset` 特性、`assetProtocol.enable`、CSP 的
-`frame-src` / `object-src` 放行 `asset:`。
+**`archiveLegacy` 已取消**：RAR / LZH / CAB / cpio / ar 现在都由压缩子系统
+原生解压（specs/18），点开压缩包直接进浏览浮窗，不再有「拿别的工具解压」
+的卡片形态。
 
-**必须覆盖 wry 的默认浏览器参数**：wry 默认传
-`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`，
-其中 `msPdfOOUI` 会把内置 PDF 阅读器关掉（`<embed>` 只剩一块空白）。
-窗口配置里的 `additionalBrowserArgs` 去掉这一项，其余两项保持原样。
+**不做办公文档渲染**：Word / PDF / PPT / EPUB 的内嵌渲染器体积 1~2MB 且还原度
+有限，半成品预览不如一句明确的「用系统程序打开」。纯文本内容仍可在 Hex 视图查看。
+Excel 与 CSV 例外——那类文件用户想看的就是表格本身。
 
-**表格与 Word 是真查看器，不是「塞个 HTML」**：
+**表格预览是真查看器，不是「塞个 HTML」**：
 
-| 能力 | 表格（xlsx / xls / csv / tsv） | Word（docx） |
-|---|---|---|
-| 分页 / 分表 | 底部工作表页签，多表可切 | `breakPages` 按页渲染，头部显示页数 |
-| 保真 | 读 `!cols` 折算列宽、`!merges` 还原合并、`raw:false` 取显示值 | docx-preview + `experimental`，页眉页脚脚注、图片 base64 内嵌 |
-| 对齐 | 数字列右对齐 + 等宽数字 | 由文档自身样式决定 |
-| 规模 | 单表上限 2000 行 / 80 列，超出给提示 | 全量渲染（docx 本身不会太大） |
-| 缩放 | 50%~300% | 50%~300% |
+| 能力 | 表格（xlsx / xls / ods / csv / tsv） |
+|---|---|
+| 分页 / 分表 | 底部工作表页签，多表可切 |
+| 保真 | 读 `!cols` 折算列宽、`!merges` 还原合并、`raw:false` 取显示值 |
+| 对齐 | 数字列右对齐 + 等宽数字 |
+| 规模 | 单表上限 2000 行 / 80 列，超出给提示；CSV / TSV 走后端切行不受 20MB 上限约束 |
+| 缩放 | 50%~300% |
 
 行数上限是硬约束：几万行全铺进 DOM 会把界面卡死，而「看一眼里面是什么」
 根本不需要滚动到底。切页签复用同一个工作簿对象，不重复解压文件。

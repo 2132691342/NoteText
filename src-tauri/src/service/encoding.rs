@@ -9,9 +9,7 @@ use encoding_rs::{
 use crate::domain::encoding::EncodingInfo;
 use crate::pkg::error::{codes, AppError, AppResult};
 
-/// 支持的编码清单：设置页下拉与状态栏的取值表。
-/// 与前端 `utils/encoding.ts` 的 key 必须一致——不一致时状态栏显示的名字
-/// 与实际写盘用的编码会对不上。
+/// 支持的编码清单：设置页下拉与状态栏的取值表；与前端 `utils/encoding.ts` 的 key 必须一致（否则显示名与写盘编码对不上）。
 pub fn supported() -> Vec<EncodingInfo> {
     let mut v = vec![
         EncodingInfo {

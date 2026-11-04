@@ -49,6 +49,19 @@ crc32fast = "1"
 walkdir = "2"
 tempfile = "3"
 
+# 只读扩展（specs/18）：RAR 解压、LHA/LZH 解压、CAB 读写。
+# unrar-rs 是参考 UnRAR 的 Rust 移植：RAR4/RAR5、分卷、加密、恢复卷全都覆盖。
+unrar-rs = { version = "0.15", default-features = false, features = ["crypto-rust"] }
+# delharc：LHA/LZH 全方法（LH0/1/4/5/6/7/8/9/12/13 与 LZ4/LZ5）
+delharc = { version = "0.6", features = ["std", "lh1", "lz"] }
+# cab：Windows 安装包最常见的容器；MSZIP/Quantum 读、Store/MSZIP 写。
+# LZX 压缩段该库读不了，遇到时给一句明确提示而不是报「文件损坏」。
+cab = "0.6"
+# time：CAB 的条目时间戳是 PrimitiveDateTime，转毫秒要用它的 API（cab 自己已依赖，
+# 这里显式声明以免依赖传递进来的版本漂移）
+time = "0.3"
+
+
 # Windows 注册表（specs/17 文件关联）：winreg 已在依赖图里（tauri 传递依赖），
 # 直接引用零新增；windows-sys 只开 Shell 一个 feature，用于 SHChangeNotify 广播关联变更。
 winreg = "0.56"

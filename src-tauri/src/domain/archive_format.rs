@@ -4,6 +4,7 @@
 use serde::Serialize;
 
 /// NoteText 支持的归档 / 压缩格式。
+/// 「读写齐全 + 只读扩展」：前半段可创建，后半段只有读取能力（RAR 只读由格式授权决定）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArchiveFormat {
@@ -25,6 +26,8 @@ pub enum ArchiveFormat {
     Tlz4,
     /// tar + brotli
     Tbr,
+    /// CAB（Windows 安装包；MSZIP / Quantum 读，Store / MSZIP 写）
+    Cab,
     /// 单文件 gzip
     Gz,
     /// 单文件 bzip2
@@ -37,6 +40,14 @@ pub enum ArchiveFormat {
     Lz4,
     /// 单文件 brotli
     Br,
+    /// RAR / RAR5（只读：含分卷、加密、固实）
+    Rar,
+    /// LHA / LZH（只读）
+    Lzh,
+    /// cpio（只读：newc / odc / crc 头）
+    Cpio,
+    /// ar / .deb（只读）
+    Ar,
 }
 
 /// 压缩方法：创建对话框可指定，缺省按「格式 + 级别」取推荐。
@@ -59,6 +70,8 @@ pub enum CompressMethod {
     Lz4,
     /// Brotli
     Brotli,
+    /// MSZIP（CAB 的 Deflate 变体）
+    MsZip,
 }
 
 /// 压缩级别：前端只展示这六档语义，映射到各库的原生档位在引擎里做。
@@ -129,6 +142,10 @@ impl CompressLevel {
                 CompressLevel::Store => CompressMethod::Store,
                 _ => CompressMethod::Brotli,
             },
+            ArchiveFormat::Cab => match self {
+                CompressLevel::Store => CompressMethod::Store,
+                _ => CompressMethod::MsZip,
+            },
             ArchiveFormat::Tar => CompressMethod::Store,
             ArchiveFormat::Gz => match self {
                 CompressLevel::Store => CompressMethod::Store,
@@ -151,6 +168,10 @@ impl CompressLevel {
                 CompressLevel::Store => CompressMethod::Store,
                 _ => CompressMethod::Brotli,
             },
+            // 只读格式不给推荐方法：它们在创建对话框里根本不出现在下拉里。
+            ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar => {
+                CompressMethod::Store
+            }
         }
     }
 }
@@ -167,12 +188,17 @@ impl ArchiveFormat {
             ArchiveFormat::Tzst => "tzst",
             ArchiveFormat::Tlz4 => "tlz4",
             ArchiveFormat::Tbr => "tbr",
+            ArchiveFormat::Cab => "cab",
             ArchiveFormat::Gz => "gz",
             ArchiveFormat::Bz2 => "bz2",
             ArchiveFormat::Zst => "zst",
             ArchiveFormat::Xz => "xz",
             ArchiveFormat::Lz4 => "lz4",
             ArchiveFormat::Br => "br",
+            ArchiveFormat::Rar => "rar",
+            ArchiveFormat::Lzh => "lzh",
+            ArchiveFormat::Cpio => "cpio",
+            ArchiveFormat::Ar => "ar",
         }
     }
 
@@ -188,12 +214,17 @@ impl ArchiveFormat {
             ArchiveFormat::Tzst => &["tzst"],
             ArchiveFormat::Tlz4 => &["tlz4"],
             ArchiveFormat::Tbr => &["tbr"],
+            ArchiveFormat::Cab => &["cab"],
             ArchiveFormat::Gz => &["gz", "gzip"],
             ArchiveFormat::Bz2 => &["bz2", "bzip2", "boz"],
             ArchiveFormat::Zst => &["zst", "zstd"],
             ArchiveFormat::Xz => &["xz"],
             ArchiveFormat::Lz4 => &["lz4"],
             ArchiveFormat::Br => &["br"],
+            ArchiveFormat::Rar => &["rar"],
+            ArchiveFormat::Lzh => &["lzh", "lha"],
+            ArchiveFormat::Cpio => &["cpio"],
+            ArchiveFormat::Ar => &["ar", "deb"],
         }
     }
 
@@ -205,7 +236,7 @@ impl ArchiveFormat {
     }
 
     /// 全部格式的固定顺序：能力表 / 格式下拉共用。
-    pub fn all() -> [ArchiveFormat; 15] {
+    pub fn all() -> [ArchiveFormat; 20] {
         [
             ArchiveFormat::SevenZ,
             ArchiveFormat::Zip,
@@ -216,18 +247,32 @@ impl ArchiveFormat {
             ArchiveFormat::Tzst,
             ArchiveFormat::Tlz4,
             ArchiveFormat::Tbr,
+            ArchiveFormat::Cab,
             ArchiveFormat::Gz,
             ArchiveFormat::Bz2,
             ArchiveFormat::Zst,
             ArchiveFormat::Xz,
             ArchiveFormat::Lz4,
             ArchiveFormat::Br,
+            ArchiveFormat::Rar,
+            ArchiveFormat::Lzh,
+            ArchiveFormat::Cpio,
+            ArchiveFormat::Ar,
         ]
     }
 
     /// 是否为多文件容器（可以「打开浏览」）。
     pub fn is_container(self) -> bool {
-        self.is_tar_family() || matches!(self, ArchiveFormat::SevenZ | ArchiveFormat::Zip)
+        matches!(
+            self,
+            ArchiveFormat::SevenZ
+                | ArchiveFormat::Zip
+                | ArchiveFormat::Cab
+                | ArchiveFormat::Rar
+                | ArchiveFormat::Lzh
+                | ArchiveFormat::Cpio
+                | ArchiveFormat::Ar
+        ) || self.is_tar_family()
     }
 
     /// tar 容器家族（含各压缩层组合）：列条目 / 解压 / 测试走同一条流式管线。
@@ -257,8 +302,18 @@ impl ArchiveFormat {
         }
     }
 
+    /// 能不能加密：只有 7z / zip 有公开的 AES 方案。
     pub fn supports_encryption(self) -> bool {
         matches!(self, ArchiveFormat::SevenZ | ArchiveFormat::Zip)
+    }
+
+    /// 能不能写。RAR / LZH / cpio / ar 只读：前两个的算法专有，
+    /// 后两个在编辑器的使用场景里没必要写（谁会用文本编辑器造 .deb）。
+    pub fn can_write(self) -> bool {
+        !matches!(
+            self,
+            ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar
+        )
     }
 
     /// 主扩展名：创建压缩包时的默认后缀。
@@ -274,6 +329,17 @@ impl ArchiveFormat {
         if bytes.len() >= 4 && (&bytes[..4] == b"PK\x03\x04" || &bytes[..4] == b"PK\x05\x06") {
             return Some(ArchiveFormat::Zip);
         }
+        // RAR4 "Rar!\x1a\x07\x00" / RAR5 "Rar!\x1a\x07\x01\x00"
+        if bytes.len() >= 7 && &bytes[..7] == b"Rar!\x1a\x07\x00" {
+            return Some(ArchiveFormat::Rar);
+        }
+        if bytes.len() >= 8 && &bytes[..8] == b"Rar!\x1a\x07\x01\x00" {
+            return Some(ArchiveFormat::Rar);
+        }
+        // CAB: "MSCF" + reserved
+        if bytes.len() >= 4 && &bytes[..4] == b"MSCF" {
+            return Some(ArchiveFormat::Cab);
+        }
         if bytes.len() >= 2 && bytes[..2] == [0x1F, 0x8B] {
             return Some(ArchiveFormat::Gz);
         }
@@ -288,6 +354,33 @@ impl ArchiveFormat {
         }
         if bytes.len() >= 4 && bytes[..4] == [0x04, 0x22, 0x4D, 0x18] {
             return Some(ArchiveFormat::Lz4);
+        }
+        // LHA: 偏移 2 起是 "-lh?-" / "-lz?-"
+        if bytes.len() >= 7 && bytes[2] == b'-' && bytes[6] == b'-' {
+            let method = &bytes[3..6];
+            if method == b"lh0"
+                || method == b"lh1"
+                || method == b"lh4"
+                || method == b"lh5"
+                || method == b"lh6"
+                || method == b"lh7"
+                || method == b"lh8"
+                || method == b"lzs"
+                || method == b"lz4"
+                || method == b"lz5"
+            {
+                return Some(ArchiveFormat::Lzh);
+            }
+        }
+        // cpio: "070701"（newc）/ "070702"（crc）/ "070707"（odc）
+        if bytes.len() >= 6
+            && (&bytes[..6] == b"070701" || &bytes[..6] == b"070702" || &bytes[..6] == b"070707")
+        {
+            return Some(ArchiveFormat::Cpio);
+        }
+        // ar: "!<arch>\n"
+        if bytes.len() >= 8 && &bytes[..8] == b"!<arch>\n" {
+            return Some(ArchiveFormat::Ar);
         }
         None
     }
@@ -310,4 +403,24 @@ pub struct ArchiveFormatVO {
     pub capabilities: FormatCapabilitiesVO,
     /// 创建对话框的默认压缩方法 id。
     pub default_method: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 只读格式不能出现在「可以写」的清单里：创建对话框直接按它过滤。
+    #[test]
+    fn readonly_formats_are_not_writable() {
+        for f in [
+            ArchiveFormat::Rar,
+            ArchiveFormat::Lzh,
+            ArchiveFormat::Cpio,
+            ArchiveFormat::Ar,
+        ] {
+            assert!(!f.can_write(), "{} 不该被标成可写", f.id());
+        }
+        assert!(ArchiveFormat::SevenZ.can_write());
+        assert!(ArchiveFormat::Cab.can_write());
+    }
 }

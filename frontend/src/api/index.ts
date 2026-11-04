@@ -136,12 +136,20 @@ import type {
 } from '@/types/api'
 import type {
   AppConfig,
+  BigFileFindReq,
+  BigFileFindVO,
+  BigFileMetaVO,
+  BigFilePageReq,
+  BigFilePageVO,
+  BigFileSaveReq,
   CreateArchiveReq,
   ConvertArchiveReq,
   DeleteEntriesReq,
   ExtractArchiveReq,
   JoinPartsReq,
   OpenArchiveVO,
+  OpenEntryReq,
+  OpenEntryVO,
   PreviewEntryReq,
   PreviewEntryVO,
   SplitFileReq,
@@ -159,6 +167,12 @@ export const api = {
     }),
   /** 读二进制（预览 / Hex）。返回 base64：走 Vec<u8> 会被序列化成 number[]。 */
   readBinary: (path: string) => call<string>('read_binary', { path }),
+  // 大文件：索引 + 分页 + 流式查找（内存占用与文件体积无关）
+  openBigFile: (path: string, encoding?: string) =>
+    call<BigFileMetaVO>('open_big_file', { path, encoding: encoding ?? null }),
+  readBigPage: (req: BigFilePageReq) => call<BigFilePageVO>('read_big_file_page', { req }),
+  findInBigFile: (req: BigFileFindReq) => call<BigFileFindVO>('find_in_big_file', { req }),
+  saveBigRange: (req: BigFileSaveReq) => call<number>('save_big_file_range', { req }),
   /** CSV / TSV 表格预览：后端解码切行，不受 read_binary 的 20MB 上限约束。 */
   readTablePreview: (path: string, encoding?: string) =>
     call<TablePreviewVO>('read_table_preview', { path, encoding: encoding ?? null }),
@@ -299,6 +313,8 @@ export const api = {
       call<OpenArchiveVO>('open_archive', { path, password: password ?? null }),
     previewEntry: (req: PreviewEntryReq) =>
       call<PreviewEntryVO>('preview_archive_entry', { req }),
+    /** 解出单条目到临时目录：点开压缩包里的文本直接读，不必整包解压。 */
+    openEntry: (req: OpenEntryReq) => call<OpenEntryVO>('open_archive_entry', { req }),
     formats: () => call<ArchiveFormatVO[]>('get_archive_formats'),
     create: (req: CreateArchiveReq) => call<string>('create_archive', { req }),
     extract: (req: ExtractArchiveReq) => call<string>('extract_archive', { req }),
