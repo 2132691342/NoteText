@@ -230,15 +230,38 @@
   box-shadow: var(--nt-card-shadow);
 }
 
-/* ---------- 滚动条：EP 的下拉与表格内部也用细滚动条 ---------- */
+/* ---------- 滚动条：EP 内部滚动容器与全站同一档 ---------- */
 .el-scrollbar__bar.is-vertical {
-  width: 8px;
+  width: var(--nt-scrollbar-size);
 }
 
 .el-scrollbar__bar.is-horizontal {
-  height: 8px;
+  height: var(--nt-scrollbar-size);
 }
 
+/* EP 的 thumb 用 transform 定位，滑块宽度靠样式给死；
+   悬停加宽一档，拖动中再加宽一档，轨道宽度不变所以不抖。 */
 .el-scrollbar__thumb {
-  background: var(--nt-border-strong);
+  background: var(--nt-scrollbar-thumb);
+  opacity: 1;
+}
+
+.el-scrollbar:hover .el-scrollbar__thumb {
+  background: var(--nt-scrollbar-thumb-hover);
+}
+
+.el-scrollbar__thumb:hover {
+  background: var(--nt-scrollbar-thumb-hover);
+}
+
+.el-scrollbar__bar.is-vertical .el-scrollbar__thumb {
+  width: calc(var(--nt-scrollbar-size) - 2 * var(--nt-scrollbar-inset));
+}
+
+.el-scrollbar__bar.is-horizontal .el-scrollbar__thumb {
+  height: calc(var(--nt-scrollbar-size) - 2 * var(--nt-scrollbar-inset));
+}
+
+.el-scrollbar__thumb:active {
+  background: var(--nt-scrollbar-thumb-active);
 }

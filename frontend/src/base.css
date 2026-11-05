@@ -100,10 +100,10 @@ ol {
   list-style: none;
 }
 
-/* ---------- 滚动条：桌面应用要细而不抢眼 ---------- */
+/* ---------- 滚动条：宽轨道 + 粗滑块，长文档要能一把抓住 ---------- */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--nt-scrollbar-size);
+  height: var(--nt-scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {
@@ -111,19 +111,36 @@ ol {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--nt-border-strong);
+  background: var(--nt-scrollbar-thumb);
   border-radius: var(--nt-radius-full);
-  border: 2px solid transparent;
+  border: var(--nt-scrollbar-inset) solid transparent;
   background-clip: content-box;
 }
 
+/* 悬停 / 按下：滑块变长、颜色变深。轨道宽度不变，所以没有布局抖动。 */
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--nt-ink-muted);
+  background: var(--nt-scrollbar-thumb-hover);
+  border-width: var(--nt-scrollbar-inset-hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--nt-scrollbar-thumb-active);
+  border-width: var(--nt-scrollbar-inset-hover);
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* 细滚动条：给横向条与次要面板用。窄，但滑块实占宽度不吃缩。 */
+::-webkit-scrollbar:horizontal {
+  height: var(--nt-scrollbar-size-sm);
+}
+
+::-webkit-scrollbar:horizontal::-webkit-scrollbar-thumb {
+  border-width: 1px;
 }
 
 /* ---------- 可复用面 ---------- */

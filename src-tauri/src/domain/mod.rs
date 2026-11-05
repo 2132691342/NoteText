@@ -22,6 +22,7 @@ pub mod regex;
 pub mod session;
 pub mod sheet;
 pub mod snippet;
+pub mod table;
 
 pub use archive::{
     AddEntriesReq, ArchiveEntryVO, ArchiveInfoVO, ConvertArchiveReq, ConvertArchiveVO,
@@ -58,7 +59,11 @@ pub use recent::{RecentFileDO, RecentFileVO};
 pub use regex::{RegexMatchVO, RegexTestReq, RegexTestVO};
 pub use session::{SessionDO, SessionRestoreVO, SessionSaveReq, TabDO};
 pub use sheet::{
-    CellEdit, CellValue, SheetCell, SheetFindReq, SheetFindVO, SheetHit, SheetSaveReq, SheetSaveVO,
-    SheetVO, WorkbookOpenReq, WorkbookVO,
+    CellEdit, CellValue, SheetCell, SheetFindReq, SheetFindVO, SheetHit, SheetInfoVO, SheetPageReq,
+    SheetPageVO, SheetSaveReq, SheetSaveVO, SheetVO, WorkbookInfoVO, WorkbookOpenReq, WorkbookVO,
 };
 pub use snippet::{LanguageInfo, SnippetDO, SnippetQueryReq, SnippetSaveReq, SnippetVO};
+pub use table::{
+    TableFindReq, TableFindVO, TableHitVO, TableKind, TableMetaVO, TableOp, TableOpenReq,
+    TablePageReq, TablePageVO, TableSaveReq, TableSaveVO,
+};

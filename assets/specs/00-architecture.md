@@ -92,7 +92,7 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。内核是 CodeMirror
 | `tests/chain_*.rs` + GitHub Actions | 测试组织与验证入口 | [12](12-testing.md) |
 | `service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](13-batch-operations.md) |
 | `service/archive/` | 压缩 / 解压引擎、任务队列、格式能力表 | [18](18-archive.md) |
-| `service/big_file.rs` + `service/sheet.rs` + `domain/sheet.rs` + `commands/sheet.rs` | 大文件块索引与单块写回、XLSX 单元格补丁 | [19](19-large-files-and-sheet-edit.md) |
+| `service/big_file.rs` + `service/sheet/` + `service/table/` + `domain/{sheet,table}.rs` + `commands/{sheet,table}.rs` | 大文件块索引与单块写回；大表格的记录对齐索引 / 分页取数 / 覆盖层写回；XLSX 流式解析与单元格补丁 | [19](19-large-files-and-sheet-edit.md) |
 | `ChunkedViewer.vue` / `SheetEditor.vue` / `WorkbookEditor.vue` + `useCrashGuard` | 分块视图、两类可编辑网格、30 秒脏标签快照 | [19](19-large-files-and-sheet-edit.md) |
 | `commands/` ↔ `api/index.ts` | invoke 命令契约 | [14](14-api-contract.md) |
 | `pkg/error.rs` | 错误码分段 | [15](15-error-codes.md) |
@@ -235,7 +235,7 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-12 条长链路测试按域拆成 `src-tauri/tests/chain_*.rs` 多个文件
+15 条长链路测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件
 （组织方式见 [12](12-testing.md)）。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。

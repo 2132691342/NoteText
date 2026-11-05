@@ -112,8 +112,7 @@ pub fn detect(bytes: &[u8]) -> (String, bool) {
     }
 
     // 5) 不是 UTF-8：各候选按解码损失打分，取最小。
-    //    打分只在头部样本上进行：全量 5×解码是 GB 级文件打开链路里最贵的
-    //    一段，而投票结论从头几百 KB 就已经稳定。
+    //    打分只在头部样本上做：全量 5×解码是 GB 级文件打开链路里最贵的一段。
     let sample_len = bytes.len().min(SCORE_SAMPLE_BYTES);
     let sample = &bytes[..sample_len];
     let mut best: Option<(&str, usize)> = None;

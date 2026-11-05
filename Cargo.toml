@@ -61,6 +61,11 @@ cab = "0.6"
 # CAB 条目时间戳是 PrimitiveDateTime，转毫秒要用它的 API；显式声明避免版本漂移
 time = "0.3"
 
+# XLSX 的 sheet XML 拉模式解析（assets/specs/19）：
+# 100 万行的工作表 XML 有几百 MB，整块读进内存会 OOM。
+# quick-xml 是拉模式（一次吐一个事件），整表解析的内存占用降到 O(一行)。
+quick-xml = { version = "0.41", default-features = false }
+
 # Windows 注册表（assets/specs/17 文件关联）：winreg 已在依赖图里（tauri 传递依赖），
 # 直接引用零新增；windows-sys 只开 Shell 一个 feature，用于 SHChangeNotify 广播关联变更。
 winreg = "0.56"

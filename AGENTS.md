@@ -20,7 +20,7 @@
 | Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
 | 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
 | 表格与图片预览 | XLSX | 按扩展名分流，表格多工作表可切；Word / PDF / PPT 不在内置渲染范围内 |
-| 大文件 / 表格 | 标准库 `File + Seek` · zip · 原生 XML 补丁 | 1MB 块索引逐块解码；XLSX 只重写命中单元格，其余部件字节级原样（assets/specs/19）；`memchr` 按 SIMD 找换行（索引扫描的热路径，15MB 从 4s 降到 0.5s） |
+| 大文件 / 表格 | 标准库 `File + Seek` · zip · quick-xml · 原生 XML 补丁 | 文本按 1MB 块索引逐块解码；表格按**记录边界**建稀疏索引 + 分页取数，1000 万行秒开（assets/specs/19）；XLSX 拉模式解析 + 只重写命中单元格，其余部件字节级原样；`memchr` 按 SIMD 找换行（索引扫描的热路径，15MB 从 4s 降到 0.5s） |
 | 图表 | ECharts | ^5.5.x（按需引入，色值取 `--nt-ch-*`） |
 | 国际化 | Vue I18n | ^9.10.x（zh-CN 默认 + en；设置页可切换，EP 文案同步） |
 | 样式 | 原生 CSS 设计令牌 | `themes.css` + `ep-theme.css` + `base.css` + `content.css`；色值与尺寸只在 `themes.css` 定义 |
@@ -30,7 +30,7 @@
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli · cab · unrar-rs · delharc | 压缩子系统（assets/specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程；cab 读写 MSZIP，rar（含分卷/加密）与 lzh 只读 |
-| 测试 | 标准库 `#[test]` + tempfile | 单文件 12 条长链路（assets/specs/12），不挂源码内单元测试；本地与 GitHub Actions 执行同一组命令 |
+| 测试 | 标准库 `#[test]` + tempfile | 15 条长链路（assets/specs/12）+ 2 条模块内单测；不挂源码内单元测试；本地与 GitHub Actions 执行同一组命令 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（assets/specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
@@ -50,6 +50,8 @@
 - **办公文档渲染器**（docx-preview / PDF 渲染库 / PPT 解析）：每一类都是
   1~2MB 且还原度有限，配错就是白屏。这类文件统一走「用系统默认程序打开」的卡片，
   纯文本内容仍可在 Hex 视图里查看。Excel / CSV 例外——那类文件用户想看的就是表格本身。
+- **重型的 XML DOM 解析**：XLSX 的 sheet XML 动辄几百 MB，DOM 解析整块进内存必 OOM。
+  引 `quick-xml`（拉模式，一次一个事件）而不是 `roxmltree` 之类建 DOM 树。
 - **regex crate**（大文件查找）：分页视图的查找是逐块流式扫描，每次匹配都必须极快；
   朴素子串搜索已能吃满内存带宽，引 regex 只会在热路径上多一层开销。
   工具箱的正则测试器另有手写引擎（见上）。
@@ -85,15 +87,19 @@ NoteText/
 │   ├── src/
 │   │   ├── commands/           # ① invoke 入口（薄）+ 系统能力绑定
 │   │   ├── service/            # ② 业务编排层（事务边界；不写 SQL；不引 tauri）
+│   │   │   ├── sheet/         # 大表格：拉模式解析 / 单元格补丁
+│   │   │   ├── table/         # 大表格：记录边界扫描 / 稀疏索引 / 覆盖层写回
+│   │   │   ├── archive/       # 压缩：容器引擎 / 任务队列 / 只读格式
+│   │   │   ├── tools/         # 工具箱：JSON 流式解析等子模块
 │   │   ├── repo/               # ③ 持久层（rusqlite；不引上层）
 │   │   ├── domain/             # ④ 域模型（一个聚合根一个文件，DO/REQ/VO 同居一处）
 │   │   ├── db/                 # ⑤ SQLite 打开 + 迁移（WAL）
 │   │   ├── app/                # ⑥ 能力域：路径解析 / 装配 / 生命周期
 │   │   ├── shell/              # ⑦ 壳层：单实例 / 托盘 / 关闭策略
 │   │   ├── platform/           # ⑧ 平台相关：Win32 消息框 / AppHandle 存取
-│   │   └── pkg/                # ⑨ 叶子工具包（AppError / paths / log / id / text）
+│   │   └── pkg/                # ⑨ 叶子工具包（AppError / paths / log / id / text / stream）
 │   ├── capabilities/           # Tauri 权限清单
-│   └── tests/                   # 集成测试：每域一个 chain_*.rs（编译 lib 而不链接 WebView）
+│   └── tests/                   # 集成测试：每域几条 chain_*.rs（编译 lib 而不链接 WebView）
 └── frontend/src/               # 前端唯一源码目录
 ```
 
@@ -367,6 +373,9 @@ mod dialog_stub;
 - 危险按钮用中性描边 + 危险色文字：彩色描边违反分层纪律
 - 只读读数（光标位置 / 行数 / 编码）**不套描边胶囊、不做悬停缩放**：
   有盒子没动作等于骗点击，要反馈就换字色不换几何
+- 滚动条要抓得住：轨道 14px、滑块实占 10px（`--nt-scrollbar-*`）。
+  悬停 / 拖动时滑块变长变深，但**轨道宽度不变**（内缩从 2px 收到 1px），不产生布局抖动。
+  `base.css`（全站）与 `ep-theme.css`（EP 内部滚动容器）必须同档
 - 图标统一走 `NtIcon` 内联 SVG（24 网格，`--nt-icon-stroke`）；
   禁止 Unicode 字符或 Emoji 冒充图标
 - 文案一律走 i18n（`src/locales/`，key 按域分层）；
@@ -456,9 +465,9 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），12 条测试按
-  「文件(3) / 会话 / 批量 / 备份 / 压缩(4) / 表格编辑 / 系统关联」七组排列，每条编排是一个独立编译单元；
-  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 11 条
+- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），15 条链路按
+  「文件(3) / 会话(2) / 批量 / 大表格(4) / 表格编辑 / 压缩(3) / 系统关联」七组排列，每条编排是一个独立编译单元；
+  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 14 条
 - **源码内不挂 `#[cfg(test)]` 单元测试**：简单断言分散在各文件会让验证入口失去焦点
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
@@ -474,7 +483,7 @@ mod dialog_stub;
 | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Rust 格式门禁 |
 | `cargo check --manifest-path src-tauri/Cargo.toml --all-targets` | 全目标编译检查 |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | 静态检查 |
-| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc` | 12 条链路测试 |
+| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc` | 15 条链路测试 |
 
 `tauri::generate_context!()` 会在 Rust 编译期读取 `frontend/dist`；新 checkout 中该目录
 不存在，所以 `cargo check`、Clippy 与测试前都要先构建前端。
@@ -484,16 +493,19 @@ mod dialog_stub;
 | 分组 | 测试 | 坏法 |
 |---|---|---|
 | 文件 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 |
-| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 整文查找命中行号对不上 / 查找一轮一轮接不上 |
+| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 整文查找命中行号对不上 / 查找一轮一轮接不上 / 非 UTF-8 文件命中行号错位 |
 | | `file_ops_refuse_overwrite_cycle_escape_and_partial_delete` | 无声覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
-| 表格编辑 | `sheet_edit_preserves_styles_and_finds_across_sheets` | 改单元格把字体 / 填充 / 图表全丢了 / 共享串解成乱码 / 改一张表动了另一张 / 行尾多出重复 `</row>` |
+| 大表格 | `csv_table_indexes_pages_finds_and_writes_back` | 记录数算错 / 行下标与内容错位 / 命中行号对不上 / 改格动到别的行 / 另存为改到源文件 |
+| | `csv_table_respects_quoted_newlines_and_gb18030_bytes` | 引号内的换行把记录切断 / 汉字尾字节被误判成分隔符 |
+| | `json_array_table_indexes_pages_and_writes_back` | 跨行元素被切碎 / 含逗号的字段被切开 / 改一个元素动到相邻元素 |
+| | `jsonl_table_indexes_and_writes_back` | 嵌套数组被切碎 / 改一格动到相邻行 |
+| 表格编辑 | `sheet_opens_pages_edits_and_preserves_styles` | 整块解析把百万行工作表读进内存 / 改单元格把字体 / 填充 / 图表全丢了 / 共享串解成乱码 / 改一张表动了另一张 |
 | 会话 | `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays` | 空列表序列化成 null 白屏 / 标签顺序与活跃项丢失 / 关光标签丢会话行 |
 | 批量 | `batch_preview_then_apply_touches_only_confirmed_files` | 扫描就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |
 | 备份 | `backup_export_import_restores_tables_and_keeps_local_rows` | 备份导不回来（换机丢数据）/ 导入抹掉本机数据 |
 | 压缩 | `archive_lifecycle_covers_all_formats_update_and_split` | 某格式往返丢内容 / 中文名与层级塌 / 改名后认不出 tar 家族 / 合并后字节变了 |
 | | `archive_rejects_escape_and_distinguishes_password_from_corruption` | 恶意条目写到目标目录外 / 缺密码与密码错混成一个 / 损坏包测试照样说「好」 |
-| | `archive_readonly_formats_list_extract_and_refuse_create` | 只读能力表与引擎能力漂移 / CAB 往返丢内容 / 创建只读格式留半文件 / 只读容器头偏移算错解出垃圾 |
-| | `archive_reads_real_rar_and_lha_packages` | RAR / LHA 头解析错导致空列表或乱码 / 只读格式能列不能解 |
+| | `archive_readonly_formats_list_extract_and_refuse_create` | 只读能力表与引擎能力漂移 / CAB 往返丢内容 / 创建只读格式留半文件 / 只读容器头偏移算错解出垃圾 / 真实包头解析错导致空列表 |
 | 系统关联 | `file_assoc_toggle_registers_and_restores_shell_entries` | 双击没反应（open 命令丢引号 / ProgId 挂错）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：
@@ -514,7 +526,7 @@ npm --prefix frontend run build                                      # 先生成
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check      # 必须无输出
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
 ./frontend/node_modules/.bin/tauri build                              # 产物 target/release/NoteText.exe
 ```
 

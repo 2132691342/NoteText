@@ -105,6 +105,17 @@ import type {
   SheetSaveVO,
   SheetFindReq,
   SheetFindVO,
+  WorkbookInfoVO,
+  SheetPageReq,
+  SheetPageVO,
+  TableOpenReq,
+  TableMetaVO,
+  TablePageReq,
+  TablePageVO,
+  TableFindReq,
+  TableFindVO,
+  TableSaveReq,
+  TableSaveVO,
   EncodingInfo,
   FileContentVO,
   FileMeta,
@@ -216,9 +227,22 @@ export const api = {
   },
   // 表格编辑：XLSX 读全部工作表 + 原地改 XML 写回（样式 / 图表保住）。
   sheet: {
+    info: (path: string) => call<WorkbookInfoVO>('workbook_info', { req: { path } }),
+    page: (req: SheetPageReq) => call<SheetPageVO>('sheet_page', { req }),
     open: (path: string) => call<WorkbookVO>('open_workbook', { req: { path } }),
     save: (req: SheetSaveReq) => call<SheetSaveVO>('save_workbook', { req }),
     find: (req: SheetFindReq) => call<SheetFindVO>('find_in_workbook', { req }),
+  },
+  // 大表格：记录对齐索引 + 分页读取 + 覆盖层写回（1000 万行不整篇进内存）。
+  table: {
+    open: (req: TableOpenReq) => call<TableMetaVO>('table_open', { req }),
+    page: (req: TablePageReq) => call<TablePageVO>('table_page', { req }),
+    find: (req: TableFindReq) => call<TableFindVO>('table_find', { req }),
+    save: (req: TableSaveReq) => call<TableSaveVO>('table_save', { req }),
+    saveAs: (req: TableSaveReq, suggestedName?: string) =>
+      call<TableSaveVO | null>('table_save_as', { req, suggested_name: suggestedName ?? null }),
+    cancel: (path: string) => call<void>('table_cancel', { path }),
+    close: (path: string) => call<void>('table_close', { path }),
   },
   // 文件树右键 / 拖拽：目标已存在一律拒绝（见 api.fileOps）
   fileOps: {

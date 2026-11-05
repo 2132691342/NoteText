@@ -1,22 +1,99 @@
-//! 表格编辑长链路：带样式 xlsx 改格加行后值变了、样式表与未编辑工作表仍字节级原样。
+//! 表格编辑长链路：打开 xlsx → 分页浏览 → 跨表查找 → 改格加行 → 重开校验样式保留。
+//!
+//! 这一域的失败面全是「改了别人的东西」：改单元格把样式表冲掉、动到没编辑的工作表、
+//! 共享串解成乱码、新增行丢失、整块解析把百万行工作表读进内存。
 
 mod common;
 
 use common::boot;
+use std::io::Write;
 
 use notetext_lib::domain::sheet::{
-    CellEdit, CellValue, SheetFindReq, SheetSaveReq, WorkbookOpenReq,
+    CellEdit, CellValue, SheetFindReq, SheetPageReq, SheetSaveReq, WorkbookOpenReq,
 };
 
+/// 工作簿链路：分页读 → 跨表查找 → 改格加行 → 重开 → 样式与未编辑工作表字节级原样。
+///
+/// 分页与「只读需求行数」一起守：整块解析在百万行工作表上要吃掉几百 MB，
+/// 分页版一次只持有一行，内存占用与表大小无关。
 #[test]
-fn sheet_edit_preserves_styles_and_finds_across_sheets() {
+fn sheet_opens_pages_edits_and_preserves_styles() {
     let (dir, state) = boot();
     let svc = &state.services.sheet;
+
+    // ---- 分页读取：一个 1000 行的 xlsx，数值与共享串混合 ----
+    let big = dir.path().join("big.xlsx");
+    let mut rows = String::new();
+    for i in 1..=1000u32 {
+        rows.push_str(&format!(
+            r#"<row r="{i}"><c r="A{i}"><v>{i}</v></c><c r="B{i}" t="inlineStr"><is><t>行{i}</t></is></c></row>"#
+        ));
+    }
+    let sheet_xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>"#
+    );
+    {
+        let out = std::fs::File::create(&big).expect("建 xlsx 失败");
+        let mut zip = zip::ZipWriter::new(out);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, body) in [
+            ("[Content_Types].xml", common::CONTENT_TYPES),
+            ("xl/workbook.xml", common::WORKBOOK_XML),
+            ("xl/_rels/workbook.xml.rels", common::WORKBOOK_RELS),
+            ("xl/worksheets/sheet1.xml", sheet_xml.as_str()),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>备注</t></is></c></row></sheetData></worksheet>"#,
+            ),
+        ] {
+            zip.start_file(name, opts).expect("写部件失败");
+            zip.write_all(body.as_bytes()).expect("写内容失败");
+        }
+        zip.finish().expect("收尾失败");
+    }
+
+    let big_path = big.to_string_lossy().to_string();
+    let info = svc
+        .info(&WorkbookOpenReq {
+            path: big_path.clone(),
+        })
+        .expect("读摘要失败");
+    assert_eq!(info.sheets.len(), 2, "应有 2 张工作表");
+    assert_eq!(info.sheets[0].total_rows, 1000, "第一张表 1000 行");
+    assert_eq!(info.sheets[0].total_cols, 2, "两列");
+
+    let page = svc
+        .page(&SheetPageReq {
+            path: big_path,
+            sheet_index: 0,
+            start_row: 499,
+            rows: 3,
+        })
+        .expect("分页失败");
+    assert_eq!(page.rows.len(), 3, "应取到 3 行");
+    assert_eq!(page.rows[0][0].row, 499, "起始行号应正确");
+    assert_eq!(page.rows[0][0].value.display(), "500", "数值应正确");
+    assert_eq!(page.rows[0][1].value.display(), "行500", "内联串应正确");
+    assert_eq!(page.total_rows, 1000);
+
+    // 末页：只剩一行。
+    let last = svc
+        .page(&SheetPageReq {
+            path: big.to_string_lossy().to_string(),
+            sheet_index: 0,
+            start_row: 999,
+            rows: 10,
+        })
+        .expect("读末页失败");
+    assert_eq!(last.rows.len(), 1);
+    assert_eq!(last.rows[0][0].value.display(), "1000");
+
+    // ---- 带样式的工作簿：打开 → 跨表查找 → 改格加行 → 重开 ----
     let file = dir.path().join("book.xlsx");
     common::build_styled_xlsx(&file);
     let path = file.to_string_lossy().to_string();
 
-    // 打开：两张表、共享串解析正确。
     let wb = svc
         .open(&WorkbookOpenReq { path: path.clone() })
         .expect("打开工作簿失败");

@@ -78,8 +78,7 @@ export interface TablePreviewVO {
 }
 
 /** 大文件元信息：块索引建好后的概览。 */
-export interface BigFileMetaVO {
-  path: string
+export interface BigFileMetaVO {  path: string
   size: number
   /** 头部采样探测出的编码 id：整个文件按它逐块解码。 */
   encoding: string
@@ -136,12 +135,115 @@ export interface BigFileFindVO {
 }
 
 /** 单块写回结果。 */
-export interface BigFileBlockWriteVO {
-  path: string
+export interface BigFileBlockWriteVO {  path: string
   size: number
   block_count: number
   total_lines: number
   modified_at: number
+}
+
+// ---- 大表格域（CSV / TSV / JSONL / 顶层 JSON 数组：记录对齐索引 + 分页读取） ----
+
+/** 表格形态：分隔文本 / 每行一个 JSON 对象 / 顶层 JSON 数组。 */
+export type TableKind = 'csv' | 'jsonl' | 'json_array'
+
+/** 打开表格的请求。 */
+export interface TableOpenReq {
+  path: string
+  encoding?: string | null
+  delimiter?: string | null
+}
+
+/** 表格元信息：形状与规模，不含任何一行正文。 */
+export interface TableMetaVO {
+  path: string
+  kind: TableKind
+  encoding: string
+  /** 分隔符原字符；JSON 形态为空串。 */
+  delimiter: string
+  size: number
+  /** 总记录数（含表头行）。 */
+  total_rows: number
+  total_cols: number
+  header: string[]
+  has_header: boolean
+  block_size: number
+  block_count: number
+  line_ending: string
+  has_bom: boolean
+  modified_at: number
+}
+
+/** 取一页记录。 */
+export interface TablePageReq {
+  path: string
+  start_row: number
+  rows: number
+}
+
+/** 一页记录。 */
+export interface TablePageVO {
+  path: string
+  start_row: number
+  rows: string[][]
+  total_rows: number
+  total_cols: number
+  /** 索引建好后文件被改过。 */
+  stale: boolean
+}
+
+/** 表格内查找请求。 */
+export interface TableFindReq {
+  path: string
+  query: string
+  match_case?: boolean
+  from_row: number
+  limit: number
+}
+
+/** 一处命中。 */
+export interface TableHitVO {
+  row: number
+  col: number
+  text: string
+}
+
+/** 查找结果。 */
+export interface TableFindVO {
+  hits: TableHitVO[]
+  total: number
+  truncated: boolean
+  next_row: number
+  done: boolean
+}
+
+/** 一次改动。 */
+export type TableOp =
+  | { kind: 'set_cell'; row: number; col: number; value: string }
+  | { kind: 'insert_row'; row: number; values: string[] }
+  | { kind: 'delete_row'; row: number }
+  | { kind: 'insert_col'; col: number }
+  | { kind: 'delete_col'; col: number }
+
+/** 写回请求。 */
+export interface TableSaveReq {
+  path: string
+  /** 写到另一个路径（另存为）：源文件不变，新文件承载改动。 */
+  dest_path?: string | null
+  ops: TableOp[]
+  encoding?: string | null
+  delimiter?: string | null
+  backup?: boolean | null
+}
+
+/** 写回结果。 */
+export interface TableSaveVO {
+  path: string
+  changed: number
+  size: number
+  modified_at: number
+  total_rows: number
+  backup_path: string | null
 }
 
 // ---- 表格编辑域（XLSX 原地改 XML，样式与图表保住） ----
@@ -181,6 +283,43 @@ export interface WorkbookVO {
   sheets: SheetVO[]
   /** 含图表 / 透视 / 宏：写回时原样搬运。 */
   has_extra_parts: boolean
+}
+
+/** 工作簿摘要（分页版）：只给表名与行列数，不读单元格。 */
+export interface WorkbookInfoVO {
+  path: string
+  format: string
+  sheets: SheetInfoVO[]
+  has_extra_parts: boolean
+}
+
+/** 一张工作表的摘要。 */
+export interface SheetInfoVO {
+  name: string
+  index: number
+  total_rows: number
+  total_cols: number
+  has_formula: boolean
+}
+
+/** 分页读取工作表的请求。 */
+export interface SheetPageReq {
+  path: string
+  sheet_index: number
+  start_row: number
+  rows: number
+}
+
+/** 分页读取的结果。 */
+export interface SheetPageVO {
+  path: string
+  sheet_index: number
+  sheet_name: string
+  /** 本页的行（每行是若干单元格，行号见单元格的 row 字段）。 */
+  rows: SheetCell[][]
+  total_rows: number
+  total_cols: number
+  truncated: boolean
 }
 
 /** 单元格改动；`value: null` = 清空。 */

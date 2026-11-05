@@ -72,6 +72,8 @@ tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-opener = "2"
+# XLSX 的 sheet XML 拉模式解析：100 万行的工作表 XML 有几百 MB，整块读进内存会 OOM。
+quick-xml = { workspace = true }
 
 # Windows 注册表（specs/17 文件关联）：只在 Windows 链接，非 Windows 走桩。
 [target.'cfg(windows)'.dependencies]

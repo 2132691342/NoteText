@@ -81,6 +81,15 @@
   --nt-h-sidebar-header: calc(30px * var(--nt-vw-scale));
   --nt-h-status: calc(26px * var(--nt-vw-scale));
 
+  /* 滚动条刻度：桌面端要「看得见、也抓得住」。
+     轨道 14px、滑块实占 10px（四周 2px 透明内缩只做视觉居中），
+     比常见的 10px 轨道 / 6px 滑块宽一倍以上——长文档里拖得动。
+     悬停时内缩收到 1px，滑块长到 12px：轨道宽度不变，所以没有布局抖动。 */
+  --nt-scrollbar-size: calc(14px * var(--nt-vw-scale));
+  --nt-scrollbar-size-sm: calc(10px * var(--nt-vw-scale));
+  --nt-scrollbar-inset: calc(2px * var(--nt-vw-scale));
+  --nt-scrollbar-inset-hover: 1px;
+
   /* 图标瓦片：卡片头的方块底。不是可点控件，但同一组尺寸反复出现，
      散成裸像素就会各自漂，收口在这里。 */
   --nt-tile-sm: calc(30px * var(--nt-vw-scale));
@@ -179,6 +188,11 @@
   --nt-border: var(--nt-gray-7);
   --nt-border-strong: var(--nt-gray-6);
 
+  /* 滚动条滑块：灰 5 起手（浅底上要能看见），悬停压深一档，拖动中再深一档。 */
+  --nt-scrollbar-thumb: var(--nt-gray-5);
+  --nt-scrollbar-thumb-hover: var(--nt-gray-4);
+  --nt-scrollbar-thumb-active: var(--nt-gray-3);
+
   /* 墨色四级阶梯，对比度逐个递减但仍可读：
      1 正文 15.4:1 · 2 次要 11.7:1 · 3 三级 8.2:1 · muted 4.7:1（占位/禁用）。
      muted 卡在 AA 边缘：它承载占位符与禁用态，低于 4.5 就真的读不清了。 */
@@ -250,6 +264,11 @@
 
   --nt-border: var(--nt-gray-2);
   --nt-border-strong: var(--nt-gray-3);
+
+  /* 深色底上滑块比浅色底要亮一档才看得见，否则整条轨道等于没有。 */
+  --nt-scrollbar-thumb: var(--nt-gray-4);
+  --nt-scrollbar-thumb-hover: var(--nt-gray-3);
+  --nt-scrollbar-thumb-active: var(--nt-gray-2);
 
   --nt-ink: var(--nt-gray-9);
   --nt-ink-2: var(--nt-gray-6);

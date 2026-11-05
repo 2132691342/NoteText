@@ -36,7 +36,7 @@ App.vue
 │   ├── DocPreview.vue      只读预览：xlsx / csv / 图片 / Markdown / HTML / 文本，含「读不了」的出路卡片
 │   ├── ChunkedViewer.vue   大文件分块视图：块导航 + 单块解锁编辑
 │   ├── HexView.vue         十六进制视图（虚拟滚动，只渲染可视区）
-│   ├── SheetEditor.vue     CSV / TSV 可编辑文本网格（虚拟滚动）
+│   ├── SheetEditor.vue     大表格可编辑网格：CSV / TSV / JSONL / 顶层 JSON 数组（分页取数 + 虚拟滚动）
 │   ├── WorkbookEditor.vue  XLSX / ODS 单元格网格（值与公式可改）
 │   └── Minimap.vue         小地图（canvas 轮廓，虚拟滚动跟随）
 └── StatusBar.vue         状态栏 26px：修改指示 / 光标 / 语言 / 编码 / 行尾 / 缩放
@@ -71,8 +71,8 @@ App.vue
 
 | 分组 | 入口数 | 内容 |
 |---|---|---|
-| 文件 | 18 | 新建 / 打开 / 文件夹 / 最近文件 / 保存系列 / 关闭系列（含其他、左、右、已保存）/ 重命名 / 重新加载 / 草稿管理 / 打印 / 在资源管理器中显示 |
-| 编辑 | 30 | 撤销重做、剪贴板、行操作、大小写、排序去重、缩进、注释、书签系列、光标跳转历史、转到匹配括号 |
+| 文件 | 19 | 新建 / 打开 / 文件夹 / 最近文件 / 保存系列 / 关闭系列（含其他、左、右、已保存）/ 重命名 / 重新加载 / 草稿管理 / 打印 / 在资源管理器中显示 |
+| 编辑 | 31 | 撤销重做、剪贴板、行操作、大小写、排序去重、缩进、注释、书签系列、光标跳转历史、转到匹配括号 |
 | 查找 | 5 | 查找 / 替换 / 下一个 / 上一个 / 在文件中查找 |
 | 视图 | 12 | 缩放、侧栏、状态栏、换行、小地图、分屏、主题、界面语言、全屏 |
 | 编码 | 6 | 当前编码、行尾、转 UTF-8（带 / 不带 BOM）、以指定编码重新打开、编码转换器 |
@@ -225,6 +225,8 @@ CodeEditor.vue
 | `composables/useShellIntent.ts` | 托盘新建 / 外部打开文件（含冷启动拉取与压缩包分流），挂 App 根 |
 | `composables/useClipboardHistory.ts` | 编辑器内复制文本的本地历史 |
 | `composables/useVirtualList.ts` | 大列表的定高虚拟滚动（归档条目表 / 日志 / 目录差异 / 表格网格） |
+| `composables/useTableGrid.ts` | 大表格网格：分页取数、滚动空间压缩、覆盖层编辑 |
+| `composables/useSheetGrid.ts` | 工作簿网格：分页取单元格、改值与公式的覆盖层 |
 | `composables/useCrashGuard.ts` | 每 30 秒把脏标签正文静默快照进草稿库；异常退出后由草稿箱恢复 |
 
 ## 取舍

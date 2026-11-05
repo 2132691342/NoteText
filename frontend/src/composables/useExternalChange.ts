@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { useToastStore } from '@/stores/toast'
 import { api, isDesktop, normalizeError } from '@/api'
 import { doReplaceDoc } from '@/composables/useEditorActions'
-import { getText } from '@/composables/useEditorRegistry'
+import { getText, getTableProvider } from '@/composables/useEditorRegistry'
 import { baseName } from '@/utils'
 
 export function useExternalChange() {
@@ -121,6 +121,9 @@ export function useExternalChange() {
     if (!tab) return
     // 分块标签不重读全文：读块时后端按修改时间报 stale。
     if (tab.chunked) return
+    // 大表格标签：正文在磁盘上，不在编辑器里。外部变更由读页时的 stale 标记提示，
+    // 这里不重读全文——几十万行的 CSV 读进来会卡住界面。
+    if (getTableProvider(tab.id)) return
     if (tab.dirty) {
       // 脏标签不覆盖：用户手里有未保存的修改，替用户做决定就是丢内容。
       toast.warn(t('toast.fileChangedDirty', { name: baseName(path) }))

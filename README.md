@@ -2,7 +2,7 @@
 
 **轻量级 Windows 桌面文本编辑器（2.0.0）。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
 安装包 10MB 以内（CI 有体积门禁）。内置代码编辑、查找替换、12 种编码转换、
-JSON / Diff / 哈希工具箱、Markdown 三态预览、表格编辑、GB 级大文件分块、
+JSON / Diff / 哈希工具箱、Markdown 三态预览、大表格引擎、GB 级大文件分块、
 20 种格式的压缩解压（可写 16 / 只读 4）、批量操作与系统文件关联。
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
@@ -28,6 +28,7 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、表格编辑、GB 级大
 | 配置 / 会话 / 用户数据落在 SQLite | 一次装配贯穿全部功能，备份导出导入是一条链路 | 新增字段只能追加，旧字段留着靠零值兜底 |
 | 压缩全走 Rust 原生库 | 不拉外部进程，行为编译期锁定，长链路测试可跑 | rar / lzh 等专有格式没有内置解压，预览器给出路指引 |
 | 大文件按 1MB 分块、XLSX 原地改 XML | GB 级日志秒开，改表格不丢样式与图表 | 只解锁单块编辑；跨块改写要逐块来 |
+| 表格按记录边界建索引、分页取数 | 1000 万行的 CSV 也能秒开、改单格、保存 | 表格只能整表重写，不能改一半留一半 |
 | 单窗口 + 多标签，不做插件 / 多窗口 / 云同步 | 功能面收得住，会话恢复兑现「关窗再开回到原样」 | 高级需求要靠外部工具 |
 
 ## 能力全景
@@ -51,7 +52,7 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、表格编辑、GB 级大
 | 小地图 | 配置开关；canvas 只画轮廓不画字，虚拟滚动跟随 |
 | 剪贴板历史 | 复制 / 剪切攒 50 条（编辑器事件与命令表都收集），点击回插 |
 | Hex 查看 | 16 字节一行（偏移 / hex / ASCII），只渲染可视区 |
-| 表格与图片预览 | 按扩展名分流 xlsx / xlsm / xls / ods / csv / tsv / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本；CSV 走后端切行，几十 MB 的导出表也能开。Word / PDF / PPT 不做内置渲染，统一给「用系统程序打开」的出路 |
+| 表格与图片预览 | 按扩展名分流 xlsx / xlsm / xls / ods / csv / tsv / jsonl / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本。Word / PDF / PPT 不做内置渲染，统一给「用系统程序打开」的出路 |
 | 批量查找替换 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
 | 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换 / 单条目直接在编辑器里打开）/ 测试 / 分卷合并 / 任务面板；**可写 16 种**：7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ cab / gz / bz2 / zst / xz / lz4 / br；**只读 4 种**（6 个扩展名：rar / lzh（含 lha）/ cpio / ar（含 deb））。双击压缩包直接进浏览浮窗，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗（assets/specs/18） |
@@ -66,10 +67,11 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、表格编辑、GB 级大
 | 会话恢复 | 启动恢复标签 / 光标 / 窗口大小；未保存草稿也恢复 |
 | 托盘与单实例 | 关闭到托盘；二次启动转交文件路径 |
 | 备份 | 导出 / 导入书签、片段、宏、草稿、最近文件 |
-| 大文件分块 | 32MB 以上弹窗选打开方式（普通 / 分块），512MB 以上自动分块，最高 64GB；1MB 块索引 + 逐块解码 + 跳行定位；**只解锁当前块编辑**，写回带字节级乐观锁 + 原子替换（assets/specs/19） |
-| 表格编辑 | CSV / TSV 可编辑网格（虚拟滚动、增删行列、最小引号化写回）；XLSX / ODS 单元格网格**可改值与公式**，写回原地改 XML 所以样式 / 主题 / 图表全保留；两条链路都带表内查找替换 |
+| 大文件分块 | 64MB 以上弹窗选打开方式（普通 / 分块），512MB 以上自动分块，最高 64GB；1MB 块索引 + 逐块解码 + 跳行定位；**只解锁当前块编辑**，写回带字节级乐观锁 + 原子替换（assets/specs/19） |
+| 大表格引擎 | CSV / TSV / JSONL / 顶层 JSON 数组走**记录对齐索引 + 分页取数**：1000 万行秒开、滚到底、Ctrl+G 跳行、改单格、保存；滚动做了空间压缩（1000 万行不撞浏览器的高度上限）；改动存覆盖层，保存时流式重写整个文件，内存占用与文件大小无关（assets/specs/19） |
+| 表格编辑 | CSV / TSV / JSONL 可编辑网格（虚拟滚动、增删行列、最小引号化写回）；XLSX 流式解析 + 单元格网格**可改值与公式**，写回原地改 XML 所以样式 / 主题 / 图表全保留；两条链路都带表内查找替换 |
 | 崩溃恢复 | 脏标签每 30 秒静默快照进草稿库；异常退出后启动提示恢复（assets/specs/19） |
-| 大文件降级 | 超过 32MB 不再整篇塞进编辑器；截断标签一律**拦截写回**（分块标签按块写，各带乐观锁）；CSV / TSV 表格预览单独走切行链路，不受 20MB 二进制预览上限约束 |
+| 大文件降级 | 超过 64MB 不再整篇塞进编辑器；截断标签一律**拦截写回**（分块标签按块写，各带乐观锁）；表格走自己的索引链路，不受 20MB 二进制预览上限约束 |
 
 ## 快速开始
 
@@ -109,7 +111,7 @@ npm --prefix frontend run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
 ```
 
 ## 项目结构
@@ -119,7 +121,7 @@ NoteText/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── commands/          # Tauri invoke 入口（薄）
-│   │   ├── service/           # 业务编排：file / encoding / file_ops / big_file / sheet / editor / tools / userdata / batch / session / archive
+│   │   ├── service/           # 业务编排：file / encoding / file_ops / big_file / sheet / table / editor / tools / userdata / batch / session / archive
 │   │   ├── repo/              # 一张表一个 repo
 │   │   ├── domain/            # DO / REQ / VO（四层禁止内联结构体）
 │   │   ├── db/                # SQLite 打开 + 迁移（WAL）
@@ -129,13 +131,13 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id / text
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/                   # 集成测试：chain_*.rs 每域一条长链路（编译 lib 而不链接 WebView）
+│   └── tests/                   # 集成测试：chain_*.rs 每域几条长链路（编译 lib 而不链接 WebView）
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
 │       ├── components/        # layout / editor / panels / dialogs / common
-│       ├── composables/       # 命令 / 快操作 / 主题 / 语言 / 退出守卫 / 壳意图 / 崩溃快照
-│       ├── stores/            # Pinia：settings / editor / fileTree / commands / dialogs / toast
+│       ├── composables/       # 命令 / 快操作 / 主题 / 语言 / 退出守卫 / 壳意图 / 崩溃快照 / 表格网格
+│       ├── stores/            # Pinia：settings / editor / fileTree / commands / dialogs / toast / archive / findResults
 │       ├── locales/           # zh-CN / en
 │       ├── utils/             # 纯函数（格式互转 / glob / 剪贴板 / 错误翻译）
 │       └── *.css              # themes / base / ep-theme / content / print 五个 CSS
@@ -179,7 +181,7 @@ NoteText/
 | [assets/specs/00](assets/specs/00-architecture.md) | 总架构：分层、启动时序、通信、状态归属、排障速查 |
 | [assets/specs/01](assets/specs/01-runtime-and-paths.md) | 运行时与路径：数据目录、单实例、日志 |
 | [assets/specs/02](assets/specs/02-database.md) | 数据库：表结构、WAL、迁移 |
-| [assets/specs/03](assets/specs/03-config.md) | 配置：45 个配置项、派生量、回写时机 |
+| [assets/specs/03](assets/specs/03-config.md) | 配置：46 个配置项、派生量、回写时机 |
 | [assets/specs/04](assets/specs/04-desktop-shell.md) | 桌面壳：托盘、关闭策略、退出契约 |
 | [assets/specs/05](assets/specs/05-file-domain.md) | 文件域：读写、编码探测、表格预览、大文件降级 |
 | [assets/specs/06](assets/specs/06-editor-domain.md) | 编辑器域：CodeMirror 装配、语言加载、形态分流 |
@@ -188,14 +190,14 @@ NoteText/
 | [assets/specs/09](assets/specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
 | [assets/specs/10](assets/specs/10-session-restore.md) | 会话恢复 |
 | [assets/specs/11](assets/specs/11-visual-tokens.md) | 视觉令牌与主题 |
-| [assets/specs/12](assets/specs/12-testing.md) | 测试与验证：12 条长链路、七组、本地与 CI 门禁 |
+| [assets/specs/12](assets/specs/12-testing.md) | 测试与验证：15 条长链路 + 2 条模块内单测、七组、本地与 CI 门禁 |
 | [assets/specs/13](assets/specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
-| [assets/specs/14](assets/specs/14-api-contract.md) | invoke 命令契约（117 个命令对照表） |
+| [assets/specs/14](assets/specs/14-api-contract.md) | invoke 命令契约（126 个命令对照表） |
 | [assets/specs/15](assets/specs/15-error-codes.md) | 错误码分段与处置动作 |
 | [assets/specs/16](assets/specs/16-page-structure.md) | 页面与组件地图 |
 | [assets/specs/17](assets/specs/17-deployment.md) | 构建与分发 |
 | [assets/specs/18](assets/specs/18-archive.md) | 压缩子系统：20 种格式、任务队列、安全底线 |
-| [assets/specs/19](assets/specs/19-large-files-and-sheet-edit.md) | 大文件分块、表格编辑、崩溃恢复 |
+| [assets/specs/19](assets/specs/19-large-files-and-sheet-edit.md) | 大文件分块、大表格引擎、XLSX 单元格补丁、崩溃恢复 |
 | [assets/docs/faq](assets/docs/faq.md) | 开发排障速查 |
 
 每篇规格只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。
@@ -203,13 +205,14 @@ NoteText/
 
 ## 测试
 
-12 个集成测试按域拆成 `src-tauri/tests/chain_*.rs` 多个文件，按七组排列
-（文件 / 会话 / 批量 / 备份 / 压缩 / 表格编辑 / 系统关联；系统关联一条仅 Windows）。
+15 条集成测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件，按七组排列
+（文件 / 会话与备份 / 批量 / 大表格 / 表格编辑 / 压缩 / 系统关联；系统关联一条仅 Windows）。
+另有 2 条模块内单测守分块解码的静默损坏。
 **每个测试函数名就是它守护的那件坏事**，失败时报文直接指出坏在哪。
-全量约 1 秒；同一域的相近故事合并成一条，一条测试就是一条完整的用户故事。
+全量约 1 秒；一条测试就是一条完整的用户故事，改一个小功能只跑一个域。
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
 cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- archive
 ```
 
@@ -219,11 +222,12 @@ cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- archive
 | 分组 | 守护的坏事（摘） |
 |---|---|
 | 文件 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；GBK CSV 在文本视图与表格预览里解出同一份汉字；原子写不留临时文件；重命名拒绝覆盖 / 成环 / 路径逃逸 |
-| 会话 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null` |
+| 大文件 | 15MB 日志逐块拼回原文；行号定位落对块；外部修改报 stale；单块写不动前后字节；过期基线被拒；GB18030 文件的命中行号不错位 |
+| 会话与备份 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null`；五个用户数据表导出后导得回；不在备份里的本机数据不被抹掉 |
 | 批量 | 扫描阶段不落盘、应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
-| 备份 | 五个用户数据表导出后导得回；不在备份里的本机数据不被抹掉 |
-| 压缩 | 16 种可写格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
-| 表格编辑 | 改单元格保住样式表与未编辑工作表；共享串解析、跨表查找、新增行都正确 |
+| 大表格 | 5 万行 CSV 的记录数 / 行下标 / 命中行号都对得上；引号字段里的换行不被切断；GB18030 的汉字不被误判成分隔符；跨行的 JSON 数组元素不被切碎；改一格保存后其余字节逐字节不变 |
+| 表格编辑 | 分页读只解析要的行；改单元格保住样式表与未编辑工作表；共享串解析、跨表查找、新增行都正确 |
+| 压缩 | 16 种可写格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；只读格式拒绝创建且不留半文件；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
 | 系统关联 | 关联注册写对注册表三件套；注销不留悬空默认、不误伤另一组 |
 
 ## 许可证

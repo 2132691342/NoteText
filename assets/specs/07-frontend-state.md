@@ -28,7 +28,7 @@ interface Command {
 
 反过来做（先在菜单写死一个动作）就会出现「菜单能用的功能按键按不了」。
 
-当前 108 条命令：`file` 18 / `edit` 30 / `search` 5 / `view` 12 /
+当前 110 条命令：`file` 19 / `edit` 31 / `search` 5 / `view` 12 /
 `encoding` 6 / `language` 2 / `archive` 6 / `tools` 24 / `compare` 3 / `help` 2。
 `settings` 与 `help` 两组不进下拉（它们是路由目标，渲染成菜单条右侧入口）。
 

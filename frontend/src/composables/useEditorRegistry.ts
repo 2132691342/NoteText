@@ -59,6 +59,57 @@ export interface TextProvider {
 const textProviders = new Map<number, TextProvider>()
 const providerBaselines = new Map<number, string>()
 
+// ---- 表格适配器（大表格：正文不在内存里，保存走专用链路） ----
+//
+// 1000 万行的 CSV 没有「整篇正文」这回事：getText 会撑爆内存。
+// 这类标签注册表格适配器，保存时走后端的覆盖层写回（流式重写整个文件）。
+
+/** 表格适配器：改动存在覆盖层里，写盘由后端流式完成。 */
+export interface TableProvider {
+  /** 把改动写回磁盘。返回 true = 写盘成功。 */
+  save(): Promise<boolean>
+  /** 写到新路径（另存为）：源文件不动。返回新路径；null = 用户取消。 */
+  saveAs(): Promise<string | null>
+  /** 当前是否有未保存的改动。 */
+  isDirty(): boolean
+}
+
+const tableProviders = new Map<number, TableProvider>()
+
+/** 表格网格的焦点请求：表格没有 CodeMirror 视图，Ctrl+F / Ctrl+G 要聚焦网格自己的输入框。 */
+type TableFocusWhat = 'find' | 'goto'
+const tableFocusRequests = new Map<number, (what: TableFocusWhat) => void>()
+
+/** 注册一个 tab 的表格适配器。 */
+export function registerTableProvider(tabId: number, provider: TableProvider) {
+  tableProviders.set(tabId, provider)
+  bumpDocVersion(tabId)
+}
+
+/** 注册表格网格的焦点回调（Ctrl+F / Ctrl+G 用）。 */
+export function registerTableFocus(tabId: number, fn: (what: TableFocusWhat) => void) {
+  tableFocusRequests.set(tabId, fn)
+}
+
+/** 请求某个表格标签聚焦它的查找框或跳行框。返回 true = 已处理。 */
+export function focusTableFind(tabId: number, what: TableFocusWhat = 'find'): boolean {
+  const fn = tableFocusRequests.get(tabId)
+  if (!fn) return false
+  fn(what)
+  return true
+}
+
+/** 卸载表格适配器。 */
+export function unregisterTableProvider(tabId: number) {
+  tableProviders.delete(tabId)
+  tableFocusRequests.delete(tabId)
+}
+
+/** 取某个 tab 的表格适配器。 */
+export function getTableProvider(tabId: number): TableProvider | undefined {
+  return tableProviders.get(tabId)
+}
+
 /** 注册一个 tab 的文本适配器，initialText 即保存基线。 */
 export function registerTextProvider(tabId: number, provider: TextProvider, initialText: string) {
   textProviders.set(tabId, provider)
@@ -109,7 +160,6 @@ export function consumePendingContent(tabId: number): string | null {
 export function get(tabId: number): EditorView | undefined {
   return entries.get(tabId)?.view
 }
-
 /** 取某个 tab 的全文（编辑器视图或文本适配器）。 */
 export function getText(tabId: number): string {
   const e = entries.get(tabId)
@@ -173,6 +223,8 @@ export function isDirty(tabId: number): boolean {
   if (e) return !sameDoc(e.view.state.doc, e.baseline)
   const p = textProviders.get(tabId)
   if (p) return p.getText() !== (providerBaselines.get(tabId) ?? '')
+  const t = tableProviders.get(tabId)
+  if (t) return t.isDirty()
   return false
 }
 

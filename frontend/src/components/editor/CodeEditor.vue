@@ -1086,6 +1086,9 @@ if (marksRendererMine.value) {
 .nt-code-editor :deep(.cm-scroller) {
   line-height: 1.55;
   font-family: var(--nt-editor-font, var(--nt-font-editor));
+  /* 编辑器正文是全站最长的可滚区域，滚动条按全站最宽的一档走 */
+  scrollbar-width: auto;
+  scrollbar-color: var(--nt-scrollbar-thumb) transparent;
 }
 
 .nt-code-editor :deep(.cm-gutters) {

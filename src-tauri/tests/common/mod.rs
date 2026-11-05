@@ -7,9 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use notetext_lib::app::bootstrap::{self, AppState};
-use notetext_lib::domain::archive::{
-    AddEntriesReq, CreateArchiveReq, DeleteEntriesReq, ExtractArchiveReq, TestArchiveReq,
-};
+use notetext_lib::domain::archive::{CreateArchiveReq, ExtractArchiveReq};
 use notetext_lib::domain::file::{FileContentVO, ReadMode};
 use notetext_lib::domain::session::TabDO;
 use notetext_lib::pkg::paths::AppPaths;
@@ -173,10 +171,6 @@ pub fn build_ar(data: &[u8], name: &str) -> Vec<u8> {
     }
     ar
 }
-
-// 仅用于消掉未使用导入告警：拆分后部分 REQ 类型当前未被构造器直接引用。
-#[allow(unused_imports)]
-use {AddEntriesReq as _, DeleteEntriesReq as _, TestArchiveReq as _};
 
 // ---------- 表格编辑样本：一个带样式的极小 xlsx ----------
 

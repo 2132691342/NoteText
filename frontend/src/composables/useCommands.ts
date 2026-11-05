@@ -9,7 +9,7 @@ import { useToastStore } from '@/stores/toast'
 import { useI18n } from 'vue-i18n'
 import { setLocale } from '@/i18n'
 import { api, normalizeError } from '@/api'
-import { getText, getSelection, focusedTabId, commitBaseline } from '@/composables/useEditorRegistry'
+import { getText, getSelection, focusedTabId, commitBaseline, focusTableFind } from '@/composables/useEditorRegistry'
 import {
   doUndo,
   doRedo,
@@ -574,7 +574,12 @@ export function registerCommands() {
       group: 'search',
       labelKey: 'menu.find',
       key: 'Control+F',
-      run: () => dialogs.open('find', selectionSeed()),
+      run: () => {
+        // 大表格有自己的查找栏（正文不在编辑器里），先让它接住。
+        const id = editor.activeId
+        if (id != null && focusTableFind(id)) return
+        dialogs.open('find', selectionSeed())
+      },
     },
     {
       id: 'edit.replace',
@@ -614,7 +619,12 @@ export function registerCommands() {
       labelKey: 'menu.gotoLine',
       key: 'Control+G',
       enabled: () => hasTab(),
-      run: () => dialogs.open('gotoLine'),
+      run: () => {
+        // 大表格有自己的跳行框（正文不在编辑器里），先让它接住。
+        const id = editor.activeId
+        if (id != null && focusTableFind(id, 'goto')) return
+        dialogs.open('gotoLine')
+      },
     },
     {
       id: 'edit.toggleComment',

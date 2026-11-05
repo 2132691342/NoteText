@@ -1,13 +1,15 @@
-//! 表格读写：XLSX / ODS 的打开与「原地改 XML」写回。
-//! 只替换目标表命中的 `<c>` 元素，其余部件字节级原样搬回，样式与图表不丢。
+//! 表格服务：XLSX 的打开、分页读取、查找与写回。
+//! 分三块：容器（zip 部件定位）、流式解析（sheet XML 拉模式）、写回（原地改 XML）。
+
+pub mod stream;
 
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
 use crate::domain::sheet::{
-    CellEdit, CellValue, SheetCell, SheetFindReq, SheetFindVO, SheetHit, SheetSaveReq, SheetSaveVO,
-    SheetVO, WorkbookOpenReq, WorkbookVO,
+    CellEdit, CellValue, SheetCell, SheetFindReq, SheetFindVO, SheetHit, SheetInfoVO, SheetPageReq,
+    SheetPageVO, SheetSaveReq, SheetSaveVO, SheetVO, WorkbookInfoVO, WorkbookOpenReq, WorkbookVO,
 };
 use crate::pkg::error::{codes, AppError, AppResult};
 
@@ -28,7 +30,7 @@ impl Default for SheetService {
 
 impl SheetService {
     pub fn new() -> Self {
-        Self
+        SheetService
     }
 
     /// 打开工作簿：读全部工作表的单元格值。
@@ -86,6 +88,154 @@ impl SheetService {
             format: "xlsx".into(),
             sheets,
             has_extra_parts: extra_parts,
+        })
+    }
+
+    /// 打开工作簿（分页版）：只给工作表摘要，不读单元格。
+    ///
+    /// 整块读工作簿在百万行的工作表上会吃掉几百 MB 内存，
+    /// 而用户开机只要看到「有哪些表、多少行」就够了。
+    pub fn info(&self, req: &WorkbookOpenReq) -> AppResult<WorkbookInfoVO> {
+        let p = Path::new(&req.path);
+        if !p.is_file() {
+            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
+                .with_detail(format!("路径：{}", req.path)));
+        }
+        let bytes = std::fs::read(p)
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
+        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes))
+            .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))?;
+        let shared = read_shared_strings(&mut zip)?;
+        let sheets_meta = read_workbook_sheets(&mut zip)?;
+        if sheets_meta.is_empty() {
+            return Err(AppError::new(codes::DATA_INVALID, "这个工作簿里没有工作表"));
+        }
+
+        let mut extra_parts = false;
+        for i in 0..zip.len() {
+            let name = zip
+                .by_index(i)
+                .map(|f| f.name().to_string())
+                .unwrap_or_default();
+            if name.starts_with("xl/charts/")
+                || name.starts_with("xl/drawings/")
+                || name.contains("pivot")
+                || name.starts_with("xl/media/")
+            {
+                extra_parts = true;
+                break;
+            }
+        }
+
+        let mut sheets = Vec::with_capacity(sheets_meta.len());
+        for (i, meta) in sheets_meta.iter().enumerate() {
+            let xml = read_zip_entry_bytes(&mut zip, &meta.part)?;
+            let mut total_rows = 0usize;
+            let mut total_cols = 0usize;
+            let mut has_formula = false;
+            let mut count = 0usize;
+            crate::service::sheet::stream::parse_sheet_streaming(&xml, &shared, None, |row| {
+                count += 1;
+                total_rows = total_rows.max(row.row as usize + 1);
+                for c in &row.cells {
+                    total_cols = total_cols.max(c.col as usize + 1);
+                    if matches!(c.value, CellValue::Formula { .. }) {
+                        has_formula = true;
+                    }
+                }
+                true
+            })
+            .map_err(|e| {
+                AppError::wrap(codes::DATA_INVALID, "工作表内容不是有效 XML", e)
+                    .with_detail(format!("工作表：{}", meta.name))
+            })?;
+            let _ = count;
+            sheets.push(SheetInfoVO {
+                name: meta.name.clone(),
+                index: i,
+                total_rows,
+                total_cols,
+                has_formula,
+            });
+        }
+
+        Ok(WorkbookInfoVO {
+            path: req.path.clone(),
+            format: "xlsx".into(),
+            sheets,
+            has_extra_parts: extra_parts,
+        })
+    }
+
+    /// 分页读取一张工作表：只解析需要的那些行。
+    ///
+    /// 整块解析（`xml.split("<row")`）在百万行的工作表上要吃掉几百 MB 内存。
+    /// 拉模式解析一次只持有一行，内存占用与表大小无关。
+    pub fn page(&self, req: &SheetPageReq) -> AppResult<SheetPageVO> {
+        let p = Path::new(&req.path);
+        if !p.is_file() {
+            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
+                .with_detail(format!("路径：{}", req.path)));
+        }
+        let bytes = std::fs::read(p)
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
+        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes))
+            .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))?;
+        let shared = read_shared_strings(&mut zip)?;
+        let sheets_meta = read_workbook_sheets(&mut zip)?;
+        let meta = sheets_meta.get(req.sheet_index).ok_or_else(|| {
+            AppError::new(
+                codes::DATA_INVALID,
+                format!(
+                    "工作表下标超出范围（0..={}）",
+                    sheets_meta.len().saturating_sub(1)
+                ),
+            )
+        })?;
+        let xml = read_zip_entry_bytes(&mut zip, &meta.part)?;
+
+        let want = req.rows.max(1);
+        let start = req.start_row.min(u32::MAX as usize) as u32;
+        let end_row = start.saturating_add(want as u32);
+        let mut rows: Vec<Vec<SheetCell>> = Vec::new();
+        let mut total_rows = 0usize;
+        let mut total_cols = 0usize;
+        let mut truncated = false;
+
+        // 扫全表拿总行数，但只构造窗口内的单元格：
+        // 内存占用是 O(一行)，不是 O(表)。
+        crate::service::sheet::stream::parse_sheet_streaming(
+            &xml,
+            &shared,
+            Some((start, end_row)),
+            |row| {
+                total_rows = total_rows.max(row.row as usize + 1);
+                if row.row >= start && row.row < end_row {
+                    for c in &row.cells {
+                        total_cols = total_cols.max(c.col as usize + 1);
+                    }
+                    rows.push(row.cells);
+                }
+                true
+            },
+        )
+        .map_err(|e| {
+            AppError::wrap(codes::DATA_INVALID, "工作表内容不是有效 XML", e)
+                .with_detail(format!("工作表：{}", meta.name))
+        })?;
+
+        if rows.len() < want && total_rows > end_row as usize {
+            truncated = true;
+        }
+
+        Ok(SheetPageVO {
+            path: req.path.clone(),
+            sheet_index: req.sheet_index,
+            sheet_name: meta.name.clone(),
+            rows,
+            total_rows,
+            total_cols,
+            truncated,
         })
     }
 
@@ -376,7 +526,7 @@ fn build_shared_strings(items: &[String]) -> Vec<u8> {
     s.into_bytes()
 }
 
-/// 解析一张工作表 XML。
+/// 解析一张工作表 XML（整块解析：表头 / 合并 / 列宽这些一次性信息用它）。
 struct ParsedSheet {
     extent: Option<[u32; 4]>,
     cells: Vec<SheetCell>,
@@ -785,6 +935,20 @@ fn xml_unescape(s: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&amp;", "&")
+}
+
+/// 读 zip 里的一个条目为字节。
+fn read_zip_entry_bytes(
+    zip: &mut zip::ZipArchive<Cursor<&Vec<u8>>>,
+    name: &str,
+) -> AppResult<Vec<u8>> {
+    let mut f = zip
+        .by_name(name)
+        .map_err(|e| AppError::wrap(codes::DATA_INVALID, format!("工作表部件缺失：{name}"), e))?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf)
+        .map_err(|e| AppError::wrap(codes::IO_FAILED, "读工作表部件失败", e))?;
+    Ok(buf)
 }
 
 /// 读 zip 里的一个条目为字符串。

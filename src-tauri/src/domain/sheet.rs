@@ -85,6 +85,56 @@ pub struct WorkbookOpenReq {
     pub path: String,
 }
 
+/// 打开工作簿的结果（分页）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkbookInfoVO {
+    pub path: String,
+    pub format: String,
+    /// 工作表摘要：名字与行列范围。
+    pub sheets: Vec<SheetInfoVO>,
+    /// 是否存在工作表以外的部件（图表 / 透视 / 宏）：写回时要原样搬过去。
+    pub has_extra_parts: bool,
+}
+
+/// 一张工作表的摘要。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SheetInfoVO {
+    pub name: String,
+    pub index: usize,
+    /// 总行数（含表头行）。
+    pub total_rows: usize,
+    /// 总列数。
+    pub total_cols: usize,
+    /// 是否包含公式。
+    pub has_formula: bool,
+}
+
+/// 分页读取工作表的请求。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SheetPageReq {
+    pub path: String,
+    /// 工作表下标。
+    pub sheet_index: usize,
+    /// 起始行（0 基）。
+    pub start_row: usize,
+    /// 取多少行。
+    pub rows: usize,
+}
+
+/// 分页读取的结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SheetPageVO {
+    pub path: String,
+    pub sheet_index: usize,
+    pub sheet_name: String,
+    /// 本页的行号（0 基）。
+    pub rows: Vec<Vec<SheetCell>>,
+    pub total_rows: usize,
+    pub total_cols: usize,
+    /// 是否因为达到单元格上限而被截断。
+    pub truncated: bool,
+}
+
 /// 单元格改动：只表达「哪个位置变成了什么」，不表达删除以外的一切。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CellEdit {

@@ -11,8 +11,7 @@ use crate::domain::batch::{
 use crate::pkg::error::AppResult;
 
 /// 扫描目录里的匹配项：只报不改。
-/// 标 async 的理由与归档一致：Tauri 的同步命令在**主线程**执行，
-/// 一次目录扫描（几百个文件读盘 + 逐行匹配）会把整个窗口冻住几秒。
+/// 标 async 是因为同步命令在**主线程**执行，几百个文件的读盘 + 逐行匹配会冻窗。
 #[tauri::command(async)]
 pub fn batch_scan_find(state: State<'_, AppState>, req: BatchFindReq) -> AppResult<BatchFindVO> {
     state.services.batch.scan_find(&req)

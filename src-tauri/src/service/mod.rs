@@ -10,6 +10,7 @@ pub mod file;
 pub mod file_ops;
 pub mod session;
 pub mod sheet;
+pub mod table;
 pub mod tools;
 pub mod userdata;
 
@@ -24,6 +25,7 @@ use crate::service::file::FileService;
 use crate::service::file_ops::FileOpsService;
 use crate::service::session::SessionService;
 use crate::service::sheet::SheetService;
+use crate::service::table::TableService;
 use crate::service::tools::ToolsService;
 use crate::service::userdata::UserDataService;
 
@@ -40,6 +42,7 @@ pub struct Services {
     pub batch: Arc<BatchService>,
     pub archive: Arc<ArchiveService>,
     pub sheet: Arc<SheetService>,
+    pub table: Arc<TableService>,
 }
 
 impl Services {
@@ -54,6 +57,7 @@ impl Services {
             batch: Arc::new(BatchService::new(db.clone())),
             archive: Arc::new(ArchiveService::new()),
             sheet: Arc::new(SheetService::new()),
+            table: Arc::new(TableService::new()),
         }
     }
 

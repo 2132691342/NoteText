@@ -287,10 +287,10 @@ impl BigFileService {
         })
     }
 
-    /// 逐块流式查找：不整文入内存，一轮最多读 `budget` 字节。
+    /// 整文流式查找：按块扫，命中给全局行列。
     ///
-    /// 起点是字节偏移而不是行号：分页视图的「查找下一个」用它接续上一轮，
-    /// 不必每轮重扫文件头。命中行的行列按块内解码后的字符算，与编辑器读数一致。
+    /// 行列号取块索引里的块首行，不重扫整段；不区分大小写时整块只小写化一次。
+    /// 按整份文件的编码解码，GBK / UTF-16 的位置才对。
     pub fn find(&self, req: &BigFileFindReq) -> AppResult<BigFileFindVO> {
         if req.query.is_empty() {
             return Ok(BigFileFindVO {
@@ -302,7 +302,6 @@ impl BigFileService {
         }
         let index = self.index_of(&req.path)?;
         let size = fs::metadata(&req.path)?.len();
-        let start = req.from_offset.min(size);
         let budget = req.budget.max(256 * 1024);
         let limit = req.limit.clamp(1, 5000);
 
@@ -311,91 +310,87 @@ impl BigFileService {
         } else {
             req.query.to_lowercase()
         };
-        // 块边界会把匹配词切成两半：每轮多读 needle 那么长的重叠区。
-        let overlap = req.query.len().saturating_sub(1) as u64;
-        let line_mode = index.encoding != "utf-16le" && index.encoding != "utf-16be";
+        let needle_bytes = needle.as_bytes().to_vec();
 
-        let base_line = self.line_at_offset(&index, start);
+        // 起始块：from_offset 落在哪一块。
+        let start_block = index
+            .blocks
+            .partition_point(|b| b.offset + b.byte_len <= req.from_offset);
+
+        let mut hits: Vec<BigFileHitVO> = Vec::new();
+        let mut read_total = 0u64;
+        let mut truncated = false;
+        let mut next_offset = req.from_offset;
+
+        'outer: for b in index.blocks.iter().skip(start_block) {
+            if read_total >= budget {
+                break;
+            }
+            read_total += b.byte_len;
+
+            // 读这块并按整份文件的编码解码。
+            let mut f = fs::File::open(&req.path)
+                .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用或已移走", e))?;
+            f.seek(SeekFrom::Start(b.offset))?;
+            let mut bytes = vec![0u8; b.byte_len as usize];
+            f.read_exact(&mut bytes)?;
+            let (_, body) = encoding::strip_bom(&bytes, &index.encoding);
+            let text = match encoding::decode(body, &index.encoding) {
+                Ok(t) => t,
+                Err(_) => String::from_utf8_lossy(body).into_owned(),
+            };
+            // 检索用的文本：不区分大小写时整块小写化一次。
+            let hay = if req.match_case {
+                text.clone()
+            } else {
+                text.to_lowercase()
+            };
+
+            // 换行位置：算一次，供所有命中二分查行号。
+            let line_starts = line_start_positions(&text);
+
+            // 命中位置（文本字节偏移）。
+            let mut from = 0usize;
+            while let Some(rel) = hay[from..].find(&needle) {
+                let at = from + rel;
+                from = at + needle_bytes.len().max(1);
+
+                // 行号：二分查命中落在第几行，不重数整块。
+                let line_idx = line_starts.partition_point(|&p| p <= at).saturating_sub(1);
+                let line_start = line_starts[line_idx];
+                let line_end = text[line_start..]
+                    .find('\n')
+                    .map(|i| line_start + i)
+                    .unwrap_or(text.len());
+                let end = at + req.query.len().min(text.len() - at);
+                if req.whole_word {
+                    let before = text[line_start..at].chars().next_back();
+                    let after = text[end..].chars().next();
+                    if before.is_some_and(is_word_char) || after.is_some_and(is_word_char) {
+                        continue;
+                    }
+                }
+                hits.push(BigFileHitVO {
+                    line: b.line_start + line_idx,
+                    col: text[line_start..at].chars().count() + 1,
+                    text: clip_line(&text[line_start..line_end]),
+                });
+            }
+
+            // 整块扫完再停：块内的命中不丢（否则这一块尾部的命中会被跳过）。
+            next_offset = b.offset + b.byte_len;
+            if hits.len() >= limit {
+                truncated = true;
+                break 'outer;
+            }
+        }
+
+        // 扫描期间文件被改过：命中位置不可信，直接让人重新打开。
         let mtime_ms = fs::metadata(&req.path)
             .ok()
             .and_then(|m| m.modified().ok())
             .map(|t| mtime_ms_of(Some(t)))
             .unwrap_or(index.mtime_ms);
-
-        let mut file = fs::File::open(&req.path)
-            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用或已移走", e))?;
-
-        let mut hits: Vec<BigFileHitVO> = Vec::new();
-        let mut read_total = 0u64;
-        let mut pos = start;
-        let mut line_no = base_line;
-        let mut truncated = false;
-        let mut buf = vec![0u8; 256 * 1024];
-
-        'outer: while pos < size && read_total < budget {
-            let want = (size - pos).min(buf.len() as u64);
-            file.seek(SeekFrom::Start(pos))?;
-            file.read_exact(&mut buf[..want as usize])?;
-            read_total += want;
-
-            // 重叠区只用于匹配，不推进 pos：否则同一段会被统计两次行号。
-            let tail_len = overlap.min(size - (pos + want));
-            let mut region_bytes = Vec::with_capacity((want + tail_len) as usize);
-            region_bytes.extend_from_slice(&buf[..want as usize]);
-            if tail_len > 0 {
-                let mut extra = vec![0u8; tail_len as usize];
-                file.read_exact(&mut extra)?;
-                region_bytes.extend_from_slice(&extra);
-            }
-            let region = if line_mode {
-                String::from_utf8_lossy(&region_bytes).into_owned()
-            } else {
-                // UTF-16 走块解码器：直接按 2 字节码元解，跨块不会拆字。
-                let units: Vec<u16> = region_bytes
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                    .collect();
-                String::from_utf16_lossy(&units)
-            };
-
-            let mut from = 0usize;
-            while let Some(rel) = find_in(&region, &needle, req.match_case, from) {
-                // 命中起点已经落在消费区之外（重叠区里）：留给下一轮，避免重复。
-                if rel as u64 >= want {
-                    break;
-                }
-                let line_start = region[..rel].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                let line_end = region[rel..]
-                    .find('\n')
-                    .map(|i| rel + i)
-                    .unwrap_or(region.len());
-                let end = rel + req.query.len().min(region.len() - rel);
-                if req.whole_word {
-                    let before = region[line_start..rel].chars().next_back();
-                    let after = region[end..].chars().next();
-                    if before.is_some_and(is_word_char) || after.is_some_and(is_word_char) {
-                        from = rel + 1;
-                        continue;
-                    }
-                }
-                hits.push(BigFileHitVO {
-                    line: line_no + region[..rel].matches('\n').count(),
-                    col: region[line_start..rel].chars().count() + 1,
-                    text: clip_line(&region[line_start..line_end]),
-                });
-                if hits.len() >= limit {
-                    truncated = true;
-                    break 'outer;
-                }
-                from = rel + req.query.len().max(1);
-            }
-
-            line_no += region[..want as usize].matches('\n').count();
-            pos += want;
-        }
-
-        let next_offset = pos.min(size);
-        // 扫描期间文件被改过：命中位置不可信，直接让人重新打开。
         if mtime_ms != index.mtime_ms {
             return Err(AppError::new(
                 codes::FILE_STALE,
@@ -408,15 +403,6 @@ impl BigFileService {
             has_more: next_offset < size && !truncated,
             truncated,
         })
-    }
-
-    /// 字节偏移所在的全局行号：块索引二分定位，取该块的起始行。
-    fn line_at_offset(&self, index: &BlockIndex, offset: u64) -> usize {
-        let idx = index
-            .blocks
-            .partition_point(|b| b.offset <= offset)
-            .saturating_sub(1);
-        index.blocks.get(idx).map(|b| b.line_start).unwrap_or(1)
     }
 
     /// 用户取消：置取消位，扫描线程在下一个检查点返回。
@@ -476,8 +462,8 @@ impl BigFileService {
 
     /// 顺序扫描建索引。块边界落在换行字节上；扫描途中检查取消位。
     ///
-    /// 找换行走 `memchr` / `memmem`（SIMD），比逐字节比较快一个量级。
-    /// UTF-16 的换行是两字节序列，跨读缓冲区时留尾巴接续，不切坏码元。
+    /// 找换行走 `memchr` / `memmem`（SIMD）。UTF-16 的换行是两字节序列，
+    /// 跨读缓冲区时留尾巴接续，不切坏码元。
     fn scan(
         &self,
         path: &Path,
@@ -611,43 +597,18 @@ fn find_pattern(hay: &[u8], pattern: &[u8]) -> Option<usize> {
     }
 }
 
-/// 从字节位置 `from` 开始查找 `needle`；不区分大小写时两侧转小写后做字节查找。
-fn find_in(hay: &str, needle: &str, match_case: bool, from: usize) -> Option<usize> {
-    if from >= hay.len() || hay.len() < needle.len() {
-        return None;
-    }
-    if match_case {
-        return hay[from..].find(needle).map(|i| i + from);
-    }
-    let lower = hay.to_lowercase();
-    if lower.len() == hay.len() {
-        return lower[from..].find(needle).map(|i| i + from);
-    }
-    // 长度变了：按字符逐个比对，返回的仍是原串的字节偏移。
-    let hay_chars: Vec<(usize, char)> = hay.char_indices().collect();
-    let want: Vec<char> = needle.chars().collect();
-    if want.is_empty() {
-        return None;
-    }
-    let start_char = hay[..from].chars().count();
-    for ci in start_char..hay_chars.len() {
-        if ci + want.len() > hay_chars.len() {
-            break;
-        }
-        let mut ok = true;
-        for (k, w) in want.iter().enumerate() {
-            let c = hay_chars[ci + k].1;
-            let lowered = c.to_lowercase().next().unwrap_or(c);
-            if lowered != *w && c != *w {
-                ok = false;
-                break;
-            }
-        }
-        if ok {
-            return Some(hay_chars[ci].0);
+/// 每一行的起始字节偏移（含第 0 行）。
+///
+/// 找命中时用它二分出行号：不必为每条命中重数一遍换行。
+fn line_start_positions(text: &str) -> Vec<usize> {
+    let mut v = Vec::with_capacity(text.len() / 32 + 1);
+    v.push(0usize);
+    for (i, ch) in text.char_indices() {
+        if ch == '\n' {
+            v.push(i + 1);
         }
     }
-    None
+    v
 }
 
 /// 词边界判定：字母数字下划线算词内字符，`whole_word` 命中要求两侧都不在词内。

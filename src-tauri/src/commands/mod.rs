@@ -12,6 +12,7 @@ pub mod file_ops;
 pub mod session;
 pub mod sheet;
 pub mod system;
+pub mod table;
 pub mod tools;
 pub mod userdata;
 pub mod window;
@@ -126,9 +127,19 @@ macro_rules! command_handlers {
             commands::session::remember_window,
             commands::session::mark_clean_exit,
             // 表格（XLSX 原地改 XML，样式与图表保住）
+            commands::sheet::workbook_info,
+            commands::sheet::sheet_page,
             commands::sheet::open_workbook,
             commands::sheet::save_workbook,
             commands::sheet::find_in_workbook,
+            // 大表格（CSV / TSV / JSONL：记录对齐索引 + 分页读取 + 流式写回）
+            commands::table::table_open,
+            commands::table::table_page,
+            commands::table::table_find,
+            commands::table::table_save,
+            commands::table::table_save_as,
+            commands::table::table_cancel,
+            commands::table::table_close,
             // 窗口与系统
             commands::window::window_minimize,
             commands::window::window_toggle_maximize,

@@ -177,8 +177,8 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 | `legacyDoc` | `.doc` `.docx` `.ppt(x)` `.pdf` `.epub` 等无内置渲染器的文档 | `DocPreview.vue` → 「没有内置渲染」卡片 + 外部程序入口 |
 | `archiveLegacy` | `.rar` `.lzh` `.cab` `.iso` 等无内置解压的归档 | `DocPreview.vue` → 「用外部程序解压后再打开」卡片 |
 | `chunked` | 标签带 `chunked` 标记（>512MB 自动分块，或会话恢复时按 `1004` 降级） | `ChunkedViewer.vue`（1MB 块导航，只读 + 单块解锁编辑） |
-| `sheet` 可编辑 | CSV / TSV ≤ 32MB；XLSX / XLSM / ODS | `SheetEditor.vue`（文本网格）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
-| `sheet` 只读 | CSV / TSV > 32MB、XLS 旧格式 | `DocPreview.vue`（后端切行 / 表格只读预览） |
+| `sheet` 可编辑 | CSV / TSV / JSONL（无大小限制）；XLSX / XLSM / ODS | `SheetEditor.vue`（大表格网格，分页取数）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
+| `sheet` 只读 | XLS 旧格式 | `DocPreview.vue`（表格只读预览） |
 | `image` | 扩展名表 | `DocPreview.vue`（动态 import 图片预览器） |
 | `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
 | `html` | `.html` `.htm` `.xhtml` | `CodeEditor.vue`（可编辑）+ `DocPreview.vue` 沙箱 iframe 静态预览（`showing_preview`，不执行脚本） |

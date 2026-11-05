@@ -20,7 +20,7 @@ import { get, docVersionOf } from '@/composables/useEditorRegistry'
 import { doGotoLine } from '@/composables/useEditorActions'
 import { api } from '@/api'
 import { ellipsisMiddle } from '@/utils'
-import { hasRichPreview, isDelimitedSheet, isTextKind, kindOf } from '@/utils/fileKind'
+import { hasRichPreview, isTableGrid, isTextKind, kindOf } from '@/utils/fileKind'
 import type { RecentFileVO } from '@/types/api'
 import type { Tab } from '@/stores/editor'
 
@@ -57,7 +57,7 @@ function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'sheet' | 'workbook' 
   if (kind === 'markdown') return tab.showing_preview && !tab.split ? 'doc' : 'markdown'
   if (kind === 'sheet') {
     // CSV / TSV 是可编辑文本网格；XLSX / ODS 是二进制容器，走单元格补丁编辑。
-    if (isDelimitedSheet(tab.path)) return tab.showing_preview ? 'doc' : 'sheet'
+    if (isTableGrid(tab.path)) return tab.showing_preview ? 'doc' : 'sheet'
     return tab.showing_preview ? 'doc' : 'workbook'
   }
   if (hasRichPreview(kind)) return 'doc'

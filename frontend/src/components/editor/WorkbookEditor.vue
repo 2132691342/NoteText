@@ -1,22 +1,10 @@
 <!-- XLSX 可编辑网格：值与公式可改，样式由后端「原地改 XML」保住。
-     与 CSV 的 SheetEditor 分开：CSV 的正文就是文本、保存走写文件链路；
-     XLSX 是二进制容器，保存走 open_workbook / save_workbook 的单元格补丁。 -->
+     分页取数 + 虚拟滚动：百万行的工作表也不整块进内存。 -->
 <template>
   <div class="nt-sheet">
     <div class="nt-sheet-bar">
-      <ElButton size="small" :disabled="loading" @click="addRow">
-        <NtIcon name="plus" size="sm" />
-        <span>{{ t('sheet.addRow') }}</span>
-      </ElButton>
-      <ElButton size="small" :disabled="!editingCell" @click="deleteRow">
-        {{ t('sheet.deleteRow') }}
-      </ElButton>
-      <ElButton size="small" :disabled="loading" @click="addCol">{{ t('sheet.addCol') }}</ElButton>
-      <ElButton size="small" :disabled="cols === 0" @click="deleteCol">
-        {{ t('sheet.deleteCol') }}
-      </ElButton>
-      <span class="nt-toolbar-sep" />
       <ElInput
+        ref="findInput"
         v-model="findText"
         size="small"
         class="nt-sheet-find"
@@ -30,19 +18,31 @@
           </ElButton>
         </template>
       </ElInput>
-      <ElInput
-        v-model="replaceText"
-        size="small"
-        class="nt-sheet-find"
-        :placeholder="t('sheet.replacePlaceholder')"
-      />
-      <ElButton size="small" :disabled="findHits.length === 0" @click="replaceAll">
-        {{ t('sheet.replaceAll', { n: findHits.length }) }}
+      <ElButton size="small" :disabled="!findHits.length" @click="stepFind(1)">
+        {{ t('sheet.findNext') }}
       </ElButton>
+      <ElButton size="small" :disabled="!findHits.length" @click="stepFind(-1)">
+        {{ t('sheet.findPrev') }}
+      </ElButton>
+      <span class="nt-toolbar-sep" />
+      <ElInput
+        ref="gotoEl"
+        v-model="gotoInput"
+        size="small"
+        class="nt-sheet-goto"
+        :placeholder="t('sheet.gotoRowPlaceholder')"
+        @keydown.enter.prevent="onGoto"
+      >
+        <template #append>
+          <ElButton size="small" :disabled="!gotoInput" @click="onGoto">
+            {{ t('sheet.gotoRow') }}
+          </ElButton>
+        </template>
+      </ElInput>
       <span class="nt-toolbar-spacer" />
       <span class="nt-readout nt-sheet-meta">
-        {{ t('sheet.rows', { n: rowCount }) }} · {{ t('sheet.cols', { n: cols }) }} ·
-        {{ t('sheet.sheets', { n: workbook?.sheets.length ?? 0 }) }}
+        {{ t('sheet.rows', { n: totalRows }) }} · {{ t('sheet.cols', { n: totalCols }) }} ·
+        {{ t('sheet.sheets', { n: sheets.length }) }}
         <template v-if="dirtyCount > 0">
           · <span class="nt-sheet-dirty">{{ t('sheet.pending', { n: dirtyCount }) }}</span>
         </template>
@@ -50,7 +50,7 @@
       <ElButton
         size="small"
         type="primary"
-        :disabled="dirtyCount === 0 || loading"
+        :disabled="dirtyCount === 0 || saving"
         :loading="saving"
         @click="save"
       >
@@ -61,180 +61,123 @@
       </ElButton>
     </div>
 
-    <div v-if="mountError" class="nt-mount-error">
+    <div v-if="error" class="nt-mount-error">
       <span class="nt-mount-error-title">{{ t('editor.openFailedTitle') }}</span>
-      <span class="nt-mount-error-detail">{{ mountError }}</span>
+      <span class="nt-mount-error-detail">{{ error }}</span>
     </div>
 
-    <template v-else>
-      <div ref="vlHost" class="nt-sheet-body" @scroll="onScroll">
-        <div class="nt-sheet-inner" :style="{ height: `${totalHeight}px` }">
-          <div class="nt-sheet-window" :style="{ transform: `translateY(${offset}px)` }">
-            <div v-for="ri in windowItems" :key="ri" class="nt-sheet-row">
-              <span class="nt-sheet-gutter">{{ ri + 1 }}</span>
-              <div
-                v-for="ci in cols"
-                :key="ci"
-                class="nt-sheet-cell"
-                :class="{
-                  'is-editing': editingCell?.r === ri && editingCell?.c === ci - 1,
-                  'is-hit': isHit(ri, ci - 1),
-                }"
-                :style="{ width: cellWidth(ci - 1) }"
-                @click="startEdit(ri, ci - 1)"
-              >
-                <input
-                  v-if="editingCell?.r === ri && editingCell?.c === ci - 1"
-                  ref="editEl"
-                  v-model="editingCell.draft"
-                  class="nt-sheet-input"
-                  spellcheck="false"
-                  @keydown.enter.prevent="commitEdit(ri, ci - 1, 0)"
-                  @keydown.tab.prevent="commitEdit(ri, ci - 1, 1)"
-                  @keydown.esc.prevent="cancelEdit"
-                  @blur="commitEdit(ri, ci - 1, 0)"
-                />
-                <span v-else class="nt-sheet-cell-text" :title="cell(ri, ci - 1)">
-                  {{ cell(ri, ci - 1) }}
-                </span>
-              </div>
+    <div
+      v-else
+      ref="scrollEl"
+      class="nt-sheet-body"
+      @wheel="onWheel"
+      @scroll="onScroll"
+    >
+      <div class="nt-sheet-inner" :style="{ height: `${scrollHeight}px` }">
+        <div class="nt-sheet-window" :style="{ transform: `translateY(${windowTop}px)` }">
+          <div v-for="row in windowRows" :key="row.index" class="nt-sheet-row">
+            <span class="nt-sheet-gutter">{{ row.index + 1 }}</span>
+            <div
+              v-for="ci in totalCols"
+              :key="ci"
+              class="nt-sheet-cell"
+              :class="{
+                'is-editing': editing?.row === row.index && editing?.col === ci - 1,
+                'is-hit': isHit(row.index, ci - 1),
+                'is-dirty': isDirtyCell(row.index, ci - 1),
+              }"
+              @click="startEdit(row.index, ci - 1, row.cells[ci - 1])"
+            >
+              <input
+                v-if="editing?.row === row.index && editing?.col === ci - 1"
+                ref="editEl"
+                v-model="editing.draft"
+                class="nt-sheet-input"
+                spellcheck="false"
+                @keydown.enter.prevent="commitEdit(0)"
+                @keydown.tab.prevent="commitEdit(1)"
+                @keydown.esc.prevent="cancelEdit"
+                @blur="commitEdit(0)"
+              />
+              <span v-else class="nt-sheet-cell-text" :title="displayText(row.cells[ci - 1])">
+                {{ displayText(row.cells[ci - 1]) }}
+              </span>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- 工作表页签：与 Excel 一致放底部 -->
-      <div v-if="(workbook?.sheets.length ?? 0) > 1" class="nt-doc-sheet-tabs">
-        <button
-          v-for="s in workbook?.sheets ?? []"
-          :key="s.index"
-          class="nt-sheet-tab"
-          :class="{ 'is-on': s.index === activeIndex }"
-          @click="selectSheet(s.index)"
-        >
-          {{ s.name }}
-        </button>
-      </div>
-    </template>
+    <!-- 工作表页签：与 Excel 一致放底部 -->
+    <div v-if="sheets.length > 1" class="nt-doc-sheet-tabs">
+      <button
+        v-for="s in sheets"
+        :key="s.index"
+        class="nt-sheet-tab"
+        :class="{ 'is-on': s.index === activeSheet }"
+        @click="selectSheet(s.index)"
+      >
+        {{ s.name }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton, ElInput } from 'element-plus'
 import { api, normalizeError } from '@/api'
-import type { CellEdit, CellValue, SheetHit, SheetVO, WorkbookVO } from '@/types/api'
+import type { CellEdit, CellValue, SheetHit } from '@/types/api'
 import type { Tab } from '@/stores/editor'
 import { useEditorStore } from '@/stores/editor'
-import { useVirtualList } from '@/composables/useVirtualList'
+import { registerTableFocus, registerTableProvider, unregisterTableProvider } from '@/composables/useEditorRegistry'
+import { useSheetGrid } from '@/composables/useSheetGrid'
 import { useToastStore } from '@/stores/toast'
-import NtIcon from '@/components/common/NtIcon.vue'
-
-const ROW_H = 26
-/** 默认列宽（px）与上限：与后端 col_widths 的语义对齐（Excel 字符宽 × 7.4）。 */
-const DEFAULT_COL_W = 120
-const MAX_COL_W = 360
+import { baseName } from '@/utils'
 
 const props = defineProps<{ tab: Tab }>()
 const { t } = useI18n()
 const editor = useEditorStore()
 const toast = useToastStore()
 
-const workbook = ref<WorkbookVO | null>(null)
-const activeIndex = ref(0)
-const mountError = ref('')
-const loading = ref(false)
+const editing = ref<{ row: number; col: number; draft: string } | null>(null)
+const editEl = ref<HTMLInputElement | null>(null)
+const gotoInput = ref('')
+/** 查找框：Ctrl+F 聚焦它。 */
+const findInput = ref<{ focus: () => void } | null>(null)
+/** 跳行框：Ctrl+G 聚焦它。 */
+const gotoEl = ref<{ focus: () => void } | null>(null)
 const saving = ref(false)
 
-/** 单元格编辑态：r/c 是 0 基行列。 */
-const editingCell = ref<{ r: number; c: number; draft: string } | null>(null)
-const editEl = ref<HTMLInputElement | null>(null)
-
-/**
- * 待写回的改动：`sheetIndex` → (`r:c` → 值)。
- *
- * **必须按工作表分开存**：之前只有一张 map，切到另一张表改完再保存时，
- * 后端只收到「当前表的下标 + 两张表的改动」，另一张表的改动会被写到
- * 错误的表里（数据被改坏，且没有任何提示）。
- * 现在每张表一组改动，保存时按组逐表提交。
- */
-type SheetEdits = Map<string, CellValue | null>
-const pendingBySheet = ref<Map<number, SheetEdits>>(new Map())
-
-/** 当前工作表的待写回改动。 */
-const pending = computed<SheetEdits>(
-  () => pendingBySheet.value.get(activeIndex.value) ?? new Map(),
-)
-const dirtyCount = computed(() => {
-  let n = 0
-  for (const m of pendingBySheet.value.values()) n += m.size
-  return n
+const pathRef = computed(() => props.tab.path)
+const {
+  error,
+  sheets,
+  activeSheet,
+  totalRows,
+  totalCols,
+  pendingGroups,
+  dirtyCount,
+  scrollHeight,
+  windowTop,
+  windowRows,
+  open: openGrid,
+  selectSheet,
+  onWheel,
+  onScroll,
+  scrollToRow,
+  setCell,
+  isDirtyCell,
+  resetEdits,
+} = useSheetGrid({
+  path: pathRef,
+  onError: (msg) => toast.bad(msg),
 })
 
-/** 写一组改动到「某张表」（默认当前表），返回新的外层 Map（触发响应式）。 */
-function setPending(map: SheetEdits, sheetIndex = activeIndex.value) {
-  const next = new Map(pendingBySheet.value)
-  if (map.size === 0) next.delete(sheetIndex)
-  else next.set(sheetIndex, map)
-  pendingBySheet.value = next
-}
-
-/** 改一格：返回新的编辑表并提交（所有编辑入口都走它）。 */
-function editCell(key: string, value: CellValue | null, sheetIndex = activeIndex.value) {
-  const cur = pendingBySheet.value.get(sheetIndex)
-  const map = new Map(cur ?? [])
-  map.set(key, value)
-  setPending(map, sheetIndex)
-}
-
-/** 查找状态。 */
-const findText = ref('')
-const replaceText = ref('')
-const findHits = ref<SheetHit[]>([])
-
-const sheet = computed<SheetVO | null>(
-  () => workbook.value?.sheets.find((s) => s.index === activeIndex.value) ?? null,
-)
-
-/** 网格尺寸：按 extent 与「用户加过行 / 列」取大。 */
-const rowCount = ref(0)
-const cols = computed(() => {
-  const s = sheet.value
-  let n = s?.extent ? s.extent[3] + 1 : 0
-  // 取加过的最大列
-  for (const [key] of pending.value) {
-    const c = Number(key.split(':')[1]) + 1
-    if (c > n) n = c
-  }
-  return Math.max(n, 1) + (extraCols.value || 0)
-})
-const extraCols = ref(0)
-const extraRows = ref(0)
-
-/**
- * 单元格位置索引：`r:c` → 值。
- *
- * **不能每次取值都扫一遍 cells**：一张 20 万格的表按行渲染时，
- * 每格一次 O(n) 查找就是几十亿次比较，滚动直接卡死。
- * 索引跟着当前工作表走，切表 / 重新载入时重建。
- */
-const cellIndex = computed(() => {
-  const map = new Map<string, CellValue>()
-  for (const c of sheet.value?.cells ?? []) map.set(`${c.row}:${c.col}`, c.value)
-  return map
-})
-
-/** 单元格取值：待写回改动优先，其次工作簿里的值（走索引，O(1)）。 */
-function cell(r: number, c: number): string {
-  const k = `${r}:${c}`
-  const p = pending.value.get(k)
-  if (p !== undefined) return p === null ? '' : display(p)
-  const v = cellIndex.value.get(k)
-  return v === undefined ? '' : display(v)
-}
-
-function display(v: CellValue): string {
+/** 单元格值的显示文本。 */
+function displayText(v: CellValue | null | undefined): string {
+  if (!v) return ''
   switch (v.kind) {
     case 'text':
       return v.text
@@ -249,258 +192,177 @@ function display(v: CellValue): string {
   }
 }
 
-/** 列宽：取后端的 col_widths，缺省给默认宽。 */
-function cellWidth(c: number): string {
-  const w = sheet.value?.col_widths[c]
-  if (!w) return `${DEFAULT_COL_W}px`
-  return `${Math.min(MAX_COL_W, Math.max(56, Math.round(w * 7.4) + 16))}px`
-}
+// ---- 查找 ----
 
-/** 命中位置集合：`r:c`。Set 而不是数组遍历——每格一次 some() 会让滚动掉帧。 */
+const findText = ref('')
+const findHits = shallowRef<SheetHit[]>([])
+const findCursor = ref(0)
+
+/** 命中位置集合：`r:c`。 */
 const hitSet = computed(() => {
-  const set = new Set<string>()
-  for (const h of findHits.value) {
-    if (h.sheet_index === activeIndex.value) set.add(`${h.row}:${h.col}`)
-  }
-  return set
+  const s = new Set<string>()
+  for (const h of findHits.value) s.add(`${h.row}:${h.col}`)
+  return s
 })
 
-/** 查找命中高亮。 */
-function isHit(r: number, c: number): boolean {
-  return hitSet.value.has(`${r}:${c}`)
+function isHit(row: number, col: number): boolean {
+  return hitSet.value.has(`${row}:${col}`)
 }
-
-// ---- 虚拟滚动 ----
-
-const indices = ref<number[]>([])
-function rebuildIndices() {
-  indices.value = Array.from({ length: rowCount.value }, (_, i) => i)
-}
-const { host: vlHost, totalHeight, windowItems, offset, onScroll } = useVirtualList(indices, ROW_H)
-
-function syncRowCount() {
-  const s = sheet.value
-  const base = s?.extent ? s.extent[1] + 1 : 0
-  rowCount.value = Math.max(base + extraRows.value, 1)
-  rebuildIndices()
-}
-
-// ---- 载入 / 切换工作表 ----
-
-async function load() {
-  if (!props.tab.path) {
-    mountError.value = t('sheet.needFile')
-    return
-  }
-  loading.value = true
-  try {
-    workbook.value = await api.sheet.open(props.tab.path)
-    activeIndex.value = workbook.value.sheets[0]?.index ?? 0
-    pendingBySheet.value = new Map()
-    extraRows.value = 0
-    extraCols.value = 0
-    findHits.value = []
-    syncRowCount()
-  } catch (e) {
-    mountError.value = normalizeError(e).message
-  } finally {
-    loading.value = false
-  }
-}
-
-function selectSheet(index: number) {
-  if (pending.value.size > 0) {
-    // 有未保存的改动：提醒一句，但允许切（改动按表分开存，不会串）。
-    toast.info(t('sheet.switchWithPending'))
-  }
-  activeIndex.value = index
-  syncRowCount()
-}
-
-// ---- 单元格编辑 ----
-
-function startEdit(r: number, c: number) {
-  editingCell.value = { r, c, draft: cell(r, c) }
-  void nextTick(() => editEl.value?.focus())
-}
-
-function cancelEdit() {
-  editingCell.value = null
-}
-
-/** 提交编辑。`move` 为 1 时（Tab）顺手跳到右边一格。 */
-function commitEdit(r: number, c: number, move: number) {
-  const ed = editingCell.value
-  if (!ed) return
-  const text = ed.draft
-  editingCell.value = null
-  const before = cell(r, c)
-  if (text === before) {
-    if (move === 1) startEdit(r, c + 1)
-    return
-  }
-  // 值类型推断：纯数字存成数值，其余按文本。公式以 = 开头。
-  const next = parseInput(text)
-  editCell(`${r}:${c}`, next)
-  if (move === 1) startEdit(r, c + 1)
-}
-
-/** 输入文本 → 单元格值。 */
-function parseInput(text: string): CellValue | null {
-  if (text === '') return null
-  if (text.startsWith('=') && text.length > 1) {
-    return { kind: 'formula', formula: text.slice(1), cached: '' }
-  }
-  if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(text.trim())) {
-    return { kind: 'number', raw: text.trim() }
-  }
-  if (/^(TRUE|FALSE)$/i.test(text.trim())) {
-    return { kind: 'boolean', value: text.trim().toUpperCase() === 'TRUE' }
-  }
-  return { kind: 'text', text }
-}
-
-// ---- 行列增删 ----
-
-function addRow() {
-  extraRows.value += 1
-  syncRowCount()
-}
-
-function deleteRow() {
-  const ed = editingCell.value
-  if (!ed) return
-  // 删行 = 把这一整行所有单元格清空（XLSX 没有「物理删行」的轻量语义）。
-  const map: SheetEdits = new Map(pending.value)
-  for (let c = 0; c < cols.value; c += 1) {
-    const key = `${ed.r}:${c}`
-    // 有值或有待改动的格子才清空：逐格 some() 扫全表在 20 万格上是白烧 CPU，
-    // 用 cellIndex 判存在性（O(1)）。
-    if (cellIndex.value.has(key) || map.has(key)) map.set(key, null)
-  }
-  setPending(map)
-  editingCell.value = null
-  toast.info(t('sheet.rowCleared'))
-}
-
-function addCol() {
-  extraCols.value += 1
-}
-
-function deleteCol() {
-  const n = cols.value
-  if (n <= 1) return
-  // 删末列 = 把该列所有单元格清空。
-  const map: SheetEdits = new Map(pending.value)
-  const col = n - 1
-  for (let r = 0; r < rowCount.value; r += 1) {
-    const key = `${r}:${col}`
-    if (cellIndex.value.has(key) || map.has(key)) map.set(key, null)
-  }
-  setPending(map)
-  if (extraCols.value > 0) extraCols.value -= 1
-}
-
-// ---- 查找 / 替换 ----
 
 async function runFind() {
-  if (!findText.value || !props.tab.path) {
-    findHits.value = []
-    return
-  }
+  if (!findText.value || !props.tab.path) return
   try {
     const res = await api.sheet.find({
       path: props.tab.path,
-      sheet_index: null,
+      sheet_index: activeSheet.value,
       find: findText.value,
       match_case: false,
       whole_cell: false,
     })
-    findHits.value = res.hits ?? []
-    if (findHits.value.length === 0) {
+    findHits.value = res.hits
+    findCursor.value = 0
+    if (res.hits.length === 0) {
       toast.info(t('dialog.noMatches'))
     } else {
-      // 跳到第一个命中所在地的表
-      const first = findHits.value[0]
-      if (first.sheet_index !== activeIndex.value) {
-        activeIndex.value = first.sheet_index
-        syncRowCount()
-      }
       toast.ok(t('sheet.findHits', { n: res.total }))
+      scrollToRow(res.hits[0].row)
     }
   } catch (e) {
     toast.bad(normalizeError(e).message)
   }
 }
 
-/** 全部替换：把命中格的文本里的查找词换掉（不动公式格，避免改坏表达式）。 */
-function replaceAll() {
-  if (findHits.value.length === 0) return
-  const map: SheetEdits = new Map(pending.value)
-  let n = 0
-  for (const h of findHits.value) {
-    // 只替换当前表的命中：跨表替换容易改错，用户切到那张表再替换一次更安全。
-    if (h.sheet_index !== activeIndex.value) continue
-    const cur = cell(h.row, h.col)
-    if (cur.includes('=')) continue
-    const nextText = cur.split(findText.value).join(replaceText.value)
-    map.set(`${h.row}:${h.col}`, nextText === '' ? null : { kind: 'text', text: nextText })
-    n += 1
-  }
-  setPending(map)
-  findHits.value = []
-  toast.ok(t('sheet.replaced', { n }))
+function stepFind(delta: number) {
+  if (!findHits.value.length) return
+  const next = findCursor.value + delta
+  if (next < 0) findCursor.value = findHits.value.length - 1
+  else if (next >= findHits.value.length) findCursor.value = 0
+  else findCursor.value = next
+  scrollToRow(findHits.value[findCursor.value].row)
+}
+
+// ---- 单元格编辑 ----
+
+function startEdit(row: number, col: number, value: CellValue | null | undefined) {
+  editing.value = { row, col, draft: displayText(value) }
+  void nextTick(() => editEl.value?.focus())
+}
+
+function cancelEdit() {
+  editing.value = null
+}
+
+function commitEdit(move: number) {
+  const ed = editing.value
+  if (!ed) return
+  // 文本一律存成文本：公式的编辑要走「公式栏」，这里只改值。
+  setCell(ed.row, ed.col, { kind: 'text', text: ed.draft })
+  editing.value = null
+  syncDirty()
+  if (move === 1) startEdit(ed.row, ed.col + 1, null)
+}
+
+function onGoto() {
+  const n = Number.parseInt(gotoInput.value, 10)
+  if (!Number.isFinite(n) || n < 1) return
+  scrollToRow(n - 1)
 }
 
 // ---- 保存 ----
 
+function syncDirty() {
+  const dirty = dirtyCount.value > 0
+  if (props.tab.dirty !== dirty) editor.markDirty(props.tab.id, dirty)
+}
+
+/** 原地写回。 */
 async function save() {
-  if (!workbook.value || !props.tab.path || pendingBySheet.value.size === 0) return
+  await writeBack(undefined)
+}
+
+/** 写回。`destPath` 为空 = 原地写回；给了 = 写到新路径（另存为）。 */
+async function writeBack(destPath?: string) {
+  if (!props.tab.path || dirtyCount.value === 0) return
   saving.value = true
   try {
-    // 按工作表逐组提交：一组改动只带一个 sheet_index，跨表改动不会被写错位置。
-    let changed = 0
-    let backupPath: string | null = null
-    for (const [sheetIndex, group] of pendingBySheet.value) {
-      if (group.size === 0) continue
+    // 按工作表分组提交：一张表一组改动。
+    const groups = new Map<number, CellEdit[]>()
+    for (const [sheetIdx, map] of sheetEdits()) {
       const edits: CellEdit[] = []
-      for (const [key, value] of group) {
-        const [r, c] = key.split(':').map(Number)
-        edits.push({ row: r, col: c, value })
+      for (const [key, value] of map) {
+        const [row, col] = key.split(':').map(Number)
+        edits.push({ row, col, value })
       }
-      const res = await api.sheet.save({
-        path: props.tab.path,
-        sheet_index: sheetIndex,
-        edits,
-        // 只备份第一组：多组连续提交时每张表都复制一份 .bak 会互相覆盖。
-        backup: backupPath === null,
-      })
-      changed += res.changed
-      if (backupPath === null) backupPath = res.backup_path
+      if (edits.length) groups.set(sheetIdx, edits)
     }
-    toast.ok(
-      backupPath
-        ? t('sheet.savedWithBackup', { n: changed })
-        : t('sheet.saved', { n: changed }),
-    )
-    // 保存后重读：让网格与磁盘一致（新值类型可能变了）。
-    await load()
-    editor.markDirty(props.tab.id, false)
+    for (const [sheetIdx, edits] of groups) {
+      await api.sheet.save({
+        path: props.tab.path,
+        sheet_index: sheetIdx,
+        edits,
+        backup: false,
+      })
+    }
+    if (destPath) {
+      // 另存为：源文件不动，改动已落到新文件；标签跟到新路径。
+      props.tab.path = destPath
+      props.tab.title = baseName(destPath)
+    }
+    resetEdits()
+    syncDirty()
+    toast.ok(t('sheet.saved', { n: dirtyCount.value }))
+    await openGrid()
   } catch (e) {
-    toast.bad(t('error.writeFailed', { reason: normalizeError(e).message }))
+    toast.bad(normalizeError(e).message)
   } finally {
     saving.value = false
   }
 }
 
 function discard() {
-  pendingBySheet.value = new Map()
-  toast.info(t('sheet.discarded'))
+  resetEdits()
+  syncDirty()
 }
 
-onMounted(() => {
-  void load()
+/** 另存为：写到新文件，源文件不动。 */
+async function saveAs() {
+  if (!props.tab.path || dirtyCount.value === 0) return
+  const dest = await api.saveFileDialog(baseName(props.tab.path))
+  if (!dest) return
+  await writeBack(dest)
+}
+
+onMounted(async () => {
+  await openGrid()
+  registerTableFocus(props.tab.id, (what) => {
+    if (what === 'goto') {
+      gotoInput.value = ''
+      gotoEl.value?.focus()
+    } else {
+      findInput.value?.focus()
+    }
+  })
+  registerTableProvider(props.tab.id, {
+    save: async () => {
+      await writeBack()
+      return !props.tab.dirty
+    },
+    saveAs: async () => {
+      await saveAs()
+      return props.tab.path
+    },
+    isDirty: () => dirtyCount.value > 0,
+  })
 })
+
+onBeforeUnmount(() => {
+  unregisterTableProvider(props.tab.id)
+})
+
+// 取全部工作表的改动分组（保存时按表提交）。
+function sheetEdits(): Map<number, Map<string, CellValue | null>> {
+  return pendingGroups.value
+}
 </script>
 
 <style scoped>
@@ -524,6 +386,25 @@ onMounted(() => {
   overflow-x: auto;
 }
 
+.nt-sheet-meta {
+  color: var(--nt-ink-muted);
+  white-space: nowrap;
+}
+
+.nt-sheet-dirty {
+  color: var(--nt-primary);
+}
+
+.nt-sheet-find {
+  width: 150px;
+  flex: none;
+}
+
+.nt-sheet-goto {
+  width: 140px;
+  flex: none;
+}
+
 .nt-toolbar-sep {
   width: 1px;
   height: calc(var(--nt-h-toolbar) - 12px);
@@ -533,21 +414,6 @@ onMounted(() => {
 
 .nt-toolbar-spacer {
   flex: 1;
-}
-
-.nt-sheet-find {
-  width: 160px;
-  flex: none;
-}
-
-.nt-sheet-meta {
-  margin-left: var(--nt-sp-2);
-  color: var(--nt-ink-muted);
-  white-space: nowrap;
-}
-
-.nt-sheet-dirty {
-  color: var(--nt-warning);
 }
 
 .nt-sheet-body {
@@ -565,6 +431,7 @@ onMounted(() => {
   position: absolute;
   left: 0;
   right: 0;
+  top: 0;
 }
 
 .nt-sheet-row {
@@ -574,7 +441,7 @@ onMounted(() => {
 
 .nt-sheet-gutter {
   flex: none;
-  width: 56px;
+  width: 72px;
   padding: 0 var(--nt-sp-2);
   display: flex;
   align-items: center;
@@ -583,12 +450,13 @@ onMounted(() => {
   background: var(--nt-editor-gutter-bg);
   border-bottom: 1px solid var(--nt-border);
   border-right: 1px solid var(--nt-border);
-  font-size: var(--nt-fs-hint);
+  font-size: var(--nt-fs-2xs);
   user-select: none;
 }
 
 .nt-sheet-cell {
   flex: none;
+  width: 120px;
   display: flex;
   align-items: center;
   padding: 0 var(--nt-sp-2);
@@ -602,12 +470,16 @@ onMounted(() => {
   background: var(--nt-surface-hover);
 }
 
+.nt-sheet-cell.is-editing {
+  padding: 0;
+}
+
 .nt-sheet-cell.is-hit {
   background: var(--nt-warning-bg);
 }
 
-.nt-sheet-cell.is-editing {
-  padding: 0;
+.nt-sheet-cell.is-dirty {
+  background: var(--nt-primary-soft);
 }
 
 .nt-sheet-cell-text {
@@ -627,48 +499,5 @@ onMounted(() => {
   background: var(--nt-elev-raised);
   color: var(--nt-ink-1);
   font: inherit;
-}
-
-/* 工作表页签：与 DocPreview 同一套视觉 */
-.nt-doc-sheet-tabs {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: var(--nt-sp-1) var(--nt-sp-2);
-  overflow-x: auto;
-  background: var(--nt-chrome);
-  border-top: 1px solid var(--nt-border);
-}
-
-.nt-sheet-tab {
-  flex: none;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  height: calc(var(--nt-ctl-h-sm) - 2px);
-  padding: 0 var(--nt-sp-3);
-  font-size: var(--nt-fs-hint);
-  color: var(--nt-ink-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--nt-radius-xs);
-  cursor: pointer;
-  transition:
-    color var(--nt-dur-fast) var(--nt-ease),
-    background-color var(--nt-dur-fast) var(--nt-ease),
-    border-color var(--nt-dur-fast) var(--nt-ease);
-}
-
-.nt-sheet-tab:hover {
-  color: var(--nt-ink);
-  background: var(--nt-surface-hover);
-}
-
-.nt-sheet-tab.is-on {
-  color: var(--nt-primary);
-  background: var(--nt-primary-soft);
-  border-color: var(--nt-primary-soft);
 }
 </style>

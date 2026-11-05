@@ -1,4 +1,7 @@
-//! 文件长链路：往返保真、大文件分块、文件树护栏。
+//! 文件域长链路：往返保真、大文件分块编辑、文件树护栏。
+//!
+//! 三条链路分别对应三种会真正伤到用户的事：保存时丢字节、编辑大文件时动到
+//! 别的内容、文件树操作覆盖或删掉不该动的东西。
 
 mod common;
 
@@ -88,7 +91,8 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     assert!(leftovers.is_empty(), "不应留下临时文件：{leftovers:?}");
 }
 
-/// 大文件分块：逐块拼回原文、行号定位一致、外部修改报 stale、单块写回带乐观锁、流式查找跨块接续。
+/// 大文件分块链路：逐块拼回原文、行号定位一致、外部修改报 stale、单块写回带乐观锁、
+/// 流式查找跨块接续、GB18030 文件里的命中行号仍然正确。
 #[test]
 fn big_file_block_index_reads_blocks_and_reports_lines() {
     let (dir, state) = boot();
@@ -243,6 +247,44 @@ fn big_file_block_index_reads_blocks_and_reports_lines() {
 
     bf.close(&path);
     assert!(bf.read_block(&path, 0).is_err(), "close 之后索引应已释放");
+
+    // ---- GB18030 编码的日志：命中行号仍然要正确 ----
+    //
+    // 旧实现对非 UTF-16 编码一律按 UTF-8 有损解码：GBK 字节被解成替换符，
+    // 命中的位置与实际行号完全对不上。
+    let gb = dir.path().join("gb.log");
+    let mut gb_text = String::new();
+    for i in 0..5000 {
+        gb_text.push_str(&format!("第{i}行内容,abcdefghij\n"));
+    }
+    let gb_bytes = notetext_lib::service::encoding::encode(&gb_text, "gb18030").expect("编码失败");
+    fs::write(&gb, &gb_bytes).expect("写文件失败");
+    let gb_path = gb.to_string_lossy().to_string();
+
+    let gb_meta = bf.open(&gb_path, None).expect("建索引失败");
+    assert_eq!(gb_meta.encoding, "gb18030", "应探测为 GB18030");
+
+    let res = bf
+        .find(&BigFileFindReq {
+            path: gb_path.clone(),
+            query: "第4321行".to_string(),
+            match_case: true,
+            whole_word: false,
+            from_offset: 0,
+            limit: 10,
+            budget: 8 * 1024 * 1024,
+        })
+        .expect("查找失败");
+    assert_eq!(
+        res.hits.len(),
+        1,
+        "只应命中一处，实际 {} 条",
+        res.hits.len()
+    );
+    assert_eq!(res.hits[0].line, 4322, "命中行号应正确（1 基）");
+    assert!(res.hits[0].text.contains("第4321行"), "命中文本应正确");
+
+    bf.close(&gb_path);
 }
 
 /// 文件树护栏：改名不许覆盖 / 成环 / 逃逸，批量删除对陈旧路径只记账，同名新建拒绝清空。

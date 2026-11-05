@@ -16,7 +16,7 @@ export type FileKind =
 const IMAGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif'])
 
 /** 表格：xlsx 库能读老 .xls，CSV/TSV 按同一条链路转成表。 */
-const SHEET = new Set(['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods'])
+const SHEET = new Set(['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'jsonl', 'ndjson'])
 
 /** HTML：可编辑的文本，预览走沙箱 iframe（不执行脚本）。 */
 const HTML = new Set(['html', 'htm', 'xhtml'])
@@ -77,6 +77,22 @@ export function isArchiveLegacy(path: string): boolean {
 export function isDelimitedSheet(path: string): boolean {
   const ext = extName(path)
   return ext === 'csv' || ext === 'tsv'
+}
+
+/**
+ * JSONL / NDJSON：每行一个 JSON 对象，走可编辑表格网格。
+ *
+ * 顶层 JSON 数组也走这条：数组元素可以跨行，按行切不成立，
+ * 但每个元素可以当一条记录。
+ */
+export function isJsonlSheet(path: string): boolean {
+  const ext = extName(path)
+  return ext === 'jsonl' || ext === 'ndjson'
+}
+
+/** 能不能走大表格网格（分页取数，不整篇进内存）。 */
+export function isTableGrid(path: string): boolean {
+  return isDelimitedSheet(path) || isJsonlSheet(path)
 }
 
 /**

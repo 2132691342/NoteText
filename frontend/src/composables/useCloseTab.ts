@@ -5,7 +5,7 @@ import { useEditorStore, languageOf } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
-import { getText, commitBaseline, replaceDocText } from '@/composables/useEditorRegistry'
+import { getText, commitBaseline, replaceDocText, getTableProvider } from '@/composables/useEditorRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { askUnsaved } from '@/components/dialogs/UnsavedDialog.vue'
 import { baseName } from '@/utils'
@@ -52,6 +52,24 @@ export async function saveTabById(id: number): Promise<boolean> {
     toast.warn(tr('toast.saveBlockedTruncated'))
     return false
   }
+  // 大表格：正文不在内存里，保存走后端的覆盖层流式写回。
+  const tableProvider = getTableProvider(id)
+  if (tableProvider) {
+    try {
+      const ok = await tableProvider.save()
+      if (ok) {
+        commitBaseline(id)
+        editor.markDirty(id, false)
+        tree.markDirty(tab.path, false)
+        void api.touchRecent(tab.path)
+        toast.ok(tr('toast.saved', { name: tab.title }))
+      }
+      return ok
+    } catch (e) {
+      toast.bad(tr('error.writeFailed', { reason: normalizeError(e).message }))
+      return false
+    }
+  }
   try {
     await api.writeFile(tab.path, textForSave(id), tab.encoding, tab.line_ending, tab.has_bom)
     commitBaseline(id)
@@ -73,6 +91,24 @@ export async function saveTabAsById(id: number): Promise<boolean> {
 
   const tab = editor.tabs.find((x) => x.id === id)
   if (!tab) return false
+  // 大表格：正文不在内存里，另存为走表格适配器（流式重写到新文件）。
+  const tableProvider = getTableProvider(id)
+  if (tableProvider) {
+    try {
+      const path = await tableProvider.saveAs()
+      if (!path) return false
+      tab.path = path
+      tab.title = baseName(path)
+      commitBaseline(id)
+      editor.markDirty(id, false)
+      void api.touchRecent(path)
+      toast.ok(tr('toast.saved', { name: tab.title }))
+      return true
+    } catch (e) {
+      toast.bad(tr('error.writeFailed', { reason: normalizeError(e).message }))
+      return false
+    }
+  }
   try {
     const res = await api.saveFileAs(
       textForSave(id),

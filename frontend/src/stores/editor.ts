@@ -16,7 +16,7 @@ import { useToastStore } from './toast'
 import { useSettingsStore } from './settings'
 import { tr } from '@/i18n'
 import { baseName, formatSize } from '@/utils'
-import { isTextKind, isDelimitedSheet, isWorkbookSheet, kindOf } from '@/utils/fileKind'
+import { isTextKind, isTableGrid, isWorkbookSheet, kindOf } from '@/utils/fileKind'
 import { askPick } from '@/components/common/askPick'
 import { stagePendingContent } from '@/composables/useEditorRegistry'
 
@@ -224,11 +224,21 @@ export const useEditorStore = defineStore('editor', () => {
       }
 
       const kind = kindOf(path, meta?.is_binary ?? false)
-      // CSV / TSV 走可编辑文本网格：按文本全量读进内存（≤32MB），网格自己解析。
-      // 超过上限维持只读预览——表格编辑不做分块，写回必须整文件一致。
-      const editableSheet =
-        kind === 'sheet' && isDelimitedSheet(path) && (!meta || meta.size <= FULL_READ_LIMIT)
-      if (!isTextKind(kind) && !editableSheet) {
+      // CSV / TSV / JSONL 走可编辑表格网格：大文件也进（后端按记录边界建索引 + 分页取数）。
+      // 旧的「≤64MB 才可编辑」限制会让百万行的表只能看前 2000 行。
+      const editableSheet = kind === 'sheet' && isTableGrid(path)
+      if (editableSheet) {
+        // 表格网格自己按页取数，不走全量读：正文不进内存。
+        const tab = newTab()
+        tab.path = path
+        tab.title = fileNameOf(path)
+        tab.language = languageOf(path)
+        tab.view_type = 'code'
+        tab.showing_preview = false
+        tab.read_only = false
+        return tab
+      }
+      if (!isTextKind(kind)) {
         const tab = newTab()
         tab.path = path
         tab.title = fileNameOf(path)

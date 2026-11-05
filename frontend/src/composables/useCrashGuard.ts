@@ -5,7 +5,7 @@
 import { onUnmounted } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 import { api, isDesktop } from '@/api'
-import { getText } from '@/composables/useEditorRegistry'
+import { getText, getTableProvider } from '@/composables/useEditorRegistry'
 
 /** 快照间隔（毫秒）。 */
 const SNAPSHOT_INTERVAL = 30_000
@@ -24,6 +24,9 @@ export function useCrashGuard() {
     for (const tab of editor.tabs) {
       // 分块 / 截断标签没有完整正文，快照一部分会误导恢复。
       if (!tab.dirty || tab.chunked || tab.truncated) continue
+      // 大表格的正文在磁盘上，不在内存里：快照拿不到东西，跳过。
+      // 它的未保存改动在覆盖层里，崩溃后靠「重新打开 + 重做」找回。
+      if (getTableProvider(tab.id)) continue
       const text = getText(tab.id)
       if (text.length === 0 || text.length > MAX_SNAPSHOT_BYTES) continue
       if (lastSnapshot.get(tab.id) === text) continue

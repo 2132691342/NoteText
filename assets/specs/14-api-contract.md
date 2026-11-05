@@ -2,7 +2,7 @@
 
 ## 定位
 
-前端 `api/index.ts` 与后端 `commands/` 的对照表：117 个 invoke 命令的入参出参。
+前端 `api/index.ts` 与后端 `commands/` 的对照表：126 个 invoke 命令的入参出参。
 **改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定
@@ -137,6 +137,7 @@
 | 命令 | 入参 | 出参 |
 |---|---|---|
 | `open_archive` | `path`, `password?` | `OpenArchiveVO`（同步语义；标 async 线程池执行，防大包列条目冻窗） |
+| `open_archive_entry` | `req: OpenEntryReq` | `OpenEntryVO`（把单个条目解到临时目录，前端拿路径直接用编辑器打开） |
 | `preview_archive_entry` | `req: PreviewEntryReq` | `PreviewEntryVO`（同上：固实 7z 预览要解整块） |
 | `get_archive_formats` | — | `ArchiveFormatVO[]` |
 | `create_archive` | `req: CreateArchiveReq` | `string`（任务 id） |
@@ -198,6 +199,8 @@
 
 | 命令 | 入参 | 出参 |
 |---|---|---|
+| `workbook_info` | `WorkbookOpenReq`（`path`） | `WorkbookInfoVO`（只给工作表摘要：表名 / 行数 / 列数） |
+| `sheet_page` | `SheetPageReq`（`path` / `sheet_index` / `start_row` / `rows`） | `SheetPageVO`（只解析要的那几行） |
 | `open_workbook` | `WorkbookOpenReq`（`path`） | `WorkbookVO`（全部工作表 + 单元格 + 列宽 + 合并区） |
 | `save_workbook` | `SheetSaveReq`（`path` / `sheet_index` / `edits` / `backup?`） | `SheetSaveVO` |
 | `find_in_workbook` | `SheetFindReq`（`find` / `sheet_index?` / 区分大小写 / 整格匹配） | `SheetFindVO` |
@@ -205,6 +208,22 @@
 `save_workbook` 只提交**改动的单元格**，不是整张表：后端解压 → 只替换目标表里
 那几个 `<c>` → 其余部件字节级搬回去。所以样式表、主题、图表、条件格式全部保住
 （见 specs/19）。`backup: true` 会先把原文件复制成 `.bak`。
+
+大表格（CSV / TSV / JSONL / 顶层 JSON 数组）走另一组命令：
+
+| 命令 | 入参 | 出参 |
+|---|---|---|
+| `table_open` | `TableOpenReq`（`path` / `encoding?` / `delimiter?`） | `TableMetaVO`（形态 / 编码 / 总行数 / 列数 / 表头 / 块数） |
+| `table_page` | `TablePageReq`（`path` / `start_row` / `rows`） | `TablePageVO`（按记录下标分页，缺列补空串） |
+| `table_find` | `TableFindReq`（`path` / `query` / `match_case?` / `from_row` / `limit`） | `TableFindVO`（命中列表 / 总数 / 截断标记 / 续扫位置） |
+| `table_save` | `TableSaveReq`（`path` / `ops` / `encoding?` / `delimiter?` / `backup?`） | `TableSaveVO` |
+| `table_save_as` | `TableSaveReq` + `suggested_name?` | `TableSaveVO`（弹对话框拿路径，源文件不动） |
+| `table_cancel` | `path` | `()`（取消建索引） |
+| `table_close` | `path` | `()`（关闭标签，释放索引） |
+
+`table_open` 的扫描进度经 `table:progress` 事件回报。`table_save` 只提交
+**覆盖层**（改了哪些格子 / 删了哪些行），后端流式重写整个文件，
+内存占用与文件大小无关（见 specs/19）。
 
 ## 会话
 
@@ -262,6 +281,8 @@
 | `app:open-file` | `string`（路径） | 单实例转交（冷启动走 `take_launch_intent` 拉取，不发事件） |
 | `app:new-document` | — | 托盘「新建文档」 |
 | `fs:changed` | `string[]`（路径） | `service::file` 的 notify watcher |
+| `bigfile:progress` | `u64`（已扫描字节数） | 大文件建块索引的进度 |
+| `table:progress` | `u64`（已扫描字节数） | 大表格建记录索引的进度 |
 | `archive:task-update` | `ArchiveTaskVO[]`（全量快照） | 队列状态变化 + 250ms 心跳 |
 | `archive:task-finished` | `{ task: ArchiveTaskVO }` | 任务到达终态（done/failed/cancelled） |
 

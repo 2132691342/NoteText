@@ -5,9 +5,25 @@ use tauri::State;
 
 use crate::app::bootstrap::AppState;
 use crate::domain::sheet::{
-    SheetFindReq, SheetFindVO, SheetSaveReq, SheetSaveVO, WorkbookOpenReq, WorkbookVO,
+    SheetFindReq, SheetFindVO, SheetPageReq, SheetPageVO, SheetSaveReq, SheetSaveVO,
+    WorkbookInfoVO, WorkbookOpenReq, WorkbookVO,
 };
 use crate::pkg::error::AppResult;
+
+/// 打开工作簿（分页版）：只给工作表摘要。
+#[tauri::command(async)]
+pub fn workbook_info(
+    state: State<'_, AppState>,
+    req: WorkbookOpenReq,
+) -> AppResult<WorkbookInfoVO> {
+    state.services.sheet.info(&req)
+}
+
+/// 分页读取一张工作表：只解析需要的那些行。
+#[tauri::command(async)]
+pub fn sheet_page(state: State<'_, AppState>, req: SheetPageReq) -> AppResult<SheetPageVO> {
+    state.services.sheet.page(&req)
+}
 
 /// 打开工作簿：读出全部工作表与单元格。
 #[tauri::command(async)]

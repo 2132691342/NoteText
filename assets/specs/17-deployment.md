@@ -113,7 +113,7 @@ release profile 的四项一起决定这个数字，缺一项就回到 27MB：
 |---|---|---|
 | `installMode` | `currentUser` | 不需要管理员权限；多用户机器不互相干扰 |
 | `languages` | `SimpChinese`, `English` | 目标用户是中英双语 |
-| `fileAssociations` | 文本组 10 个：txt / md / log / json / yml / yaml / toml / ini / csv / xml；压缩组 16 个：zip / 7z / tar / tgz / txz / tbz2 / tbz / tzst / tlz4 / tbr / gz / bz2 / xz / zst / lz4 / br | 常见的纯文本与压缩类型（与 `domain/file_assoc.rs` 的分组清单逐条同步） |
+| `fileAssociations` | 文本组 10 个：txt / md / log / json / yml / yaml / toml / ini / csv / xml；压缩组 23 个：zip / 7z / tar / tgz / txz / tbz2 / tbz / tzst / tlz4 / tbr / cab / gz / bz2 / xz / zst / lz4 / br / rar / lzh / lha / cpio / ar / deb | 常见的纯文本与压缩类型（与 `domain/file_assoc.rs` 的分组清单逐条同步） |
 
 **文件关联用 `role: "Viewer"`**：出现在「打开方式」列表里，
 不抢占用户已有的默认程序。抢占默认是安装器最招人骂的行为之一。

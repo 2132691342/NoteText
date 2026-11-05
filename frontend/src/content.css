@@ -85,7 +85,11 @@
   border-bottom: 1px solid var(--nt-border);
   flex: none;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.nt-tabbar::-webkit-scrollbar {
+  height: 0;
 }
 
 .nt-tab {

@@ -85,6 +85,24 @@ window（窗底） < workspace（区底） ≤ surface（面板 / chrome）
 `--nt-editor-*` 一组（bg / gutter-bg / gutter-ink / active-line / selection /
 cursor）：代码区可独立压暗，不让界面 chrome 的亮色抢走代码的注意力。
 
+### 滚动条刻度
+
+桌面端要「看得见、也抓得住」：长文档靠拖滚动条定位，轨道太窄就拖不动。
+
+| 令牌 | 值 | 作用 |
+|---|---|---|
+| `--nt-scrollbar-size` | 14px | 垂直轨道宽度（横向同宽，另有 `-sm` 10px 给横向条） |
+| `--nt-scrollbar-inset` | 2px | 滑块四周的内缩，只做视觉居中 |
+| `--nt-scrollbar-inset-hover` | 1px | 悬停时的内缩：滑块变长，但轨道宽度不变所以不抖 |
+| `--nt-scrollbar-thumb` | 浅色灰5 / 深色灰4 | 滑块本色 |
+| `--nt-scrollbar-thumb-hover` | 浅色灰4 / 深色灰3 | 悬停加深 |
+| `--nt-scrollbar-thumb-active` | 浅色灰3 / 深色灰2 | 拖动中加深 |
+
+滑块实占宽度 = 轨道宽 − 2 × 内缩。悬停时内缩收到 1px，滑块长 2px——
+用户能看见自己抓住了东西，但布局一个像素都不动。
+
+深色底上滑块要比浅色底亮一档才看得见，否则整条轨道等于没有。
+
 ### 尺寸刻度
 
 | 组 | 变量 |
@@ -97,6 +115,7 @@ cursor）：代码区可独立压暗，不让界面 chrome 的亮色抢走代码
 | 图标尺寸 | `--nt-icon-sm`(14) / `icon-md`(16) / `icon-lg`(18) |
 | 图标瓦片 | `--nt-tile-sm`(30) / `tile`(40) / `tile-lg`(52) |
 | 布局宽度 | `--nt-w-sidebar`(260) / `dialog`(560) 等 |
+| 滚动条 | `--nt-scrollbar-size`(14) / `-size-sm`(10) / `-inset`(2) / `-inset-hover`(1) |
 
 **两套缩放系数管两件事**：
 

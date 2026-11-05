@@ -1,6 +1,8 @@
 //! 工具箱服务：JSON / Diff / 哈希 / 正则 / 格式转换。
 //! 全是无副作用的纯计算，前端每个工具窗单独 invoke 一次。
 
+pub mod json_stream;
+
 use std::sync::Arc;
 
 use crate::db::Db;
@@ -18,6 +20,9 @@ use crate::service::encoding;
 
 /// 匹配条数上限：超出截断，避免一次渲染把界面卡死。
 const REGEX_MAX_MATCHES: usize = 1000;
+
+/// 流式 JSON 的触发阈值：超过它就按顶层数组逐元素排版。
+const STREAM_JSON_THRESHOLD: usize = 32 * 1024 * 1024;
 
 pub struct ToolsService {
     #[allow(dead_code)]
@@ -41,6 +46,37 @@ impl ToolsService {
     // ---- JSON ----
 
     pub fn json_format(&self, req: &JsonFormatReq) -> JsonFormatVO {
+        // 大顶层数组走流式：整块解析在几百 MB 的数组上会 OOM。
+        let indent = req.indent.unwrap_or(2).clamp(0, 8);
+        if req.text.len() > STREAM_JSON_THRESHOLD {
+            if let Some((body, _count, truncated)) =
+                crate::service::tools::json_stream::format_top_level_array(
+                    &req.text,
+                    indent,
+                    req.sort_keys,
+                )
+            {
+                let mut output = String::from(
+                    "[
+",
+                );
+                output.push_str(&body);
+                if truncated {
+                    output.push_str(
+                        "
+// ... 已截断：数组元素过多或输出超过上限
+",
+                    );
+                }
+                return JsonFormatVO {
+                    ok: true,
+                    output,
+                    error_line: None,
+                    error_col: None,
+                    error_message: None,
+                };
+            }
+        }
         let parsed: serde_json::Value = match serde_json::from_str(&req.text) {
             Ok(v) => v,
             Err(e) => {
