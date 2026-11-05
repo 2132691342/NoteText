@@ -1,5 +1,8 @@
-//! 集成测试共享设施：隔离装配与几组长链路反复用到的构造器。
-//! 各 `chain_*.rs` 通过 `mod common;` 复用，本文件本身不会被编译成独立测试二进制。
+//! 集成测试的共享设施：隔离装配 + 跨域复用的样本构造器。
+//!
+//! 两条约束：
+//! 1. 测试与生产共用同一条装配链（`bootstrap::build`），不引 mock 框架；
+//! 2. 每个域的样本在自己的文件里构造，本模块只放真正跨域复用的那几样。
 
 #![allow(dead_code)]
 
@@ -22,7 +25,7 @@ pub fn boot() -> (tempfile::TempDir, AppState) {
     (dir, state)
 }
 
-/// 构造一个标签行（用于会话往返）。
+/// 构造一个标签行（会话往返用）。
 pub fn tab(ord: i32, path: &str, title: &str) -> TabDO {
     TabDO {
         ord,
@@ -53,6 +56,8 @@ pub fn roundtrip(state: &AppState, file: &Path, bytes: &[u8]) -> FileContentVO {
         .expect("读失败")
 }
 
+/* ---------------- 归档样本（压缩域复用） ---------------- */
+
 /// 归档样本：中文目录名 + 嵌套子目录 + 可压缩段与随机段，往返要逐字节一致。
 pub fn sample_tree(dir: &Path) -> (PathBuf, PathBuf) {
     let root = dir.join("样本目录");
@@ -69,6 +74,7 @@ pub fn sample_tree(dir: &Path) -> (PathBuf, PathBuf) {
     (root, bin)
 }
 
+/// 压缩请求：默认参数，只改来源 / 目标 / 格式。
 pub fn create_req(sources: Vec<String>, dest: &Path, format: &str) -> CreateArchiveReq {
     CreateArchiveReq {
         sources,
@@ -85,6 +91,7 @@ pub fn create_req(sources: Vec<String>, dest: &Path, format: &str) -> CreateArch
     }
 }
 
+/// 解压请求：覆盖同名文件，不建子目录。
 pub fn extract_req(archive: &Path, dest: &Path) -> ExtractArchiveReq {
     ExtractArchiveReq {
         archive: archive.to_string_lossy().to_string(),
@@ -172,10 +179,10 @@ pub fn build_ar(data: &[u8], name: &str) -> Vec<u8> {
     ar
 }
 
-// ---------- 表格编辑样本：一个带样式的极小 xlsx ----------
+/* ---------------- XLSX 样本（表格编辑域复用） ---------------- */
 
 /// 用原始部件手工拼一个带样式的 xlsx：两张表 + 共享串 + styles.xml。
-pub fn build_styled_xlsx(path: &std::path::Path) {
+pub fn build_styled_xlsx(path: &Path) {
     use std::io::Write;
     let file = fs::File::create(path).expect("建 xlsx 失败");
     let mut zip = zip::ZipWriter::new(file);
@@ -201,7 +208,7 @@ pub fn build_styled_xlsx(path: &std::path::Path) {
 }
 
 /// 读 xlsx 内某个部件的原始字节（用于断言「未编辑部件字节级原样」）。
-pub fn read_zip_entry_bytes(path: &std::path::Path, name: &str) -> Vec<u8> {
+pub fn read_zip_entry_bytes(path: &Path, name: &str) -> Vec<u8> {
     use std::io::Read;
     let bytes = fs::read(path).expect("读 xlsx 失败");
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("解 zip 失败");

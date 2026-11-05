@@ -223,6 +223,8 @@ export default {
       'Their renderers are large and approximate; the system default program is more reliable. Plain text is still viewable in the hex view',
     sheetTruncated: 'Showing the first {shown} rows of {total}',
     sheetTruncatedUnknown: 'Showing the first {shown} rows (file too large to count all rows)',
+    saveAsXlsx: 'Save as xlsx',
+    savedAsXlsx: 'Saved as {name} — open it to edit cells',
     docxEmpty: 'This Word document has no renderable content',
     pages: '{n} pages',
     logViewer: 'Log viewer',
@@ -331,6 +333,9 @@ export default {
     findNext: 'Next',
     findPrev: 'Previous',
     savedRows: 'Saved {n} changes',
+    copyRow: 'Copy row',
+    copyColName: 'Copy column name',
+    indexing: 'Building index\u2026',
   },
   sidebar: {
     findResults: 'Find results',

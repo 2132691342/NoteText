@@ -65,18 +65,6 @@ export interface WriteResultVO {
 }
 
 /** CSV / TSV 表格预览：后端已按探测编码解好，前端只画。 */
-export interface TablePreviewVO {
-  path: string
-  encoding: string
-  /** 分隔符原字符：`,` / `\t` / `;` / `|` */
-  delimiter: string
-  rows: string[][]
-  total_rows: number
-  total_cols: number
-  truncated: boolean
-  size: number
-}
-
 /** 大文件元信息：块索引建好后的概览。 */
 export interface BigFileMetaVO {  path: string
   size: number
@@ -167,6 +155,8 @@ export interface TableMetaVO {
   total_cols: number
   header: string[]
   has_header: boolean
+  /** 采样得到的列宽（字符宽度）；null = 该列没采到样本。 */
+  col_widths: (number | null)[]
   block_size: number
   block_count: number
   line_ending: string

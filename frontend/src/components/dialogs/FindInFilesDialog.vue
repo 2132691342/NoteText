@@ -101,11 +101,9 @@ function stop() {
 }
 
 /**
- * 遍历 + 搜索。
- *
- * 逐目录扫描，文件按 4 个一批并发读：全并发会把 IO 打满，编辑器还要响应用户操作；
- * 每 200 个文件让出一帧，进度数字才更新得了。
- */
+   * 遍历 + 搜索。
+   * 逐目录扫描，文件按 4 个一批并发读：全并发会把 IO 打满。每 200 个文件让出一帧。
+   */
 async function run() {
   if (!dir.value || !query.value) {
     toast.warn(t('toast.needDirAndKeyword'))

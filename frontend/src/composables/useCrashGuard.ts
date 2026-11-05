@@ -1,7 +1,5 @@
 // 崩溃恢复快照：每 30 秒把脏标签的正文静默快照进草稿库。
-// 应用异常终止（崩溃 / 断电 / 强杀）后，下次启动凭「last_exit_clean=false +
-// 草稿快照」提示恢复；正常退出路径不变（退出时另有 persistLayout 全量保存）。
-// 只快照不写盘：自动落盘是 auto_save 的职责，两者互不替代。
+// 异常终止后凭「last_exit_clean=false + 草稿快照」提示恢复。只快照不写盘：自动落盘是 auto_save 的职责。
 import { onUnmounted } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 import { api, isDesktop } from '@/api'

@@ -56,11 +56,9 @@ export function cancelAllTextPrompts() {
 }
 
 /**
- * 结算当前输入框并推进队列。
- *
- * 先摘当前项再 resolve：resolve 里可能又推一个新请求进来，
- * 顺序反了会把新项当成旧项的继续者处理掉。
- */
+   * 结算当前输入框并推进队列。
+   * 先摘当前项再 resolve：resolve 里可能又推新请求进来，顺序反了会把新项当成旧项的继续者。
+   */
 export function settleTextPrompt(value: string | null) {
   const cur = current.value
   if (!cur) return

@@ -268,7 +268,9 @@ fn extract_zip(
     let mut total = 0u64;
     for i in 0..archive.len() {
         let f = archive.by_index_raw(i).map_err(err_zip)?;
-        let name = to_slash(f.name());
+        // 与 list_zip 用同一个解码：两处不一致的话，界面上选中了条目，
+        // 解压时却按另一个名字去找，结果是「解出来的名字与看到的不一样」。
+        let name = to_slash(&super::util::decode_zip_name(f.name_raw()));
         if !is_selected(&name, selected) {
             continue;
         }

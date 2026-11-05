@@ -143,7 +143,7 @@ export function useGlobalKeys() {
   }
 
   /**
-   * Ctrl + 滚轮缩放字号：鼠标在手时最顺手的一档，与工具栏的 ± 同一套刻度。
+   * Ctrl + 滚轮缩放字号：与工具栏的 ± 同一套刻度。
    * 必须 passive:false——浏览器默认把 Ctrl+滚轮当整页缩放，不拦就会两套缩放打架。
    */
   function onWheel(e: WheelEvent) {

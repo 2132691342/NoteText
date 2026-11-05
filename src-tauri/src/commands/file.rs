@@ -69,20 +69,6 @@ pub async fn save_file_as(
     }
 }
 
-/// CSV / TSV 表格预览：后端解码 + 切行，前端不碰原始字节。
-/// 标 async 的原因与归档一致——大文件的文本解码不能在主线程上做。
-#[tauri::command(async)]
-pub fn read_table_preview(
-    state: State<'_, AppState>,
-    path: String,
-    encoding: Option<String>,
-) -> AppResult<crate::domain::file::TablePreviewVO> {
-    state
-        .services
-        .file
-        .read_table_preview(&path, encoding.as_deref())
-}
-
 /// 大文件分块只读：建块索引。同步扫描放进阻塞线程池，
 /// 进度经 `bigfile:progress` 事件回报（每 8MB 一次），取消走 `big_file_cancel`。
 #[tauri::command(async)]
@@ -245,40 +231,20 @@ pub fn get_recent_files(
     state.services.userdata.list_recent()
 }
 
-/// 极简 base64（标准字母表 + = 补齐）。
-/// 不引 base64 crate ——只有一个调用点，实现二十行。
+/// 二进制预览的读取上限 20MB：更大文件让用户改用系统默认程序。
 const MAX_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
 
 /// 预览用二进制读取上限 20MB：更大文件让用户改用系统默认程序。
 #[tauri::command(async)]
 pub fn read_binary(state: State<'_, AppState>, path: String) -> AppResult<String> {
     let bytes = state.services.file.read_bytes(&path, MAX_PREVIEW_BYTES)?;
-    Ok(base64_encode(&bytes))
+    Ok(crate::pkg::base64::encode(&bytes))
 }
 
-/// 极简 base64（标准字母表 + `=` 补齐）。不引 base64 crate：这里只有一个调用点，实现二十行，比多一个依赖划算。
-fn base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b = [
-            chunk[0],
-            *chunk.get(1).unwrap_or(&0),
-            *chunk.get(2).unwrap_or(&0),
-        ];
-        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
-        out.push(TABLE[(n >> 18) as usize & 63] as char);
-        out.push(TABLE[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 {
-            TABLE[(n >> 6) as usize & 63] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            TABLE[n as usize & 63] as char
-        } else {
-            '='
-        });
-    }
-    out
+/// 写二进制：入参 base64，落盘走原子替换（同目录临时文件 + rename）。
+/// 用于「另存为」这类由前端生成字节的场景（如把 .xls / .ods 转成 .xlsx）。
+#[tauri::command(async)]
+pub fn write_binary(state: State<'_, AppState>, path: String, data: String) -> AppResult<()> {
+    let bytes = crate::pkg::base64::decode(&data)?;
+    state.services.file.write_bytes(&path, &bytes)
 }

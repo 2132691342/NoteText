@@ -177,7 +177,9 @@ fn list_zip<R: ReadSeek>(reader: R) -> AppResult<ArchiveInfoVO> {
     let mut entries = Vec::with_capacity(archive.len());
     for i in 0..archive.len() {
         let f = archive.by_index_raw(i).map_err(err_zip)?;
-        let name = to_slash(f.name());
+        // 名字要按旧编码回退解：Windows 中文系统存的 zip 是 GBK 字节且不置 UTF-8 标志位，
+        // 直接当 UTF-8 读会得到一屏乱码。
+        let name = to_slash(&super::util::decode_zip_name(f.name_raw()));
         let is_dir = f.is_dir();
         info.encrypted |= f.encrypted();
         // to_time 已标记 deprecated：zip 2.6 推荐 OffsetDateTime::try_from，

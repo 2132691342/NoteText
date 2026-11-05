@@ -376,11 +376,9 @@ watch(
 )
 
 /**
- * 把「扩展模式」的转义序列还原成真实字符。
- *
- * 用户写 `\n` `\t` 是想搜真的换行与制表符，但普通模式下它们是两字符。
- * 正则模式下不做这层转换：那里 `\n` 已经是合法的正则转义。
- */
+   * 把「扩展模式」的转义序列还原成真实字符。
+   * 正则模式下不做这层转换：那里 `\n` 已经是合法的正则转义。
+   */
 function expandEscapes(s: string): string {
   return s
     .replace(/\\r/g, '\r')
@@ -574,11 +572,9 @@ function dirStop() {
 }
 
 /**
- * 遍历 + 搜索。
- *
- * 并发上限 4：全并发会把 IO 打满，而编辑器还要响应用户操作。
- * 每 200 个文件让出一帧，进度数字才更新得了。
- */
+   * 遍历 + 搜索。
+   * 并发上限 4：全并发会把 IO 打满，编辑器还要响应用户操作。每 200 个文件让出一帧。
+   */
 async function runDir() {
   if (!dir.value || !query.value) {
     toast.warn(t('toast.needDirAndKeyword'))

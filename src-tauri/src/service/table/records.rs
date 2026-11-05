@@ -1,8 +1,5 @@
 //! 记录边界扫描与解析：分隔文本（CSV / TSV）。
-//! 三条链路共用同一套状态机，记录边界必须一致——否则页边界与索引对不上：
-//! - 字节级扫描器：建索引用（快，不解码）；
-//! - 文本级流式解析器：分页读取与整文件重写用（要字段值）；
-//! - 整段解析：单块读取用。
+//! 三条链路共用同一套状态机，记录边界必须一致（否则页边界与索引对不上）：字节级扫描器（建索引）、文本级流式解析器（分页与重写）、整段解析（单块读取）。
 
 use memchr::memchr;
 
@@ -88,9 +85,7 @@ impl ScanUnit for u16 {
 }
 
 /// 字节级记录扫描器：找出记录结束点，统计列数。
-///
-/// 状态机与 `service::file::parse_delimited` 同构：引号包裹、`""` 转义、字段内换行。
-/// 引号字段的闭合引号要看下一个字符才能定性，所以状态跨块延续。
+/// 状态机与 `service::file::parse_delimited` 同构：引号包裹、`""` 转义、字段内换行。引号字段的闭合引号要看下一个字符才能定性，所以状态跨块延续。
 pub struct RecordScanner<U: ScanUnit> {
     delim: U,
     /// 在引号字段内。
@@ -212,9 +207,7 @@ impl<U: ScanUnit> RecordScanner<U> {
 }
 
 /// JSON 顶层数组的记录扫描器：按元素边界切。
-///
-/// 数组元素可以跨行（美化的 JSON 每个对象占十几行），所以按行切不成立。
-/// 状态机跟踪花括号深度与字符串态，在深度 1 的 `,` / `]` 处断开。
+/// 数组元素可以跨行（美化的 JSON 每个对象占十几行），所以按行切不成立。状态机跟踪花括号深度与字符串态，在深度 1 的 `,` / `]` 处断开。
 pub struct JsonArrayScanner {
     /// 当前花括号 / 方括号深度。
     depth: usize,
@@ -307,7 +300,6 @@ impl JsonArrayScanner {
 }
 
 /// 文本级流式解析器：跨块产出记录（重写整文件时用）。
-///
 /// 状态跨块延续，所以引号字段里的换行不会把记录切断。
 pub struct StreamParser {
     delim: char,
@@ -390,7 +382,6 @@ impl StreamParser {
 }
 
 /// 整段解析：解析一段文本里的所有记录。
-///
 /// 状态机与 `RecordScanner` 一致，所以记录数与索引对得上。
 pub fn parse_delimited(text: &str, delim: char) -> Vec<Vec<String>> {
     let mut out: Vec<Vec<String>> = Vec::new();

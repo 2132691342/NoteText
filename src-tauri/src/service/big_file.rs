@@ -598,7 +598,6 @@ fn find_pattern(hay: &[u8], pattern: &[u8]) -> Option<usize> {
 }
 
 /// 每一行的起始字节偏移（含第 0 行）。
-///
 /// 找命中时用它二分出行号：不必为每条命中重数一遍换行。
 fn line_start_positions(text: &str) -> Vec<usize> {
     let mut v = Vec::with_capacity(text.len() / 32 + 1);

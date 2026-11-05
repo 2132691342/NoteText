@@ -23,13 +23,7 @@ const HTML = new Set(['html', 'htm', 'xhtml'])
 
 const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd', 'mdx'])
 
-/**
- * 不做内置渲染的文档格式。
- *
- * Word / PDF / PPT / EPUB 都不在内置预览范围内：内嵌渲染器体积大、
- * 还原度有限，半成品预览不如一句明确的「用外部程序打开」。
- * Excel 与 CSV 例外——那类文件用户想看的就是表格本身。
- */
+/** 不做内置渲染的文档格式：Word / PDF / PPT / EPUB 等内嵌渲染体积大、还原度有限，统一给「用外部程序打开」出路。 */
 const LEGACY_DOC = new Set([
   'doc', 'docx', 'docm', 'dot', 'dotx', 'rtf', 'ppt', 'pptx', 'pps', 'pptm',
   'odt', 'odp', 'pages', 'key', 'epub', 'mobi', 'pdf',
@@ -51,12 +45,7 @@ const BINARY = new Set([
   'psd', 'ai', 'eps', 'sketch', 'fig',
 ])
 
-/**
- * 判定文件形态。
- *
- * `isBinary` 来自后端 stat（前 8KB 含 NUL），只对「扩展名不认识」的文件生效：
- * 认识的扩展名一律按表走，避免大文件嗅探不到 NUL 时误开成文本。
- */
+/** 判定文件形态：已知扩展名按表走，未知扩展名才用后端 NUL 嗅探兜底。 */
 export function kindOf(path: string, isBinary = false): FileKind {
   const ext = extName(path)
   if (IMAGE.has(ext)) return 'image'
@@ -95,13 +84,19 @@ export function isTableGrid(path: string): boolean {
   return isDelimitedSheet(path) || isJsonlSheet(path)
 }
 
-/**
- * XLSX / ODS：二进制容器表格，走「读单元格 → 改 XML 写回」的可编辑网格。
- * 样式、图表、条件格式在写回时原地保留，所以这类文件可以真正编辑。
- */
+/** XLSX / XLSM 走「读单元格 → 改 XML 写回」网格，样式图表写回时原地保留；ODS 走只读预览，可另存为 xlsx 后再编辑。 */
 export function isWorkbookSheet(path: string): boolean {
   const ext = extName(path)
-  return ext === 'xlsx' || ext === 'xlsm' || ext === 'ods'
+  return ext === 'xlsx' || ext === 'xlsm'
+}
+
+/**
+ * 只能只读预览的电子表格：老 .xls（BIFF）与 ODS。
+ * 它们在预览器里可看、可另存为 xlsx，但不能原地改单元格。
+ */
+export function isReadonlySheet(path: string): boolean {
+  const ext = extName(path)
+  return ext === 'xls' || ext === 'ods'
 }
 
 /** 该形态能不能按文本读进 CodeMirror。 */

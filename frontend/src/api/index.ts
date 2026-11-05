@@ -32,9 +32,7 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
 
 /**
  * 把 invoke 的 reject 归一成 AppError。
- *
- * 后端 message 是写死的中文（Rust 侧没有界面语言这个概念），直接透给英文
- * 界面就是中英混排。这里按错误码取本地化文案，后端那句只当 details 用。
+ * 后端 message 固定中文，这里按错误码取本地化文案，后端那句只当 details 用。
  */
 export function normalizeError(e: unknown): AppError {
   if (typeof e === 'string') {
@@ -163,7 +161,6 @@ import type {
   PreviewEntryReq,
   PreviewEntryVO,
   SplitFileReq,
-  TablePreviewVO,
   TestArchiveReq,
 } from '@/types/api'
 
@@ -178,9 +175,8 @@ export const api = {
     }),
   /** 读二进制（预览 / Hex）。返回 base64：走 Vec<u8> 会被序列化成 number[]。 */
   readBinary: (path: string) => call<string>('read_binary', { path }),
-  /** CSV / TSV 表格预览：后端解码切行，不受 read_binary 的 20MB 上限约束。 */
-  readTablePreview: (path: string, encoding?: string) =>
-    call<TablePreviewVO>('read_table_preview', { path, encoding: encoding ?? null }),
+  /** 写二进制（base64 入参）：用于把 .xls / .ods 另存为 .xlsx 这类前端生成字节的场景。 */
+  writeBinary: (path: string, data: string) => call<void>('write_binary', { path, data }),
   writeFile: (
     path: string,
     text: string,

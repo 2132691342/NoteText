@@ -1,13 +1,6 @@
-//! 表格写回：覆盖层 + 流式重写。
-//!
-//! 1000 万行的 CSV 改一个格子，绝不能「读进内存 → 改 → 写回」。
-//! 做法是：改动只存在内存的覆盖层里，文件一个字节都没动；
-//! 保存时顺序读原文件、逐记录应用覆盖层、写临时文件、原子替换。
-//! 内存占用与文件大小无关。
-//!
-//! 未改动的记录按原始字节原样搬运（不重新序列化）：
-//! 「打开 → 什么都不改 → 保存」必须字节级不变，
-//! 否则用户文件里的引号风格、数字格式会在一次无关的保存里被改掉。
+//! 表格写回：覆盖层 + 流式重写。改动存内存覆盖层，文件一个字节都没动；
+//! 保存时顺序读原文件、逐记录应用覆盖层、写临时文件、原子替换，内存占用与文件大小无关。
+//! 未改动的记录按原始字节原样搬运，保证「打开后不改再保存」字节级不变。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -272,7 +265,6 @@ pub fn save(req: &TableSaveReq, index: &TableIndex) -> AppResult<TableSaveVO> {
 }
 
 /// 输出一行（及其前置的插入行），返回写出的记录数。
-///
 /// 未改动的行按原始字节搬运；改动的行才重新序列化。
 fn emit_csv_row(
     raw: &[u8],
@@ -356,7 +348,6 @@ fn apply_cells(cells: &mut Vec<String>, row_no: u64, overlay: &Overlay) {
 }
 
 /// 一行原始字节的行尾。
-///
 /// 降级值先在外面算好：这里返回的必须是 `'static` 的那几个字面量。
 fn row_eol(raw: &[u8], fallback: &'static str) -> &'static str {
     if raw.ends_with(b"\r\n") {
@@ -693,10 +684,7 @@ pub fn save_json_array(req: &TableSaveReq, index: &TableIndex) -> AppResult<Tabl
 }
 
 /// 找出下一个元素的结束位置（返回字节长度）。
-///
-/// 顶层数组的元素以 `,` 或 `]` 收尾；字符串里的括号不算。
-/// 约定与 `service::table::index::json_array_elements` 一致：
-/// 开头的 `[` 可有可无，元素的深度从 0 起算。
+/// 顶层数组的元素以 `,` 或 `]` 收尾；字符串里的括号不算。约定与 `service::table::index::json_array_elements` 一致：开头的 `[` 可有可无，元素的深度从 0 起算。
 fn find_element_end(text: &str) -> Option<usize> {
     let bytes = text.as_bytes();
     let mut i = 0usize;

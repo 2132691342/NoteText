@@ -56,8 +56,10 @@ function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'sheet' | 'workbook' 
   // 分屏时一律回到三态编辑器：只读预览器没有第二栏，分屏按钮会变成假动作。
   if (kind === 'markdown') return tab.showing_preview && !tab.split ? 'doc' : 'markdown'
   if (kind === 'sheet') {
-    // CSV / TSV 是可编辑文本网格；XLSX / ODS 是二进制容器，走单元格补丁编辑。
-    if (isTableGrid(tab.path)) return tab.showing_preview ? 'doc' : 'sheet'
+    // CSV / TSV 与 XLSX / ODS 都走可编辑网格。
+    // 表格没有「只读预览」这个独立形态：预览只能截一部分行，
+    // 而网格本来就能看全部——多一个预览态只是给用户多一层障碍。
+    if (isTableGrid(tab.path)) return 'sheet'
     return tab.showing_preview ? 'doc' : 'workbook'
   }
   if (hasRichPreview(kind)) return 'doc'

@@ -42,6 +42,8 @@ pub struct TableMetaVO {
     pub header: Vec<String>,
     /// 首行是否表头：`false` 时首行也是数据。
     pub has_header: bool,
+    /// 采样得到的列宽（字符宽度）；`None` = 该列没采到样本。
+    pub col_widths: Vec<Option<f64>>,
     /// 块大小（字节）与块数。
     pub block_size: u64,
     pub block_count: usize,

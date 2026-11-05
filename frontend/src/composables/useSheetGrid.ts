@@ -1,21 +1,22 @@
 // XLSX 工作表网格：分页取数 + 虚拟滚动（空间压缩）+ 单元格补丁。
-//
 // 与大表格（CSV）同构，但单元格的值是领域对象（公式 / 数值 / 布尔），
 // 保存走后端的「原地改 XML」：只重写命中的单元格，其余部件字节级原样。
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { api, normalizeError } from '@/api'
+import { computeGridWindow, FALLBACK_VIEWPORT, MAX_SCROLL_PX, ROW_H } from '@/composables/gridScroll'
 import type { CellValue, SheetCell, SheetInfoVO, WorkbookInfoVO } from '@/types/api'
 
-/** 行高：与 CSS 的行高保持一致。 */
-export const ROW_H = 26
-/** 滚动空间的上限：远低于 Chrome 的元素高度上限。 */
-const MAX_SCROLL_PX = 20_000_000
+export { ROW_H }
 /** 一页多少行。 */
 const PAGE_SIZE = 500
-/** 视口上下各多渲染几行。 */
-const OVERSCAN = 12
 /** 预取页数。 */
 const PREFETCH_PAGES = 2
+/** 页缓存上限：丢最早取的页，开着大工作簿不无限吃内存。 */
+const MAX_CACHED_PAGES = 48
+/** 列宽：默认、下限、上限（像素）。 */
+const COL_W_DEFAULT = 120
+const COL_W_MIN = 56
+const COL_W_MAX = 640
 
 export interface SheetGridOptions {
   path: Ref<string>
@@ -34,6 +35,34 @@ export function useSheetGrid(opts: SheetGridOptions) {
   const version = ref(0)
   /** 正在请求的页。 */
   const inflight = new Set<number>()
+  /** 取页顺序：超出上限时先丢最早取的。 */
+  const pageOrder: number[] = []
+
+  // ---- 列宽 ----
+
+  /** 列宽覆盖层：列号 → 像素（用户拖过 / 双击自适应后落在这里）。 */
+  const colWidths = shallowRef(new Map<number, number>())
+  /** 后端给的列宽（字符宽度 → 像素）。 */
+  const autoWidths = shallowRef<number[]>([])
+
+  function colWidth(col: number): number {
+    const manual = colWidths.value.get(col)
+    if (manual != null) return manual
+    const auto = autoWidths.value[col]
+    return auto ?? COL_W_DEFAULT
+  }
+
+  function setColWidth(col: number, width: number) {
+    const next = new Map(colWidths.value)
+    next.set(col, Math.round(Math.min(COL_W_MAX, Math.max(COL_W_MIN, width))))
+    colWidths.value = next
+  }
+
+  const totalWidth = computed(() => {
+    let w = 0
+    for (let c = 0; c < totalCols.value; c += 1) w += colWidth(c)
+    return w
+  })
 
   /** 待写回的改动：`工作表下标` → (`行:列` → 值)。 */
   const pendingBySheet = shallowRef(new Map<number, Map<string, CellValue | null>>())
@@ -65,22 +94,18 @@ export function useSheetGrid(opts: SheetGridOptions) {
   const logicalHeight = computed(() => totalRows.value * ROW_H)
   const maxLogical = computed(() => Math.max(0, logicalHeight.value - viewport.value))
   const scrollHeight = computed(() => Math.min(logicalHeight.value, MAX_SCROLL_PX))
-  const scale = computed(() => {
-    if (maxLogical.value <= 0) return 1
-    const denom = scrollHeight.value - viewport.value
-    return denom > 0 ? denom / maxLogical.value : 1
-  })
-  const logicalScroll = computed(() =>
-    maxLogical.value <= 0 ? 0 : Math.min(scrollTop.value / scale.value, maxLogical.value),
+  /** 渲染窗口：一次算完，滚动坐标与窗口位置同源。 */
+  const grid = computed(() =>
+    computeGridWindow(totalRows.value, viewport.value, scrollTop.value),
   )
-  const firstVisible = computed(() => Math.floor(logicalScroll.value / ROW_H))
-  const windowStart = computed(() => Math.max(0, firstVisible.value - OVERSCAN))
-  const windowEnd = computed(() => {
-    const visible = Math.ceil(viewport.value / ROW_H) + OVERSCAN * 2 + 1
-    return Math.min(totalRows.value, windowStart.value + visible)
-  })
-  const windowTop = computed(
-    () => scrollTop.value - (firstVisible.value - windowStart.value) * ROW_H,
+  const scale = computed(() => grid.value.scale)
+  const logicalScroll = computed(() => grid.value.logicalScroll)
+  const windowStart = computed(() => grid.value.windowStart)
+  const windowEnd = computed(() => grid.value.windowEnd)
+  const windowTop = computed(() => grid.value.windowTop)
+  /** 视口高度：量不到时用兜底值，别让窗口退化成几行。 */
+  const effectiveViewport = computed(() =>
+    viewport.value > 0 ? viewport.value : FALLBACK_VIEWPORT,
   )
 
   // ---- 取数 ----
@@ -88,6 +113,7 @@ export function useSheetGrid(opts: SheetGridOptions) {
   async function ensurePage(pageIdx: number) {
     if (!info.value || inflight.has(pageIdx)) return
     if (pages.value.has(pageIdx)) return
+    if (pageIdx < 0 || pageIdx * PAGE_SIZE >= totalRows.value) return
     inflight.add(pageIdx)
     try {
       const res = await api.sheet.page({
@@ -98,6 +124,13 @@ export function useSheetGrid(opts: SheetGridOptions) {
       })
       const next = new Map(pages.value)
       next.set(pageIdx, res.rows)
+      // 页缓存封顶：丢最早取的页。
+      pageOrder.push(pageIdx)
+      while (pageOrder.length > MAX_CACHED_PAGES) {
+        const old = pageOrder.shift()
+        if (old == null || old === pageIdx) continue
+        next.delete(old)
+      }
       pages.value = next
       version.value += 1
     } catch (e) {
@@ -114,8 +147,12 @@ export function useSheetGrid(opts: SheetGridOptions) {
     const firstPage = Math.floor(first / PAGE_SIZE)
     const lastPage = Math.floor(last / PAGE_SIZE)
     for (let p = firstPage; p <= lastPage; p += 1) void ensurePage(p)
-    for (let p = firstPage - 1; p >= firstPage - PREFETCH_PAGES; p -= 1) {
+    // 前后各预取几页，滚过去时不用等。
+    for (let p = firstPage - PREFETCH_PAGES; p < firstPage; p += 1) {
       if (p >= 0) void ensurePage(p)
+    }
+    for (let p = lastPage + 1; p <= lastPage + PREFETCH_PAGES; p += 1) {
+      void ensurePage(p)
     }
   }
 
@@ -188,8 +225,10 @@ export function useSheetGrid(opts: SheetGridOptions) {
     if (host && Math.abs(host.scrollTop - px) > 0.5) host.scrollTop = px
   }
 
+  /** 滚到某行并尽量居中。 */
   function scrollToRow(row: number) {
-    scrollToLogical(Math.max(0, Math.min(row, totalRows.value - 1)) * ROW_H)
+    const center = row * ROW_H - effectiveViewport.value / 2 + ROW_H / 2
+    scrollToLogical(Math.max(0, center))
   }
 
   function onScroll() {
@@ -213,6 +252,8 @@ export function useSheetGrid(opts: SheetGridOptions) {
       activeSheet.value = 0
       version.value += 1
       opts.onMeta?.(meta)
+      // 列宽：后端按采样给字符宽度，转成像素；没给就留空走默认档。
+      autoWidths.value = []
       ensureVisiblePages()
     } catch (e) {
       error.value = normalizeError(e).message
@@ -227,6 +268,7 @@ export function useSheetGrid(opts: SheetGridOptions) {
     if (activeSheet.value === index) return
     activeSheet.value = index
     pages.value = new Map()
+    pageOrder.length = 0
     version.value += 1
     scrollToLogical(0)
     ensureVisiblePages()
@@ -239,13 +281,26 @@ export function useSheetGrid(opts: SheetGridOptions) {
   // ---- 尺寸观察 ----
 
   let observer: ResizeObserver | null = null
-  onMounted(() => {
+  function measure() {
     viewport.value = scrollHost.value?.clientHeight ?? 0
-    observer = new ResizeObserver(() => {
-      viewport.value = scrollHost.value?.clientHeight ?? 0
-    })
+  }
+
+  onMounted(() => {
+    measure()
+    observer = new ResizeObserver(measure)
     if (scrollHost.value) observer.observe(scrollHost.value)
   })
+
+  // scrollHost 是模板 ref：组件挂载后才赋值，v-if / 条件渲染下 onMounted
+  // 可能量不到元素，这里补上观察，否则 viewport 永远停在 0。
+  watch(scrollHost, (el, old) => {
+    if (old) observer?.unobserve(old)
+    if (el) {
+      observer?.observe(el)
+      measure()
+    }
+  })
+
   onBeforeUnmount(() => observer?.disconnect())
 
   return {
@@ -264,6 +319,10 @@ export function useSheetGrid(opts: SheetGridOptions) {
     scrollHeight,
     windowTop,
     windowRows,
+    colWidths,
+    totalWidth,
+    colWidth,
+    setColWidth,
     logicalScroll,
     open,
     selectSheet,

@@ -1,19 +1,18 @@
-// 大表格可编辑网格：分页取数 + 虚拟滚动（空间压缩）+ 覆盖层编辑。
-//
-// 1000 万行的 CSV 不整篇进内存：后端按记录边界建索引，前端按页取数。
-// 改动存在覆盖层里（文件一个字节都没动），Ctrl+S 时后端流式重写整个文件。
+<!-- 大表格可编辑网格：分页取数 + 虚拟滚动（空间压缩）+ 覆盖层编辑。
+     1000 万行的 CSV 不整篇进内存：后端按记录边界建索引，前端按页取数。
+     改动存在覆盖层里（文件一个字节都没动），Ctrl+S 时后端流式重写整个文件。 -->
 <template>
   <div class="nt-sheet">
     <div class="nt-sheet-bar">
-      <ElButton size="small" :disabled="!hasHeader" @click="toggleHeader">
+      <ElButton size="small" :disabled="!hasHeader || saving" @click="toggleHeader">
         <NtIcon name="list" size="sm" />
-        <span>{{ t('sheet.showHeader') }}</span>
+        <span class="nt-btn-text">{{ t('sheet.showHeader') }}</span>
       </ElButton>
-      <ElButton size="small" :disabled="!selectedRow" @click="doInsertRow">
+      <ElButton size="small" :disabled="!selectedRow || saving" @click="doInsertRow">
         <NtIcon name="plus" size="sm" />
-        <span>{{ t('sheet.addRow') }}</span>
+        <span class="nt-btn-text">{{ t('sheet.addRow') }}</span>
       </ElButton>
-      <ElButton size="small" :disabled="!selectedRow" @click="doDeleteRow">
+      <ElButton size="small" :disabled="!selectedRow || saving" @click="doDeleteRow">
         {{ t('sheet.deleteRow') }}
       </ElButton>
       <span class="nt-toolbar-sep" />
@@ -27,7 +26,7 @@
         @keydown.enter.prevent="runFind"
       >
         <template #append>
-          <ElButton size="small" :disabled="!findText" @click="runFind">
+          <ElButton size="small" :disabled="!findText || finding" :loading="finding" @click="runFind">
             {{ t('sheet.find') }}
           </ElButton>
         </template>
@@ -38,7 +37,7 @@
       <ElButton size="small" :disabled="!findHits.length" @click="stepFind(-1)">
         {{ t('sheet.findPrev') }}
       </ElButton>
-      <ElButton size="small" :disabled="!findHits.length" @click="replaceAll">
+      <ElButton size="small" :disabled="!findHits.length || saving" @click="replaceAll">
         {{ t('sheet.replaceAll', { n: findHits.length }) }}
       </ElButton>
       <span class="nt-toolbar-spacer" />
@@ -79,61 +78,112 @@
       <span class="nt-mount-error-detail">{{ error }}</span>
     </div>
 
-    <div
-      v-else
-      ref="scrollEl"
-      class="nt-sheet-body"
-      @wheel="onWheel"
-      @scroll="onScroll"
-    >
-      <!-- 表头行：吸顶 -->
-      <div v-if="showHeader" class="nt-sheet-header-row">
-        <span class="nt-sheet-gutter">{{ t('sheet.colLabel') }}</span>
-        <div v-for="(h, ci) in header" :key="ci" class="nt-sheet-cell nt-sheet-head-cell">
-          <span class="nt-sheet-cell-text">{{ h || colName(ci) }}</span>
-        </div>
-      </div>
+    <div v-else-if="loading" class="nt-sheet-loading">
+      <span class="nt-spinner" />
+      <span class="nt-readout">{{ t('sheet.indexing') }}</span>
+    </div>
 
-      <div class="nt-sheet-inner" :style="{ height: `${scrollHeight}px` }">
+    <!--
+      ref 必须叫 scrollHost：useTableGrid 用这个名字量视口高度。
+      绑错名字 → viewport 恒为 0 → 渲染窗口只剩 overscan 那几行。
+    -->
+    <div v-else ref="scrollHost" class="nt-sheet-body" @wheel="onWheel" @scroll="onScroll">
+      <div
+        class="nt-sheet-grid"
+        :style="{ height: `${scrollHeight}px`, width: `${totalWidth + GUTTER}px` }"
+      >
+        <!-- 表头行：sticky 吸顶。列字母行在外，表头值在内，两层都要吸 -->
+        <div v-if="showHeader" class="nt-sheet-header">
+          <div class="nt-sheet-cols">
+            <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
+            <div
+              v-for="c in totalCols"
+              :key="c - 1"
+              class="nt-sheet-head-cell"
+              :style="{ width: `${colWidth(c - 1)}px` }"
+            >
+              <span class="nt-sheet-cell-text">{{ header[c - 1] || colName(c - 1) }}</span>
+            </div>
+          </div>
+          <!-- 表头值行：has_header 才是真数据，否则这行只是列字母的补充 -->
+          <div class="nt-sheet-cols nt-sheet-datalabels">
+            <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
+            <div
+              v-for="c in totalCols"
+              :key="`d${c - 1}`"
+              class="nt-sheet-head-cell"
+              :style="{ width: `${colWidth(c - 1)}px` }"
+            >
+              <span class="nt-sheet-cell-text">{{ colName(c - 1) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据窗口：绝对定位 + translate，行本身按真实高度渲染 -->
         <div class="nt-sheet-window" :style="{ transform: `translateY(${windowTop}px)` }">
           <div
             v-for="row in windowRows"
             :key="row.index"
             class="nt-sheet-row"
-            :class="{ 'is-inserted': row.inserted }"
+            :class="{
+              'is-inserted': row.inserted,
+              'is-selected': row.orig != null && row.orig === selectedRow,
+            }"
             @click="selectRow(row)"
           >
-            <span class="nt-sheet-gutter">{{ row.label }}</span>
+            <span class="nt-sheet-gutter" :class="{ 'is-selected': row.orig != null && row.orig === selectedRow }">
+              {{ row.label }}
+            </span>
             <div
-              v-for="ci in totalCols"
-              :key="ci"
+              v-for="c in totalCols"
+              :key="c - 1"
               class="nt-sheet-cell"
               :class="{
-                'is-editing': editing?.orig === row.orig && editing?.col === ci - 1,
-                'is-hit': isHit(row, ci - 1),
-                'is-dirty': row.orig != null && isDirtyCell(row.orig, ci - 1),
+                'is-editing': isEditing(row, c - 1),
+                'is-hit': isHit(row, c - 1),
+                'is-dirty': row.orig != null && isDirtyCell(row.orig, c - 1),
+                'is-focus': isFocused(row, c - 1),
               }"
-              @click.stop="startEdit(row, ci - 1)"
+              :style="{ width: `${colWidth(c - 1)}px` }"
+              @click.stop="startEdit(row, c - 1)"
+              @contextmenu.prevent="openCellMenu($event, row, c - 1)"
             >
               <input
-                v-if="editing?.orig === row.orig && editing?.col === ci - 1"
+                v-if="isEditing(row, c - 1)"
                 ref="editEl"
-                v-model="editing.draft"
+                v-model="editingDraft"
                 class="nt-sheet-input"
                 spellcheck="false"
                 @keydown.enter.prevent="commitEdit(0)"
-                @keydown.tab.prevent="commitEdit(1)"
+                @keydown.tab.prevent="commitEdit($event.shiftKey ? -1 : 1)"
                 @keydown.esc.prevent="cancelEdit"
+                @keydown.up.prevent="commitEdit(-2)"
+                @keydown.down.prevent="commitEdit(2)"
                 @blur="commitEdit(0)"
               />
-              <span v-else class="nt-sheet-cell-text" :title="row.cells[ci - 1]">
-                {{ row.cells[ci - 1] }}
+              <span v-else class="nt-sheet-cell-text" :title="row.cells[c - 1]">
+                {{ row.cells[c - 1] }}
               </span>
+              <!-- 列宽拖拽手柄：只放在最后一行的右侧不够用，每格右缘都可拖 -->
+              <span
+                class="nt-sheet-col-resize"
+                :class="{ 'is-last': c === totalCols }"
+                @mousedown.stop.prevent="startResize($event, c - 1)"
+                @dblclick.stop.prevent="fitColumn(c - 1)"
+              />
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <ContextMenu
+      v-if="cellMenu"
+      :x="cellMenu.x"
+      :y="cellMenu.y"
+      :items="cellMenuItems"
+      @close="cellMenu = null"
+    />
   </div>
 </template>
 
@@ -152,46 +202,68 @@ import {
 } from '@/composables/useEditorRegistry'
 import { useTableGrid, ROW_H } from '@/composables/useTableGrid'
 import { useToastStore } from '@/stores/toast'
+import { useSettingsStore } from '@/stores/settings'
 import { baseName } from '@/utils'
+import NtIcon from '@/components/common/NtIcon.vue'
+import ContextMenu from '@/components/common/ContextMenu.vue'
+import type { MenuItem } from '@/components/common/contextMenu'
 
 const props = defineProps<{ tab: Tab }>()
 const { t } = useI18n()
 const editor = useEditorStore()
 const toast = useToastStore()
+const settings = useSettingsStore()
 
-const scrollEl = ref<HTMLElement | null>(null)
+/** 行号栏宽度：与 CSS 的 .nt-sheet-gutter 必须同值。 */
+const GUTTER = 64
+
 const editing = ref<{ orig: number; col: number; draft: string } | null>(null)
+/** 编辑框的双向绑定：v-model 不能直接绑可空的 editing.draft。 */
+const editingDraft = computed({
+  get: () => editing.value?.draft ?? '',
+  set: (v: string) => {
+    if (editing.value) editing.value.draft = v
+  },
+})
 const editEl = ref<HTMLInputElement | null>(null)
 /** 当前选中的行（原始行号）。 */
 const selectedRow = ref<number | null>(null)
+/** 键盘焦点格：方向键与 Tab 的定位锚点。 */
+const focused = ref<{ orig: number; col: number } | null>(null)
 /** 表头显示开关。 */
 const showHeader = ref(true)
 /** 跳行输入。 */
 const gotoInput = ref('')
-/** 查找框：Ctrl+F 聚焦它。 */
 const findInput = ref<{ focus: () => void } | null>(null)
-/** 跳行框：Ctrl+G 聚焦它。 */
 const gotoEl = ref<{ focus: () => void } | null>(null)
-/** 保存中。 */
 const saving = ref(false)
 
 const pathRef = computed(() => props.tab.path)
 const {
   meta,
+  loading,
   error,
   header,
   hasHeader,
   totalRows,
   totalCols,
   editCount,
+  scrollHost,
   scrollHeight,
   windowTop,
   windowRows,
+  totalWidth,
+  colWidth,
+  setColWidth,
+  autoFitColumn,
   open: openGrid,
   close: closeGrid,
   onWheel,
   onScroll,
+  scrollToCell,
   scrollToOriginalRow,
+  displayIndexOf,
+  cellValue,
   setCell,
   isDirtyCell,
   deleteRow,
@@ -229,7 +301,6 @@ function colName(i: number): string {
 const findText = ref('')
 const findHits = shallowRef<TableHitVO[]>([])
 const findCursor = ref(0)
-/** 后端还有没扫完的部分。 */
 const findMore = ref(false)
 const finding = ref(false)
 
@@ -245,7 +316,7 @@ function isHit(row: { orig: number | null }, col: number): boolean {
   return hitSet.value.has(`${row.orig}:${col}`)
 }
 
-/** 扫全表找一次。 */
+/** 扫全表找一次。一页 500 条，扫不完可以「下一个」续扫。 */
 async function runFind() {
   if (!findText.value || !props.tab.path) return
   finding.value = true
@@ -259,9 +330,9 @@ async function runFind() {
       from_row: 0,
       limit: 500,
     })
-    findHits.value = res.hits
+    findHits.value = res.hits ?? []
     findMore.value = !res.done
-    if (res.hits.length === 0) {
+    if (findHits.value.length === 0) {
       toast.info(t('dialog.noMatches'))
     } else {
       toast.ok(t('sheet.findHits', { n: res.total }))
@@ -274,82 +345,172 @@ async function runFind() {
   }
 }
 
-/** 上一个 / 下一个命中。 */
+/** 上一个 / 下一个命中。走到末尾还有没扫完的部分就续扫一轮。 */
 async function stepFind(delta: number) {
   if (!findHits.value.length) {
     await runFind()
     return
   }
   const next = findCursor.value + delta
-  if (next < 0) findCursor.value = findHits.value.length - 1
-  else if (next >= findHits.value.length) findCursor.value = 0
-  else findCursor.value = next
+  if (next < 0) {
+    findCursor.value = findHits.value.length - 1
+  } else if (next >= findHits.value.length) {
+    if (findMore.value && delta > 0) await extendFind()
+    findCursor.value = findHits.value.length ? 0 : 0
+    if (delta < 0) findCursor.value = findHits.value.length - 1
+  } else {
+    findCursor.value = next
+  }
   await jumpToHit(findCursor.value)
 }
 
-/** 滚到第 n 条命中。 */
+/** 续扫一轮：从最后一条命中之后接着找。 */
+async function extendFind() {
+  const last = findHits.value[findHits.value.length - 1]
+  if (!last || !props.tab.path) return
+  finding.value = true
+  try {
+    const res = await api.table.find({
+      path: props.tab.path,
+      query: findText.value,
+      match_case: false,
+      from_row: last.row + 1,
+      limit: 500,
+    })
+    const more = res.hits ?? []
+    if (more.length) findHits.value = [...findHits.value, ...more]
+    findMore.value = !res.done
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+    findMore.value = false
+  } finally {
+    finding.value = false
+  }
+}
+
+/** 滚到第 n 条命中：横纵向都定位到该格。 */
 async function jumpToHit(n: number) {
   const hit = findHits.value[n]
   if (!hit) return
   findCursor.value = n
-  scrollToOriginalRow(hit.row)
+  scrollToCell(hit.row, hit.col)
+  selectedRow.value = hit.row
+  focused.value = { orig: hit.row, col: hit.col }
 }
 
 /** 全部替换：改命中格的值（进覆盖层，不动文件）。 */
 function replaceAll() {
   if (!findHits.value.length) return
   const needle = findText.value
+  if (!needle) return
+  const repl = replaceText.value
+  let n = 0
   for (const h of findHits.value) {
+    // 用 cellValue 而不是 windowRows：命中的格很可能不在当前渲染窗口里。
     const cur = cellValue(h.row, h.col)
-    const next = cur.split(needle).join(replaceText.value)
-    setCell(h.row, h.col, next)
+    if (!cur.includes(needle)) continue
+    setCell(h.row, h.col, cur.split(needle).join(repl))
+    n += 1
   }
-  const n = findHits.value.length
   findHits.value = []
   syncDirty()
-  toast.ok(t('sheet.replaced', { n }))
+  if (n > 0) toast.ok(t('sheet.replaced', { n }))
+  else toast.info(t('dialog.noMatches'))
 }
 
 const replaceText = ref('')
 
-/** 某格当前值（含覆盖层）。 */
-function cellValue(orig: number, col: number): string {
-  const row = windowRows.value.find((r) => r.orig === orig)
-  return row?.cells[col] ?? ''
-}
-
 // ---- 单元格编辑 ----
 
-/** 网格行：原始行号 + 字段值。插入行的 orig 为 null（不可编辑）。 */
 type GridRow = { orig: number | null; cells: string[] }
 
+function isEditing(row: GridRow, col: number): boolean {
+  return row.orig != null && editing.value?.orig === row.orig && editing.value?.col === col
+}
+
+function isFocused(row: GridRow, col: number): boolean {
+  return row.orig != null && focused.value?.orig === row.orig && focused.value?.col === col
+}
+
 function startEdit(row: GridRow, col: number) {
-  if (row.orig == null) return
+  if (row.orig == null || col >= totalCols.value) return
+  focused.value = { orig: row.orig, col }
   editing.value = { orig: row.orig, col, draft: row.cells[col] ?? '' }
-  void nextTick(() => editEl.value?.focus())
+  void nextTick(() => {
+    editEl.value?.focus()
+    editEl.value?.select()
+  })
 }
 
 function cancelEdit() {
   editing.value = null
 }
 
-/** 提交编辑。move=1 时（Tab 键）顺手跳到右边一格。 */
+/**
+ * 提交编辑。
+ * move：0 = 原地收尾（Enter / 失焦）；1 = 右移（Tab）；-1 = 左移（Shift+Tab）；
+ * 2 = 下移（↓）；-2 = 上移（↑）。
+ */
 function commitEdit(move: number) {
   const ed = editing.value
   if (!ed) return
-  const row = windowRows.value.find((r) => r.orig === ed.orig)
-  const cur = row?.cells[ed.col] ?? ''
+  const cur = cellValue(ed.orig, ed.col)
   if (cur !== ed.draft) {
     setCell(ed.orig, ed.col, ed.draft)
     syncDirty()
   }
   editing.value = null
-  if (move === 1) startEdit({ orig: ed.orig, cells: [] }, ed.col + 1)
+  if (move === 0) return
+  let row = ed.orig
+  let col = ed.col
+  if (move === 1 || move === -1) {
+    col += move
+    // 走到行尾就换行，符合表格里一路 Tab 的预期。
+    if (col >= totalCols.value) {
+      col = 0
+      row = Math.min(row + 1, totalRows.value - 1)
+    } else if (col < 0) {
+      col = totalCols.value - 1
+      row = Math.max(row - 1, 0)
+    }
+  } else {
+    row = Math.min(Math.max(row + (move === 2 ? 1 : -1), 0), totalRows.value - 1)
+  }
+  scrollToCell(row, col)
+  selectedRow.value = row
+  focused.value = { orig: row, col }
+  void nextTick(() => startEdit({ orig: row, cells: [] }, col))
+}
+
+// ---- 列宽拖拽 ----
+
+let resizing: { col: number; startX: number; startW: number } | null = null
+
+function startResize(e: MouseEvent, col: number) {
+  resizing = { col, startX: e.clientX, startW: colWidth(col) }
+  const onMove = (ev: MouseEvent) => {
+    if (!resizing) return
+    setColWidth(resizing.col, resizing.startW + (ev.clientX - resizing.startX))
+  }
+  const onUp = () => {
+    resizing = null
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'col-resize'
+}
+
+/** 双击列分隔线：按已缓存的内容自适应宽度。 */
+function fitColumn(col: number) {
+  autoFitColumn(col)
 }
 
 // ---- 行操作 ----
 
-function selectRow(row: { orig: number | null }) {
+function selectRow(row: GridRow) {
   if (row.orig == null) return
   selectedRow.value = row.orig
 }
@@ -371,22 +532,96 @@ function toggleHeader() {
   showHeader.value = !showHeader.value
 }
 
-/** 跳到指定原始行号。 */
+/** 跳到指定行号（1 基，与行号栏显示一致）。 */
 function onGoto() {
   const n = Number.parseInt(gotoInput.value, 10)
   if (!Number.isFinite(n) || n < 1) return
-  scrollToOriginalRow(n)
+  // 行号栏显示 orig + 1，所以跳转也按 1 基换算。
+  const orig = Math.min(Math.max(n - 1, 0), totalRows.value - 1)
+  scrollToOriginalRow(orig)
+  selectedRow.value = orig
+  focused.value = { orig, col: 0 }
+}
+
+// ---- 右键菜单 ----
+
+/** 菜单位置与作用的对象：右键点的位置 + 那一格。 */
+const cellMenu = ref<{ x: number; y: number } | null>(null)
+const menuRow = shallowRef<GridRow | null>(null)
+const menuCol = ref(0)
+
+/** 菜单条目：按点击位置动态生成，每个条目自带回调。 */
+const cellMenuItems = computed<MenuItem[]>(() => {
+  const row = menuRow.value
+  const col = menuCol.value
+  const hasCell = row?.orig != null
+  const text = row?.cells[col] ?? ''
+  return [
+    {
+      label: t('menu.copy'),
+      hint: 'Ctrl+C',
+      disabled: !row,
+      run: () => void copyCells(text),
+    },
+    {
+      label: t('sheet.copyRow'),
+      disabled: !row,
+      run: () => void copyCells(row?.cells.join('\t') ?? ''),
+    },
+    { sep: true },
+    {
+      label: t('sheet.addRow'),
+      disabled: !hasCell,
+      run: () => {
+        if (row?.orig == null) return
+        insertRowAfter(row.orig, new Array(totalCols.value).fill(''))
+        syncDirty()
+      },
+    },
+    {
+      label: t('sheet.deleteRow'),
+      danger: true,
+      disabled: !hasCell,
+      run: () => {
+        if (row?.orig == null) return
+        deleteRow(row.orig)
+        selectedRow.value = null
+        syncDirty()
+      },
+    },
+    { sep: true },
+    { label: t('sheet.copyColName'), run: () => void copyCells(colName(col)) },
+  ]
+})
+
+function openCellMenu(e: MouseEvent, row: GridRow, col: number) {
+  menuRow.value = row
+  menuCol.value = col
+  if (row.orig != null) {
+    selectedRow.value = row.orig
+    focused.value = { orig: row.orig, col }
+  }
+  cellMenu.value = { x: e.clientX, y: e.clientY }
+}
+
+/** 复制到系统剪贴板：表格里复制的是纯文本，粘进 Excel 直接分列。 */
+async function copyCells(text: string) {
+  if (!text) return
+  try {
+    await api.writeClipboard(text)
+    toast.ok(t('toast.copied'))
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  }
 }
 
 // ---- 保存 ----
 
-/** 脏标记。 */
 function syncDirty() {
   const dirty = editCount.value > 0
   if (props.tab.dirty !== dirty) editor.markDirty(props.tab.id, dirty)
 }
 
-/** 原地写回。 */
 async function save() {
   await writeBack(undefined)
 }
@@ -405,7 +640,6 @@ async function writeBack(destPath?: string) {
       backup: false,
     })
     if (destPath) {
-      // 另存为：源文件不动，改动已落到新文件；标签跟到新路径。
       props.tab.path = res.path
       props.tab.title = baseName(res.path)
       toast.ok(t('sheet.savedRows', { n: res.changed }))
@@ -414,7 +648,7 @@ async function writeBack(destPath?: string) {
     resetEdits()
     syncDirty()
     toast.ok(t('sheet.savedRows', { n: res.changed }))
-    // 写回后索引失效：重建并刷新读数。
+    // 写回后索引失效：重建并刷新读数（列宽覆盖层保留，用户拖过的宽度不该被重置）。
     await openGrid()
   } catch (e) {
     toast.bad(normalizeError(e).message)
@@ -423,7 +657,6 @@ async function writeBack(destPath?: string) {
   }
 }
 
-/** 另存为：写到新文件，源文件不动。 */
 async function saveAs() {
   if (!props.tab.path || editCount.value === 0) return
   const dest = await api.saveFileDialog(baseName(props.tab.path))
@@ -438,13 +671,51 @@ function discard() {
 
 /** 状态栏行数：表格的行数走同一事件通道。 */
 function announceLines(lines: number) {
-  document.dispatchEvent(
-    new CustomEvent('nt-stats', { detail: { tabId: props.tab.id, lines } }),
-  )
+  document.dispatchEvent(new CustomEvent('nt-stats', { detail: { tabId: props.tab.id, lines } }))
+}
+
+/** 方向键在非编辑态下移动焦点格：表格里这是最基本的导航。 */
+function onKeyNav(e: KeyboardEvent) {
+  const f = focused.value
+  if (!f || editing.value) return
+  const target = e.target as HTMLElement | null
+  // 输入框里的方向键归输入框自己。
+  if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return
+  let { orig, col } = f
+  switch (e.key) {
+    case 'ArrowUp':
+      orig = Math.max(orig - 1, 0)
+      break
+    case 'ArrowDown':
+      orig = Math.min(orig + 1, totalRows.value - 1)
+      break
+    case 'ArrowLeft':
+      col = Math.max(col - 1, 0)
+      break
+    case 'ArrowRight':
+      col = Math.min(col + 1, totalCols.value - 1)
+      break
+    case 'Enter':
+    case 'F2':
+      e.preventDefault()
+      startEdit({ orig, cells: [] }, col)
+      return
+    default:
+      return
+  }
+  e.preventDefault()
+  scrollToCell(orig, col)
+  focused.value = { orig, col }
+  selectedRow.value = orig
 }
 
 onMounted(async () => {
   await openGrid()
+  // 首页取回后把焦点落在第一格：用户按方向键就能走。
+  if (totalRows.value > 0) {
+    const orig = hasHeader.value ? 1 : 0
+    focused.value = { orig: Math.min(orig, totalRows.value - 1), col: 0 }
+  }
   registerTableFocus(props.tab.id, (what) => {
     if (what === 'goto') {
       gotoInput.value = ''
@@ -464,15 +735,19 @@ onMounted(async () => {
     },
     isDirty: () => editCount.value > 0,
   })
+  window.addEventListener('keydown', onKeyNav)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyNav)
   unregisterTableProvider(props.tab.id)
   void closeGrid()
 })
 
-// 行高常量供样式使用。
+// 行高常量供样式使用（与 CSS 同值）。
 void ROW_H
+void displayIndexOf
+void settings
 </script>
 
 <style scoped>
@@ -502,12 +777,12 @@ void ROW_H
 }
 
 .nt-sheet-find {
-  width: 150px;
+  width: 160px;
   flex: none;
 }
 
 .nt-sheet-goto {
-  width: 140px;
+  width: 150px;
   flex: none;
 }
 
@@ -522,6 +797,15 @@ void ROW_H
   flex: 1;
 }
 
+.nt-sheet-loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nt-sp-3);
+}
+
+/* 滚动容器：横向与纵向都由它承担，虚拟滚动只换纵向内容高度 */
 .nt-sheet-body {
   flex: 1;
   min-height: 0;
@@ -530,25 +814,54 @@ void ROW_H
   position: relative;
 }
 
-.nt-sheet-header-row {
-  display: flex;
-  height: 26px;
+.nt-sheet-grid {
+  position: relative;
+  min-width: 100%;
+}
+
+/* 表头：两层都吸顶。列字母行永远在，表头值行跟着 has_header */
+.nt-sheet-header {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   background: var(--nt-elev-raised);
   border-bottom: 1px solid var(--nt-border-strong);
 }
 
+.nt-sheet-cols {
+  display: flex;
+  height: 24px;
+}
+
+.nt-sheet-datalabels {
+  border-top: 1px solid var(--nt-border);
+}
+
+.nt-sheet-corner {
+  flex: none;
+  width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nt-ink-muted);
+  background: var(--nt-editor-gutter-bg);
+  border-right: 1px solid var(--nt-border);
+  font-size: var(--nt-fs-2xs);
+  user-select: none;
+}
+
 .nt-sheet-head-cell {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--nt-sp-2);
+  border-right: 1px solid var(--nt-border);
+  overflow: hidden;
   font-weight: 600;
   color: var(--nt-ink);
 }
 
-.nt-sheet-inner {
-  position: relative;
-}
-
+/* 数据窗口：绝对定位，靠 translateY 落到正确位置 */
 .nt-sheet-window {
   position: absolute;
   left: 0;
@@ -565,9 +878,13 @@ void ROW_H
   background: var(--nt-primary-soft);
 }
 
+.nt-sheet-row.is-selected {
+  background: var(--nt-surface-selected);
+}
+
 .nt-sheet-gutter {
   flex: none;
-  width: 72px;
+  width: 64px;
   padding: 0 var(--nt-sp-2);
   display: flex;
   align-items: center;
@@ -580,9 +897,13 @@ void ROW_H
   user-select: none;
 }
 
+.nt-sheet-gutter.is-selected {
+  color: var(--nt-primary);
+  background: var(--nt-primary-soft);
+}
+
 .nt-sheet-cell {
   flex: none;
-  width: 180px;
   display: flex;
   align-items: center;
   padding: 0 var(--nt-sp-2);
@@ -590,6 +911,7 @@ void ROW_H
   border-right: 1px solid var(--nt-border);
   overflow: hidden;
   cursor: cell;
+  position: relative;
 }
 
 .nt-sheet-cell:hover {
@@ -608,6 +930,11 @@ void ROW_H
   background: var(--nt-primary-soft);
 }
 
+.nt-sheet-cell.is-focus {
+  outline: 2px solid var(--nt-primary);
+  outline-offset: -2px;
+}
+
 .nt-sheet-cell-text {
   width: 100%;
   overflow: hidden;
@@ -620,10 +947,27 @@ void ROW_H
   width: 100%;
   height: 100%;
   border: none;
-  outline: 1px solid var(--nt-primary);
+  outline: 2px solid var(--nt-primary);
+  outline-offset: -2px;
   padding: 0 var(--nt-sp-2);
   background: var(--nt-elev-raised);
-  color: var(--nt-ink-1);
+  color: var(--nt-ink);
   font: inherit;
+}
+
+/* 列宽拖拽手柄：骑在右边界上，命中区 7px 够抓 */
+.nt-sheet-col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.nt-sheet-col-resize:hover {
+  background: var(--nt-primary);
+  opacity: 0.4;
 }
 </style>

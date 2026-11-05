@@ -35,7 +35,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
   只写 `branches` 时，GitHub 的过滤器是「或」关系，tag 推送仍会命中 `push` 触发器；
   补上 `tags-ignore` 才能把 tag 彻底排除在这条之外
 - `release.yml` 只认 `push.tags`，且用 `v[0-9]+.[0-9]+.[0-9]+` 而不是 `v*`：
-  形如 `v1.0.0` 的 tag 才会发版，顺带挡掉误推的 `v-next` 之类分支式 tag
+  形如 `v2.0.0` 的 tag 才会发版，顺带挡掉误推的 `v-next` 之类分支式 tag
 - `release.yml` 在上传前校验产物存在且体积未异常偏大（>24MB 即失败）：
   上限按当前 release profile 的实测值留余量，判据是「符号有没有剥干净 /
   有没有大文件被 `include_bytes!` 打进来」，不是「数字本身好不好看」

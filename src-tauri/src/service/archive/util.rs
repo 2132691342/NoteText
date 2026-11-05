@@ -93,32 +93,31 @@ fn probe_tar_stream(path: &Path, codec: ArchiveFormat) -> bool {
     n >= 262 && &head[257..262] == b"ustar"
 }
 
-/// 探测不出格式时的统一错误；认得但未实现的格式要说清是「不支持」而非「损坏」。
+/// 探测不出格式时的统一错误：按扩展名给出「为什么不行」与「下一步怎么做」。
+/// 「认不出」与「没实现」是两件事：说成同一句话，用户会拿别的工具一开发现文件好好的，于是不再相信本软件的任何错误提示。
 pub fn err_undetectable(path: &Path) -> AppError {
-    if has_rar_magic(path) {
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    // 白盘镜像：结构是 ISO9660 / UDF，不是压缩包。
+    if matches!(ext.as_str(), "iso" | "img" | "dmg" | "vhd" | "vhdx" | "wim") {
         return AppError::new(
             codes::ARCHIVE_UNSUPPORTED,
-            "RAR 暂不支持内置解压：请用系统程序打开，或先转成 zip / 7z",
+            "盘镜像不是压缩包：用系统自带的「挂载」或相应工具打开",
+        );
+    }
+    // 安装包外壳：里面确实是压缩数据，但不是可直接展开的归档。
+    if matches!(ext.as_str(), "msi" | "msix" | "appx" | "nsis" | "exe") {
+        return AppError::new(
+            codes::ARCHIVE_UNSUPPORTED,
+            "这是安装包而不是压缩包：直接运行安装，或用专门的解包工具",
         );
     }
     AppError::new(
         codes::ARCHIVE_UNSUPPORTED,
-        "识别不出压缩格式：文件可能不是压缩包或已损坏",
+        "识别不出压缩格式：文件可能不是压缩包、或用了尚未支持的方法",
     )
-}
-
-/// RAR 魔数：v4 `Rar!\x1a\x07\x00`，v5 `Rar!\x1a\x07\x01\x00`（前 7 字节已可区分）。
-fn has_rar_magic(path: &Path) -> bool {
-    let Ok(mut f) = std::fs::File::open(path) else {
-        return false;
-    };
-    let mut head = [0u8; 8];
-    let n = f.read(&mut head).unwrap_or(0);
-    if n < 7 {
-        return false;
-    }
-    let magic = &head[..7];
-    magic == b"Rar!\x1a\x07\x01" || magic == b"Rar!\x1a\x07\x00"
 }
 
 /// 解析格式 id；引擎分派前的唯一入口。
@@ -372,6 +371,71 @@ pub fn copy_with_ctx<R: Read, W: Write>(src: &mut R, dst: &mut W, ctx: &TaskCtx)
         ctx.add(n as u64);
     }
     Ok(copied)
+}
+
+/* ---------------- zip 条目名的旧编码 ---------------- */
+
+/// 解出 zip 条目的显示名：非 UTF-8 名字按旧编码重解。
+/// 回退顺序：UTF-8 能解就用；不能解依次试 GB18030 / Big5 / Shift_JIS / EUC-KR，取第一份不含替换符且 CJK 占比合理的结果。
+/// 「CJK 占比合理」是防线：GB18030 能解码几乎任何字节串，不比对内容就会把 Shift_JIS 名字解成更错的汉字。
+pub fn decode_zip_name(raw: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(raw) {
+        return s.to_string();
+    }
+    // 依次尝试的候选：先中日韩最常用的四种，再两个西文单字节编码。
+    const CANDIDATES: [&str; 6] = [
+        "gb18030",
+        "big5",
+        "shift_jis",
+        "euc-kr",
+        "windows-1252",
+        "iso-8859-1",
+    ];
+    let mut best: Option<(f32, String)> = None;
+    for enc_id in CANDIDATES {
+        let Some(enc) = encoding_rs::Encoding::for_label(enc_id.as_bytes()) else {
+            continue;
+        };
+        let (text, _, had_errors) = enc.decode(raw);
+        if had_errors {
+            continue;
+        }
+        let score = cjk_ratio(&text);
+        // 同一份字节被多个编码解成不同汉字时，取「更像真的中文」的那份。
+        // MSRV 1.80：`Option::is_none_or` 要到 1.82，这里用 map_or 等价写法。
+        if best.as_ref().map_or(true, |(s, _)| score > *s) {
+            best = Some((score, text.into_owned()));
+        }
+        // 单字节编码（1252 / 8859-1）从来不报错，只当最后兜底，
+        // 已经拿到中文字符串就不必再往下试。
+        if score > 0.0 && !enc_id.starts_with("windows") && enc_id != "iso-8859-1" {
+            break;
+        }
+    }
+    match best {
+        Some((_, s)) => s,
+        None => String::from_utf8_lossy(raw).into_owned(),
+    }
+}
+
+/// 字符串里 CJK / 假名 / 谚文的字符占比：用来判「这个解码结果像不像真的」。
+fn cjk_ratio(s: &str) -> f32 {
+    let total = s.chars().filter(|c| !c.is_control()).count();
+    if total == 0 {
+        return 0.0;
+    }
+    let cjk = s
+        .chars()
+        .filter(|c| {
+            let u = *c as u32;
+            (0x2E80..=0x9FFF).contains(&u)      // CJK 部首 / 表意文字
+                || (0xF900..=0xFAFF).contains(&u)  // 兼容表意文字
+                || (0xFF00..=0xFFEF).contains(&u) // 全角
+                || (0xAC00..=0xD7AF).contains(&u) // 谚文
+                || (0x3040..=0x30FF).contains(&u) // 假名
+        })
+        .count();
+    cjk as f32 / total as f32
 }
 
 /* ---------------- 压缩库错误 → AppError ---------------- */

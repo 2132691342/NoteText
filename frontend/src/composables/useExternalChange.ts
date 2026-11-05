@@ -37,10 +37,7 @@ export function useExternalChange() {
     pendingTimers.set(path, timer)
   }
 
-  /**
-   * 文件树刷新：800ms 去抖 + 单飞 + 40 目录上限，只刷变更路径所在目录。
-   * 超过上限降级为只刷根目录。
-   */
+  /** 文件树刷新：800ms 去抖 + 单飞 + 40 目录上限，只刷变更路径所在目录。 */
   const pendingDirs = new Set<string>()
   let treeTimer: number | undefined
   let refreshing = false

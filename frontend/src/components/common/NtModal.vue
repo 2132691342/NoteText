@@ -36,11 +36,9 @@ const emit = defineEmits<{ close: [] }>()
 const box = ref<HTMLElement | null>(null)
 
 /**
- * 宽度归一成带单位的 CSS 值。
- *
- * 模板里一律写 `width="640"`（字符串），直接丢给 style 就是无单位的
- * `640`——CSS 不认，浮窗会退化成内容宽。数字与纯数字字符串都要补 px。
- */
+   * 宽度归一成带单位的 CSS 值。
+   * 模板里一律写 `width="640"`（字符串），直接丢给 style 是无单位的，CSS 不认，浮窗会退化成内容宽。
+   */
 const boxWidth = computed(() => {
   const w = props.width
   if (w == null || w === '') return undefined

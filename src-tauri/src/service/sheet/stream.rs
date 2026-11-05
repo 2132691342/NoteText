@@ -1,7 +1,5 @@
 //! XLSX 工作表的流式读取：按行拉模式解析 sheet XML。
-//!
-//! 整块解析（`xml.split("<row")`）在百万行的工作表上要吃掉几百 MB 内存。
-//! 拉模式解析（quick-xml）一次只持有一行，内存占用与行数无关。
+//! 整块解析（`xml.split("<row")`）在百万行的工作表上要吃掉几百 MB 内存；拉模式解析（quick-xml）一次只持有一行，内存占用与行数无关。
 
 use quick_xml::events::Event;
 use quick_xml::{Reader, XmlVersion};
@@ -49,10 +47,7 @@ enum Section {
 pub type SharedStrings = Vec<String>;
 
 /// 解析一个工作表 XML 的字节流，逐行产出。
-///
-/// `shared` 给共享串的文本；`emit` 收到每一行的数据，返回 false 表示提前停止。
-/// `range` 给出行号窗口：窗口外的行不构造单元格（只数行），
-/// 所以「扫全表拿总行数」与「只拿这一页」都能用同一个解析器。
+/// `shared` 给共享串的文本；`emit` 收到每一行的数据，返回 false 表示提前停止。`range` 给出行号窗口：窗口外的行不构造单元格（只数行）。
 pub fn parse_sheet_streaming<F>(
     xml: &[u8],
     shared: &SharedStrings,

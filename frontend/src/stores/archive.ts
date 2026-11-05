@@ -46,10 +46,7 @@ export const useArchiveStore = defineStore('archive', () => {
     })
   }
 
-  /**
-   * 终态提示：成功 / 失败 / 取消各说一句人话。
-   * 文案里带文件名：队列里同时挂多条时，用户分得清是哪一条完成了。
-   */
+  /** 终态提示：成功 / 失败 / 取消各说一句人话，文案里带文件名。 */
   function onFinished(task: ArchiveTaskVO | undefined) {
     if (!task) return
     const toast = useToastStore()

@@ -1,28 +1,23 @@
 // 大表格网格：分页取数 + 虚拟滚动（空间压缩）+ 覆盖层编辑。
-//
-// 为什么要有「空间压缩」：Chrome 的元素高度上限约 33,554,428px。
-// 1000 万行 × 26px = 2.6 亿 px，直接映射会让滚动条彻底失效。
-// 做法是：滚动条的长度按比例压缩，行本身仍按真实高度渲染；
-// 滚轮按「行」步进（不受压缩影响），拖滚动条时按比例换算回逻辑位置。
-//
-// 坐标系（三个，别混）：
-// - 逻辑像素：displayRows × ROW_H，与文件真实行数对应；
-// - 滚动条像素：压缩后的空间，范围 [0, scrollHeight - viewport]；
-// - 显示下标：数据行在可见序列里的序号（删除的行不占位，插入的行占位）。
+// 坐标系与窗口计算在 gridScroll.ts。
+// 关键不变量：**滚动容器的 DOM 必须挂到 scrollHost 上**——量不到视口时窗口只剩几行。
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { api, normalizeError } from '@/api'
+import { computeGridWindow, FALLBACK_VIEWPORT, MAX_SCROLL_PX, ROW_H } from '@/composables/gridScroll'
 import type { TableMetaVO, TableOp } from '@/types/api'
 
-/** 行高：与 CSS 的行高保持一致。 */
-export const ROW_H = 26
-/** 滚动空间的上限：远低于 Chrome 的元素高度上限，留足余量。 */
-const MAX_SCROLL_PX = 20_000_000
+export { ROW_H }
+
 /** 一页多少行：一次 IPC 取一屏的十几倍。 */
 const PAGE_SIZE = 500
-/** 视口上下各多渲染几行，快速滚动不露白。 */
-const OVERSCAN = 12
-/** 预取页数：滚到某页之前先把它前面几页取来。 */
+/** 预取页数：滚到某页之前先把它前后几页取来。 */
 const PREFETCH_PAGES = 2
+/** 页缓存上限：滚动很远时丢最早取的页，避免开着大表吃满内存。 */
+const MAX_CACHED_PAGES = 48
+/** 列宽：初值、下限、上限（像素）。 */
+export const COL_W_DEFAULT = 160
+const COL_W_MIN = 56
+const COL_W_MAX = 640
 
 export interface TableGridOptions {
   path: Ref<string>
@@ -43,6 +38,8 @@ export function useTableGrid(opts: TableGridOptions) {
 
   /** 页缓存：页号 → 行数组。整体替换 Map，避免深度响应式。 */
   const pages = shallowRef(new Map<number, string[][]>())
+  /** 取页顺序：超出上限时先丢最早取的。 */
+  const pageOrder: number[] = []
   /** 数据版本号：页缓存与覆盖层变化时 +1。 */
   const version = ref(0)
   /** 正在请求的页。 */
@@ -79,12 +76,69 @@ export function useTableGrid(opts: TableGridOptions) {
     return n
   })
 
+  // ---- 列宽 ----
+
+  /** 列宽覆盖层：列号 → 像素。用户拖过或双击自适应后落在这里。 */
+  const colWidths = shallowRef(new Map<number, number>())
+  /** 自动列宽（后端按采样估的）：打开时一次性写入。 */
+  const autoWidths = shallowRef<number[]>([])
+
+  /** 某列的实际宽度。 */
+  function colWidth(col: number): number {
+    const manual = colWidths.value.get(col)
+    if (manual != null) return manual
+    const auto = autoWidths.value[col]
+    return auto ?? COL_W_DEFAULT
+  }
+
+  /** 设列宽（拖拽结束时调）。 */
+  function setColWidth(col: number, width: number) {
+    const next = new Map(colWidths.value)
+    next.set(col, Math.round(Math.min(COL_W_MAX, Math.max(COL_W_MIN, width))))
+    colWidths.value = next
+  }
+
+  /** 列宽合计：横向滚动的内容宽度。 */
+  const totalWidth = computed(() => {
+    let w = 0
+    for (let c = 0; c < totalCols.value; c += 1) w += colWidth(c)
+    return w
+  })
+
+  /** 恢复自动列宽（双击列分隔线时按当前页内容重算）。 */
+  function autoFitColumn(col: number): number {
+    // 采样已缓存的页：没缓存的列只按表头估，不会为了量宽度去翻页。
+    let widest = measureText(header.value[col] ?? '') + 20
+    for (const page of pages.value.values()) {
+      for (const row of page) {
+        const text = row[col] ?? ''
+        if (text.length > 64) {
+          widest = Math.max(widest, COL_W_MAX)
+          continue
+        }
+        widest = Math.max(widest, measureText(text) + 20)
+      }
+    }
+    const w = Math.min(COL_W_MAX, Math.max(COL_W_MIN, widest))
+    const next = new Map(colWidths.value)
+    next.set(col, w)
+    colWidths.value = next
+    return w
+  }
+
+  /** 估算一段文本的像素宽度：中日韩按 2 个半角算。 */
+  function measureText(s: string): number {
+    let w = 0
+    for (const ch of s) w += /[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 13 : 7
+    return w
+  }
+
   // ---- 滚动坐标 ----
 
   const scrollHost = ref<HTMLElement | null>(null)
   /** 滚动条空间的滚动位置（压缩后的像素）。 */
   const scrollTop = ref(0)
-  /** 视口高度。 */
+  /** 视口高度（像素）。 */
   const viewport = ref(0)
 
   /** 逻辑总高度。 */
@@ -93,41 +147,25 @@ export function useTableGrid(opts: TableGridOptions) {
   const maxLogical = computed(() => Math.max(0, logicalHeight.value - viewport.value))
   /** 滚动条空间高度：压缩到上限之内。 */
   const scrollHeight = computed(() => Math.min(logicalHeight.value, MAX_SCROLL_PX))
-  /**
-   * 压缩比：滚动条像素 → 逻辑像素。
-   *
-   * 不能用 `scrollHeight / logicalHeight`：那会让底部差一屏——
-   * 滚动条到底时对应的是 `scrollHeight - viewport`，不是 `scrollHeight`。
-   * 这里用 `(scrollHeight - viewport) / maxLogical`，两端都精确对齐。
-   */
-  const scale = computed(() => {
-    if (maxLogical.value <= 0) return 1
-    const denom = scrollHeight.value - viewport.value
-    return denom > 0 ? denom / maxLogical.value : 1
-  })
-
-  /** 视口顶部的逻辑位置。 */
-  const logicalScroll = computed(() =>
-    maxLogical.value <= 0 ? 0 : Math.min(scrollTop.value / scale.value, maxLogical.value),
+  /** 渲染窗口：一次算完，滚动坐标与窗口位置同源。 */
+  const grid = computed(() =>
+    computeGridWindow(displayRows.value, viewport.value, scrollTop.value),
   )
+  /** 压缩比：滚动条像素 → 逻辑像素。 */
+  const scale = computed(() => grid.value.scale)
+  /** 视口顶部的逻辑位置。 */
+  const logicalScroll = computed(() => grid.value.logicalScroll)
   /** 视口顶部的显示行。 */
-  const firstVisible = computed(() => Math.floor(logicalScroll.value / ROW_H))
+  const firstVisible = computed(() => grid.value.firstVisible)
   /** 渲染窗口的首行（带 overscan）。 */
-  const windowStart = computed(() => Math.max(0, firstVisible.value - OVERSCAN))
+  const windowStart = computed(() => grid.value.windowStart)
   /** 渲染窗口的末行。 */
-  const windowEnd = computed(() => {
-    const visible = Math.ceil(viewport.value / ROW_H) + OVERSCAN * 2 + 1
-    return Math.min(displayRows.value, windowStart.value + visible)
-  })
-  /**
-   * 渲染窗口的顶边（相对滚动内容）。
-   *
-   * 窗口里的第一行是 `windowStart`，它应当出现在视口里
-   * `firstVisible - windowStart` 行之后的位置——那几行是预渲染的余量，
-   * 已经被滚过去了，所以窗口要往上提那么多。
-   */
-  const windowTop = computed(
-    () => scrollTop.value - (firstVisible.value - windowStart.value) * ROW_H,
+  const windowEnd = computed(() => grid.value.windowEnd)
+  /** 渲染窗口的顶边（滚动条空间坐标）。 */
+  const windowTop = computed(() => grid.value.windowTop)
+  /** 视口高度：量不到时用兜底值，别让窗口退化成几行。 */
+  const effectiveViewport = computed(() =>
+    viewport.value > 0 ? viewport.value : FALLBACK_VIEWPORT,
   )
 
   // ---- 显示下标 ↔ 原始行 ----
@@ -209,7 +247,7 @@ export function useTableGrid(opts: TableGridOptions) {
       label: string
       /** 字段值（已应用覆盖层）。 */
       cells: string[]
-      /** 插入行的标记：同一锚点下的第几条。 */
+      /** 插入行的标记。 */
       inserted: boolean
     }> = []
     const ops = insertedRows.value
@@ -218,12 +256,11 @@ export function useTableGrid(opts: TableGridOptions) {
       if (r < dataStart.value) continue
       const slot = displayIndexOf(r)
       if (slot === d) {
-        // 原始行本身（未被删）。
         if (deletedRows.value.has(r)) continue
         out.push({
           index: d,
           orig: r,
-          label: String(r),
+          label: String(r + 1),
           cells: cellsOf(r),
           inserted: false,
         })
@@ -261,12 +298,22 @@ export function useTableGrid(opts: TableGridOptions) {
     return out
   }
 
+  /** 某格的当前值（含覆盖层）：查找替换要读窗口外的格，不能只查 windowRows。 */
+  function cellValue(orig: number, col: number): string {
+    const edits = cellEdits.value.get(orig)
+    if (edits?.has(col)) return edits.get(col) ?? ''
+    const pageIdx = Math.floor(orig / PAGE_SIZE)
+    const page = pages.value.get(pageIdx)
+    return page?.[orig - pageIdx * PAGE_SIZE]?.[col] ?? ''
+  }
+
   // ---- 取数 ----
 
   /** 取一页（已在缓存里就跳过）。 */
   async function ensurePage(pageIdx: number) {
     if (!meta.value || pending.has(pageIdx)) return
     if (pages.value.has(pageIdx)) return
+    if (pageIdx < 0 || pageIdx * PAGE_SIZE >= totalRows.value) return
     pending.add(pageIdx)
     try {
       const res = await api.table.page({
@@ -276,6 +323,14 @@ export function useTableGrid(opts: TableGridOptions) {
       })
       const next = new Map(pages.value)
       next.set(pageIdx, res.rows)
+      // 页缓存封顶：先丢最早取的（当前窗口附近的页刚被 ensureVisiblePages 续上，
+      // 顺序里排在后面，不会立刻被丢）。
+      pageOrder.push(pageIdx)
+      while (pageOrder.length > MAX_CACHED_PAGES) {
+        const old = pageOrder.shift()
+        if (old == null || old === pageIdx) continue
+        next.delete(old)
+      }
       pages.value = next
       version.value += 1
       if (res.stale) opts.onError?.('stale')
@@ -294,10 +349,18 @@ export function useTableGrid(opts: TableGridOptions) {
     const firstPage = Math.floor(first / PAGE_SIZE)
     const lastPage = Math.floor(last / PAGE_SIZE)
     for (let p = firstPage; p <= lastPage; p += 1) void ensurePage(p)
-    // 预取：往前的几页先取来，滚过去时不用等。
-    for (let p = firstPage - 1; p >= firstPage - PREFETCH_PAGES; p -= 1) {
+    // 预取：前后各几页，滚过去时不用等。
+    for (let p = firstPage - PREFETCH_PAGES; p < firstPage; p += 1) {
       if (p >= 0) void ensurePage(p)
     }
+    for (let p = lastPage + 1; p <= lastPage + PREFETCH_PAGES; p += 1) {
+      void ensurePage(p)
+    }
+  }
+
+  /** 取某一行所在页（不等待完成，用于查找跳转前预热）。 */
+  async function ensureRowCached(orig: number) {
+    await ensurePage(Math.floor(orig / PAGE_SIZE))
   }
 
   // ---- 滚动 ----
@@ -333,6 +396,25 @@ export function useTableGrid(opts: TableGridOptions) {
     scrollToDisplayRow(displayIndexOf(orig))
   }
 
+  /** 把某格滚进视口并尽量居中：查找跳转要的是「看到这一格」。 */
+  function scrollToCell(orig: number, col: number) {
+    // 纵向：目标行放在视口中间
+    const d = displayIndexOf(orig)
+    const center = d * ROW_H - effectiveViewport.value / 2 + ROW_H / 2
+    scrollToLogical(center)
+    // 横向：列不在视口内才滚
+    const host = scrollHost.value
+    if (!host) return
+    let left = 0
+    for (let c = 0; c < col; c += 1) left += colWidth(c)
+    const right = left + colWidth(col)
+    const viewLeft = host.scrollLeft
+    const viewRight = viewLeft + host.clientWidth
+    if (left < viewLeft || right > viewRight) {
+      host.scrollLeft = Math.max(0, left - host.clientWidth / 3)
+    }
+  }
+
   /** 滚动条被拖动：按比例换算回逻辑位置。 */
   function onScroll() {
     const host = scrollHost.value
@@ -360,10 +442,18 @@ export function useTableGrid(opts: TableGridOptions) {
       })
       meta.value = m
       pages.value = new Map()
+      pageOrder.length = 0
       cellEdits.value = new Map()
       deletedRows.value = new Set()
       insertedRows.value = new Map()
+      colWidths.value = new Map()
+      // 后端按采样给的列宽（字符宽度 → 像素），没给就留空走默认档。
+      autoWidths.value = (m.col_widths ?? []).map((w) =>
+        w == null ? COL_W_DEFAULT : Math.min(COL_W_MAX, Math.max(COL_W_MIN, Math.round(w * 7.4))),
+      )
       version.value += 1
+      scrollTop.value = 0
+      scrollHost.value && (scrollHost.value.scrollTop = 0)
       opts.onMeta?.(m)
       ensureVisiblePages()
     } catch (e) {
@@ -454,13 +544,27 @@ export function useTableGrid(opts: TableGridOptions) {
   // ---- 尺寸观察 ----
 
   let observer: ResizeObserver | null = null
-  onMounted(() => {
+  /** 量一次视口高度。挂载时机由组件决定，scrollHost 变化时也要重量。 */
+  function measure() {
     viewport.value = scrollHost.value?.clientHeight ?? 0
-    observer = new ResizeObserver(() => {
-      viewport.value = scrollHost.value?.clientHeight ?? 0
-    })
+  }
+
+  onMounted(() => {
+    measure()
+    observer = new ResizeObserver(measure)
     if (scrollHost.value) observer.observe(scrollHost.value)
   })
+
+  // scrollHost 是模板 ref，组件挂载后才赋值：没被 onMounted 覆盖到的
+  // 情形（条件渲染、v-if 切换）在这里补观察，否则 viewport 永远停在 0。
+  watch(scrollHost, (el, old) => {
+    if (old) observer?.unobserve(old)
+    if (el) {
+      observer?.observe(el)
+      measure()
+    }
+  })
+
   onBeforeUnmount(() => observer?.disconnect())
 
   return {
@@ -480,14 +584,22 @@ export function useTableGrid(opts: TableGridOptions) {
     windowRows,
     logicalScroll,
     firstVisible,
+    colWidths,
+    totalWidth,
+    colWidth,
+    setColWidth,
+    autoFitColumn,
     open,
     close,
+    measure,
     onWheel,
     onScroll,
     scrollToLogical,
     scrollToDisplayRow,
     scrollToOriginalRow,
+    scrollToCell,
     displayIndexOf,
+    cellValue,
     setCell,
     isDirtyCell,
     deleteRow,
@@ -495,5 +607,6 @@ export function useTableGrid(opts: TableGridOptions) {
     resetEdits,
     buildOps,
     ensureVisiblePages,
+    ensureRowCached,
   }
 }

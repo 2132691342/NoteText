@@ -1,4 +1,4 @@
-//! 会话与用户数据长链路：默认配置、会话恢复、空列表序列化、备份导出导入。
+//! 会话与用户数据长链路：会话恢复、空列表序列化、备份导出导入。
 //!
 //! 这一域的失败面都是「静默丢东西」：重启后标签没了、空列表变成 null 白屏、
 //! 换机时备份导不回来、导入把本机独有数据抹了。
@@ -17,10 +17,15 @@ use notetext_lib::domain::snippet::SnippetSaveReq;
 use notetext_lib::repo::session::SessionRepo;
 use notetext_lib::repo::settings::SettingsRepo;
 
-/// 会话链路：首启默认配置 → 开三个标签 → 重启恢复 → 关光标签再存。
+/// 会话与用户数据链路：首启 → 开标签 → 重启恢复 → 关光标签再存 → 备份导出导入。
+///
+/// 这一域的失败面都是「静默丢东西」：重启后标签没了、空列表变成 null 白屏、
+/// 换机时备份导不回来、导入把本机独有数据抹了。
+/// 一条链路走完「关窗再开回到原样」与「换机不丢东西」两件事。
 #[test]
-fn session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays() {
+fn session_and_backup_survive_restart_and_reimport() {
     let (_dir, state) = boot();
+    let ud = &state.services.userdata;
 
     state
         .db
@@ -39,7 +44,6 @@ fn session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays() {
 
     // 空列表必须序列化成 [] 而不是 null：Rust 的 nil slice 序列化成 null，
     // 前端按数组读会崩在渲染里，用户只看到「界面出现异常」。
-    let ud = &state.services.userdata;
     let empty_lists = [
         (
             "书签",
@@ -90,15 +94,8 @@ fn session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays() {
     let empty = state.db.with(SessionRepo::load).expect("恢复空会话失败");
     assert!(empty.tabs.is_empty(), "空会话应没有标签");
     assert!(empty.session.is_some(), "会话行要留着（记窗口大小）");
-}
 
-/// 备份链路：导出 → 清场（模拟换机）→ 导入 → 五类数据都回来，
-/// 且不在备份里的本机数据原样保留。
-#[test]
-fn backup_export_import_restores_tables_and_keeps_local_rows() {
-    let (_dir, state) = boot();
-    let ud = &state.services.userdata;
-
+    // ---- 备份：导出 → 清场（模拟换机）→ 导入 → 五类数据都回来 ----
     ud.add_bookmark(BookmarkAddReq {
         path: "C:\\a.txt".into(),
         line: 3,

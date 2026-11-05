@@ -237,6 +237,54 @@ fn archive_readonly_formats_list_extract_and_refuse_create() {
         Some("hello lz"),
         "LHA 预览读到的内容不对"
     );
+
+    // ---- 旧编码条目名：中文系统存的 zip 是 GBK 字节且不置 UTF-8 标志位 ----
+    //
+    // 直接按 UTF-8 读会得到一排替换符，用户在浏览窗里看到的全是銉斤拷，
+    // 即使内容完好也不敢解。这里同时钉住「列条目与解压用同一个解码」：
+    // 两处不一致时，界面上选中的条目与解出来的文件名会不同。
+    let gbk_name =
+        notetext_lib::service::encoding::encode("中文名.txt", "gb18030").expect("GBK 编码失败");
+    let decoded = notetext_lib::service::archive::util::decode_zip_name(&gbk_name);
+    assert_eq!(
+        decoded, "中文名.txt",
+        "GBK 条目名应解回正确汉字，实际 {decoded:?}"
+    );
+    // UTF-8 名字不能被画蛇添足地重解。
+    assert_eq!(
+        notetext_lib::service::archive::util::decode_zip_name("报告 2024.txt".as_bytes()),
+        "报告 2024.txt",
+        "UTF-8 名字应原样保留"
+    );
+    // 纯 ASCII 不走任何编码猜测。
+    assert_eq!(
+        notetext_lib::service::archive::util::decode_zip_name(b"readme.txt"),
+        "readme.txt"
+    );
+
+    // 完整链路：UTF-8 名字的 zip 列出来仍要正常（不能因新增回退而回归）。
+    let normal = dir.path().join("normal.zip");
+    {
+        use std::io::Write;
+        let file = fs::File::create(&normal).expect("建 zip 失败");
+        let mut w = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        w.start_file("说明.txt", opts).expect("写条目失败");
+        w.write_all("正文".as_bytes()).expect("写内容失败");
+        w.finish().expect("收尾失败");
+    }
+    let info = arch::list::list_archive(&normal, None).expect("列条目失败");
+    assert_eq!(info.entries.len(), 1);
+    assert_eq!(info.entries[0].name, "说明.txt", "UTF-8 条目名应正确显示");
+
+    // 解压后文件名要能与列出来的名字对上。
+    let out = dir.path().join("out");
+    fs::create_dir_all(&out).expect("建解压目录失败");
+    arch::extract::extract_archive(&extract_req(&normal, &out), &ctx).expect("解压失败");
+    assert!(
+        out.join("说明.txt").exists(),
+        "解压出来的名字应与列条目一致"
+    );
 }
 
 /// 异常包链路：路径穿越必须整包拒绝、缺密码与密码错要分得开、

@@ -235,7 +235,7 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-15 条长链路测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件
+长链路测试按域拆成 `src-tauri/tests/chain_*.rs` 八个文件
 （组织方式见 [12](12-testing.md)）。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。

@@ -40,11 +40,9 @@ const root = ref<HTMLElement | null>(null)
 const pos = ref({ left: props.x, top: props.y })
 
 /**
- * 贴边修正：菜单不能被窗口右/下边缘裁掉。
- *
- * 先按点击位置落一次，再量真实尺寸纠正——先估一个尺寸再定位，
- * 在「字体缩放到 140%」时估值会差很多，菜单会压到边缘外。
- */
+   * 贴边修正：菜单不能被窗口右/下边缘裁掉。
+   * 先按点击位置落一次，再量真实尺寸纠正——先估尺寸再定位，字体缩放时会差很多。
+   */
 watch(
   () => [props.x, props.y, props.items],
   async () => {

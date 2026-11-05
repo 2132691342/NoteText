@@ -92,9 +92,7 @@ impl SheetService {
     }
 
     /// 打开工作簿（分页版）：只给工作表摘要，不读单元格。
-    ///
-    /// 整块读工作簿在百万行的工作表上会吃掉几百 MB 内存，
-    /// 而用户开机只要看到「有哪些表、多少行」就够了。
+    /// 整块读工作簿在百万行的工作表上会吃掉几百 MB 内存，而用户开机只要看到「有哪些表、多少行」就够了。
     pub fn info(&self, req: &WorkbookOpenReq) -> AppResult<WorkbookInfoVO> {
         let p = Path::new(&req.path);
         if !p.is_file() {
@@ -168,9 +166,7 @@ impl SheetService {
     }
 
     /// 分页读取一张工作表：只解析需要的那些行。
-    ///
-    /// 整块解析（`xml.split("<row")`）在百万行的工作表上要吃掉几百 MB 内存。
-    /// 拉模式解析一次只持有一行，内存占用与表大小无关。
+    /// 整块解析（`xml.split("<row")`）在百万行的工作表上要吃掉几百 MB 内存；拉模式解析一次只持有一行，内存占用与表大小无关。
     pub fn page(&self, req: &SheetPageReq) -> AppResult<SheetPageVO> {
         let p = Path::new(&req.path);
         if !p.is_file() {

@@ -66,10 +66,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     watched.value = new Set()
   }
 
-  /**
-   * 重读一个目录（只读这一层，不递归）；深层目录由外部变更事件单独分发。
-   * 返回 false 表示读失败。
-   */
+  /** 重读一个目录（只读这一层，不递归）；深层目录由外部变更事件单独分发。 */
   async function refresh(dir: string): Promise<boolean> {
     // 只刷树里的目录：标签栏 / 拾取器会传任意路径，不该弹错误提示。
     if (!inTree(dir)) return true
@@ -91,8 +88,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
 
   /**
    * 淘汰函数：缓存目录数超限时删掉「未展开且不是根」的条目快照。
-   * 不淘汰的话，一边浏览一边切换文件夹，children 会只增不减，
-   * 长时间使用后内存持续上涨、每次响应式检查也变慢。
+   * 不淘汰的话 children 只增不减，内存持续上涨、每次响应式检查也变慢。
    */
   function evictChildren() {
     if (children.value.size <= MAX_CACHED_DIRS) return
@@ -113,10 +109,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     return path.startsWith(r.endsWith('\\') || r.endsWith('/') ? r : `${r}\\`) || path.startsWith(`${r}/`)
   }
 
-  /**
-   * 全量重建：只在用户主动「刷新」时用。
-   * 逐层重读已展开的目录，但每次都有上限（一次刷太多层等于卡死）。
-   */
+  /** 全量重建：只在用户主动「刷新」时用，逐层重读已展开的目录（每次都有上限）。 */
   async function refreshAll() {
     if (!root.value) return
     await refresh(root.value)
@@ -127,8 +120,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
   }
 
   /**
-   * 按变更路径局部刷新：文件系统事件带来的是具体路径，
-   * 没必要整个工作目录重读一遍。只刷「变化路径的父目录」以及它已展开的子目录。
+   * 按变更路径局部刷新：文件系统事件带来的是具体路径，没必要整个工作目录重读一遍。
    */
   async function refreshPaths(paths: string[]) {
     if (!root.value) return

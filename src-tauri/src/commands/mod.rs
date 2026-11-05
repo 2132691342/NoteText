@@ -26,9 +26,9 @@ macro_rules! command_handlers {
             commands::file::read_file,
             commands::file::read_binary,
             commands::file::write_file,
+            commands::file::write_binary,
             commands::file::save_file_as,
             commands::file::read_dir,
-            commands::file::read_table_preview,
             commands::file::stat_file,
             // 大文件分块只读
             commands::file::big_file_open,

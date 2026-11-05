@@ -224,6 +224,8 @@ export default {
       '这类格式的渲染器体积大且还原度有限，用系统默认程序打开更可靠；纯文本内容仍可在 Hex 视图里查看',
     sheetTruncated: '只显示前 {shown} 行（共 {total} 行）',
     sheetTruncatedUnknown: '只显示前 {shown} 行（文件很大，未统计总行数）',
+    saveAsXlsx: '另存为 xlsx',
+    savedAsXlsx: '已另存为 {name}，打开它就能改单元格',
     docxEmpty: '这个 Word 文档里没有可显示的内容',
     pages: '{n} 页',
     logViewer: '日志查看器',
@@ -332,6 +334,9 @@ export default {
     findNext: '下一个',
     findPrev: '上一个',
     savedRows: '已保存 {n} 处改动',
+    copyRow: '复制整行',
+    copyColName: '复制列名',
+    indexing: '正在建索引…',
   },
   sidebar: {
     files: '文件',

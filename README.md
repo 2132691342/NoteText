@@ -190,7 +190,7 @@ NoteText/
 | [assets/specs/09](assets/specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
 | [assets/specs/10](assets/specs/10-session-restore.md) | 会话恢复 |
 | [assets/specs/11](assets/specs/11-visual-tokens.md) | 视觉令牌与主题 |
-| [assets/specs/12](assets/specs/12-testing.md) | 测试与验证：15 条长链路 + 2 条模块内单测、七组、本地与 CI 门禁 |
+| [assets/specs/12](assets/specs/12-testing.md) | 测试与验证：每域一条长链路，本地与 CI 门禁 |
 | [assets/specs/13](assets/specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
 | [assets/specs/14](assets/specs/14-api-contract.md) | invoke 命令契约（126 个命令对照表） |
 | [assets/specs/15](assets/specs/15-error-codes.md) | 错误码分段与处置动作 |
@@ -205,9 +205,9 @@ NoteText/
 
 ## 测试
 
-15 条集成测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件，按七组排列
+集成测试按域拆成 `src-tauri/tests/chain_*.rs` 八个文件
 （文件 / 会话与备份 / 批量 / 大表格 / 表格编辑 / 压缩 / 系统关联；系统关联一条仅 Windows）。
-另有 2 条模块内单测守分块解码的静默损坏。
+分块解码的静默损坏由 `chain_stream` 的边界穷举守护。
 **每个测试函数名就是它守护的那件坏事**，失败时报文直接指出坏在哪。
 全量约 1 秒；一条测试就是一条完整的用户故事，改一个小功能只跑一个域。
 

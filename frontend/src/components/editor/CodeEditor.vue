@@ -540,12 +540,9 @@ function emitScroll(v: EditorView) {
 }
 
 /**
- * 详细统计（字符 / 词 / 非空行）延迟 600ms 且只在停手后算一次。
- *
- * 以前 StatusBar 每次 `nt-stats` 都调 `api.textStats(getText(id))`，
- * 而 `getText` 是全文 `toString()`：一个 7MB 的 json 每敲一个字就复制 7MB
- * 再过一次 IPC。现在正文变化只推进行数（O(1)），详细统计攒到停手后问一次。
- */
+   * 详细统计（字符 / 词 / 非空行）延迟 600ms 且只在停手后算一次。
+   * 正文变化只推进行数（O(1)）——每次都问全文统计等于每敲一个字复制一遍整篇。
+   */
 let detailTimer = 0
 function scheduleDetailStats() {
   window.clearTimeout(detailTimer)
@@ -626,11 +623,9 @@ class BookMark extends GutterMarker {
 const marker = new BookMark()
 
 /**
- * 书签 gutter。
- *
- * `lineMarker` 按行号查表：gutter 只对可见行求值，几万行的文件也不会因为
- * 「给每一行都算一遍」而变慢。点圆点直接切书签——比「先定位再按 F2」少两步。
- */
+   * 书签 gutter。
+   * `lineMarker` 按行号查表，只对可见行求值。点圆点直接切书签。
+   */
 function bookmarkGutter() {
   return gutter({
     class: 'nt-bookmark-gutter',
@@ -724,11 +719,9 @@ function normalizeErr(e: unknown): { code: string; message: string } {
 }
 
 /**
- * 撤销 / 重做：
- * CodeMirror 的 historyKeymap 只绑了 Mod-z 与 Mod-Shift-z，Windows 用户习惯
- * Ctrl+Y 重做；另外 WebView 自身有「撤销整个文档编辑」的默认行为，
- * 不拦会让 Ctrl+Z 一次退掉整段输入。
- */
+   * 撤销 / 重做。
+   * CodeMirror 只绑了 Mod-z 与 Mod-Shift-z，Windows 用户习惯 Ctrl+Y 重做。
+   */
 function onKeyFallback(e: KeyboardEvent) {
   if (!view || !view.hasFocus) return
   if (!(e.ctrlKey || e.metaKey)) return
@@ -1043,10 +1036,9 @@ onBeforeUnmount(() => {
 })
 
 /**
- * 标记变了重绘：装饰插件在 ViewPlugin 里，不订阅动作层的状态，
- * 所以这里把渲染函数注册进去，动作层改完集合后调它。
- * 分屏两个视图都要重绘：主视图注册，第二视图只被动响应。
- */
+   * 标记变了重绘：装饰插件在 ViewPlugin 里，不订阅动作层的状态。
+   * 分屏两个视图都要重绘：主视图注册，第二视图只被动响应。
+   */
 const marksRendererMine = computed(() => props.viewId !== 'second')
 
 function onMarksChanged() {

@@ -1,7 +1,7 @@
-//! 文件域长链路：往返保真、大文件分块编辑、文件树护栏。
+//! 文件域长链路：文本往返保真、大文件分块编辑、文件树护栏。
 //!
-//! 三条链路分别对应三种会真正伤到用户的事：保存时丢字节、编辑大文件时动到
-//! 别的内容、文件树操作覆盖或删掉不该动的东西。
+//! 三条链路各自对应一种会真正伤到用户的事：
+//! 保存时丢字节、编辑大文件时动到别的内容、文件树操作覆盖或删掉不该动的东西。
 
 mod common;
 
@@ -14,7 +14,8 @@ use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
 use notetext_lib::pkg::error::codes;
 use notetext_lib::service::big_file::BigFileService;
 
-/// 文件往返：行尾原样写回、BOM 补回、强制编码解得对、原子写不留临时文件。
+/// 文件写回与文件树护栏：行尾 / BOM / 编码保真、原子写不留残骸、
+/// 改名不许覆盖 / 成环 / 逃逸、批量删除对陈旧路径只记账。
 #[test]
 fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     let (dir, state) = boot();
@@ -69,13 +70,18 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
         .expect("选错编码也不该打不开");
     assert_eq!(fallback.text, "中文", "不支持的编码名应退回探测");
 
-    // 表格预览与文本视图必须解出同一份汉字：编码判定只该有一条链路。
+    // 表格链路与文本视图必须解出同一份汉字：编码判定只该有一条链路。
     let csv = data.join("gbk.csv");
     fs::write(&csv, [0xD6u8, 0xD0, 0xCE, 0xC4, b',', b'1', b'\n']).expect("写 csv 失败");
-    let table = file
-        .read_table_preview(&csv.to_string_lossy(), None)
-        .expect("表格预览失败");
-    assert_eq!(table.rows[0][0], "中文", "表格预览把 GBK 中文解成了乱码");
+    let table_svc = notetext_lib::service::table::TableService::new();
+    let meta = table_svc
+        .open(&csv.to_string_lossy(), None, None, None)
+        .expect("表格建索引失败");
+    assert_eq!(meta.encoding, "gb18030", "表格应探测到 GBK");
+    let (rows, _) = table_svc
+        .page(&csv.to_string_lossy(), 0, 5)
+        .expect("表格取页失败");
+    assert_eq!(rows[0][0], "中文", "表格把 GBK 中文解成了乱码");
 
     // 原子写：成功后不留临时文件（残留会在每次保存后越积越多）。
     let x = data.join("x.txt");
@@ -89,6 +95,168 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
         .filter(|n| n.contains("notetext-tmp"))
         .collect();
     assert!(leftovers.is_empty(), "不应留下临时文件：{leftovers:?}");
+
+    // ---- 二进制写回：同一套原子落盘，换一条通道（base64） ----
+    //
+    // 前端生成字节（.xls / .ods 转 .xlsx）走 base64 过 IPC。
+    // 解码错位写出一堆垃圾、写到一半失败留半个文件、目标是个目录或父目录不存在
+    // 却照样写——三种坏法都在这里被拦住。
+    let cases: Vec<Vec<u8>> = vec![
+        vec![],
+        vec![0x50],
+        vec![0x50, 0x4B, 0x03, 0x04],
+        (0..=255u8).collect(),
+        vec![0x00, 0xFF, 0x00, 0xFF, 0x7F, 0x80],
+    ];
+    for (i, bytes) in cases.iter().enumerate() {
+        let target = data.join(format!("bin{i}.dat"));
+        let b64 = notetext_lib::pkg::base64::encode(bytes);
+        assert_eq!(
+            notetext_lib::pkg::base64::decode(&b64).expect("解码失败"),
+            *bytes,
+            "第 {i} 组字节 base64 往返后变了"
+        );
+        file.write_bytes(&target.to_string_lossy(), bytes)
+            .expect("写二进制失败");
+        assert_eq!(
+            fs::read(&target).expect("回读"),
+            *bytes,
+            "第 {i} 组字节落盘后变了"
+        );
+    }
+
+    // 带换行的 base64（前端分块拼串时会出现）必须解出同样结果。
+    let src = b"hello world, \xe4\xbd\xa0\xe5\xa5\xbd";
+    let wrapped: String = notetext_lib::pkg::base64::encode(src)
+        .as_bytes()
+        .chunks(4)
+        .map(|c| String::from_utf8_lossy(c).to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        notetext_lib::pkg::base64::decode(&wrapped).expect("换行包裹的 base64 解码失败"),
+        src.to_vec(),
+        "换行包裹的 base64 解出来的字节不一样"
+    );
+
+    // 非法字符必须报错，不能静默产出垃圾字节。
+    let err = notetext_lib::pkg::base64::decode("abc$def").expect_err("非法字符必须被拒");
+    assert_eq!(
+        err.code,
+        codes::DATA_INVALID,
+        "非法 base64 应报 1002，实际 {err}"
+    );
+
+    // 目标是个目录：在写之前就拒绝，不留残骸。
+    let dir_target = data.join("adir");
+    fs::create_dir_all(&dir_target).expect("建目录失败");
+    let err = file
+        .write_bytes(&dir_target.to_string_lossy(), b"x")
+        .expect_err("目录当目标必须被拒");
+    assert_eq!(err.code, codes::IO_FAILED, "目录目标应报 1001，实际 {err}");
+    assert!(dir_target.is_dir(), "目录目标不该被写坏成文件");
+
+    // 父目录不存在：拒绝，并且不留下半成品。
+    let missing = data.join("no-such-dir").join("out.dat");
+    let err = file
+        .write_bytes(&missing.to_string_lossy(), b"x")
+        .expect_err("父目录不存在必须被拒");
+    assert_eq!(
+        err.code,
+        codes::FILE_NOT_FOUND,
+        "缺父目录应报 1005，实际 {err}"
+    );
+    assert!(!missing.exists(), "失败后不该留下半成品");
+    assert!(
+        !data.join("no-such-dir").exists(),
+        "失败后不该顺手建出父目录"
+    );
+
+    // 空路径：直接拒，不去碰当前目录。
+    let err = file.write_bytes("", b"x").expect_err("空路径必须被拒");
+    assert_eq!(err.code, codes::PATH_EMPTY, "空路径应报 1000，实际 {err}");
+
+    // ---- 文件树护栏：改名不许覆盖 / 成环 / 逃逸 ----
+    let ops = &state.services.file_ops;
+    let root = data.join("ops");
+    fs::create_dir_all(root.join("sub")).expect("建目录失败");
+
+    let a = root.join("a.txt");
+    fs::write(&a, "content\n").expect("写 a 失败");
+    let b = root.join("b.txt");
+    ops.rename(&RenameReq {
+        from: a.to_string_lossy().to_string(),
+        to: b.to_string_lossy().to_string(),
+    })
+    .expect("重命名失败");
+    assert!(!a.exists(), "改完之后原路径该消失");
+
+    let c = root.join("c.txt");
+    fs::write(&c, "keep me\n").expect("写 c 失败");
+    let err = ops
+        .rename(&RenameReq {
+            from: b.to_string_lossy().to_string(),
+            to: c.to_string_lossy().to_string(),
+        })
+        .expect_err("目标已存在必须拒绝");
+    assert_eq!(err.code, codes::PATH_ESCAPE, "拒绝码该是 1003，实际 {err}");
+    assert_eq!(
+        fs::read_to_string(&c).expect("读回 c").trim(),
+        "keep me",
+        "拒绝后已有文件不能被覆盖"
+    );
+
+    let err = ops
+        .rename(&RenameReq {
+            from: root.to_string_lossy().to_string(),
+            to: root.join("sub").join("root").to_string_lossy().to_string(),
+        })
+        .expect_err("目录移进自己的子目录必须拒绝");
+    assert_eq!(err.code, codes::PATH_ESCAPE, "成环必须拒绝，实际 {err}");
+    assert!(
+        ops.rename(&RenameReq {
+            from: "a.txt".into(),
+            to: "b.txt".into()
+        })
+        .is_err(),
+        "相对路径必须拒绝"
+    );
+    assert!(
+        ops.rename(&RenameReq {
+            from: data.join("x").to_string_lossy().to_string(),
+            to: data.join("..").join("y").to_string_lossy().to_string(),
+        })
+        .is_err(),
+        "含 .. 的路径必须拒绝"
+    );
+
+    // ---- 批量删除：一个坏路径不让整批失败，也不该删掉不该动的 ----
+    let d = root.join("d.txt");
+    fs::write(&d, "bye\n").expect("写 d 失败");
+    let res = ops
+        .remove(&DeleteReq {
+            paths: vec![
+                d.to_string_lossy().to_string(),
+                root.join("nope.txt").to_string_lossy().to_string(),
+            ],
+        })
+        .expect("删除失败");
+    assert_eq!((res.succeeded, res.failed), (1, 1), "该删的删掉、缺的记账");
+    assert!(!d.exists(), "存在的那个该真的消失");
+
+    // 同名新建：拒绝，且不清空已有文件。
+    let nf = root.join("fresh.txt");
+    let req = MkdirReq {
+        path: nf.to_string_lossy().to_string(),
+    };
+    ops.create_file(&req).expect("建文件失败");
+    fs::write(&nf, "别删我\n").expect("写内容失败");
+    assert!(ops.create_file(&req).is_err(), "重复建同一文件必须拒绝");
+    assert_eq!(
+        fs::read_to_string(&nf).expect("读回").trim(),
+        "别删我",
+        "重复建文件失败后，已有内容不能被清空"
+    );
 }
 
 /// 大文件分块链路：逐块拼回原文、行号定位一致、外部修改报 stale、单块写回带乐观锁、
@@ -285,87 +453,4 @@ fn big_file_block_index_reads_blocks_and_reports_lines() {
     assert!(res.hits[0].text.contains("第4321行"), "命中文本应正确");
 
     bf.close(&gb_path);
-}
-
-/// 文件树护栏：改名不许覆盖 / 成环 / 逃逸，批量删除对陈旧路径只记账，同名新建拒绝清空。
-#[test]
-fn file_ops_refuse_overwrite_cycle_escape_and_partial_delete() {
-    let (dir, state) = boot();
-    let svc = &state.services.file_ops;
-    let root = dir.path().join("ops");
-    fs::create_dir_all(root.join("sub")).expect("建目录失败");
-
-    let a = root.join("a.txt");
-    fs::write(&a, "content\n").expect("写 a 失败");
-    let b = root.join("b.txt");
-    svc.rename(&RenameReq {
-        from: a.to_string_lossy().to_string(),
-        to: b.to_string_lossy().to_string(),
-    })
-    .expect("重命名失败");
-    assert!(!a.exists(), "改完之后原路径该消失");
-
-    let c = root.join("c.txt");
-    fs::write(&c, "keep me\n").expect("写 c 失败");
-    let err = svc
-        .rename(&RenameReq {
-            from: b.to_string_lossy().to_string(),
-            to: c.to_string_lossy().to_string(),
-        })
-        .expect_err("目标已存在必须拒绝");
-    assert_eq!(err.code, codes::PATH_ESCAPE, "拒绝码该是 1003，实际 {err}");
-    assert_eq!(
-        fs::read_to_string(&c).expect("读回 c").trim(),
-        "keep me",
-        "拒绝后已有文件不能被覆盖"
-    );
-
-    let err = svc
-        .rename(&RenameReq {
-            from: root.to_string_lossy().to_string(),
-            to: root.join("sub").join("root").to_string_lossy().to_string(),
-        })
-        .expect_err("目录移进自己的子目录必须拒绝");
-    assert_eq!(err.code, codes::PATH_ESCAPE, "成环必须拒绝，实际 {err}");
-    assert!(
-        svc.rename(&RenameReq {
-            from: "a.txt".into(),
-            to: "b.txt".into()
-        })
-        .is_err(),
-        "相对路径必须拒绝"
-    );
-    assert!(
-        svc.rename(&RenameReq {
-            from: dir.path().join("x").to_string_lossy().to_string(),
-            to: dir
-                .path()
-                .join("..")
-                .join("y")
-                .to_string_lossy()
-                .to_string(),
-        })
-        .is_err(),
-        "含 .. 的路径必须拒绝"
-    );
-
-    let d = root.join("d.txt");
-    fs::write(&d, "bye\n").expect("写 d 失败");
-    let res = svc
-        .remove(&DeleteReq {
-            paths: vec![
-                d.to_string_lossy().to_string(),
-                root.join("nope.txt").to_string_lossy().to_string(),
-            ],
-        })
-        .expect("删除失败");
-    assert_eq!((res.succeeded, res.failed), (1, 1), "该删的删掉、缺的记账");
-    assert!(!d.exists(), "存在的那个该真的消失");
-
-    let nf = root.join("fresh.txt");
-    let req = MkdirReq {
-        path: nf.to_string_lossy().to_string(),
-    };
-    svc.create_file(&req).expect("建文件失败");
-    assert!(svc.create_file(&req).is_err(), "重复建同一文件必须拒绝");
 }

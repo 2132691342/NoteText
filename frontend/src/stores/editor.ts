@@ -39,8 +39,7 @@ export interface Tab {
   /** 内容被截断（大文件只读了前段）：此时只读，禁止保存。 */
   truncated: boolean
   /**
-   * 走大文件分页视图：超过 64MB 的文本不再进 CodeMirror，
-   * 改由后端建行索引 + 虚拟滚动渲染，内存与文件体积无关。
+   * 走大文件分页视图：超过 64MB 的文本不再进 CodeMirror，改由后端建行索引 + 虚拟滚动渲染。
    */
   big_file: boolean
   /** 截断时实际读入的字节数：状态栏据此提示「已读前 X MB」。 */
@@ -51,7 +50,7 @@ export interface Tab {
   encoding_uncertain: boolean
   /**
    * 分块只读模式（超大文件）：正文按块从后端取，不整篇进内存。
-   * 运行时标记，不进会话契约——恢复的标签在挂载时按文件大小重新判定。
+   * 运行时标记，不进会话契约。
    */
   chunked: boolean
 }
@@ -86,9 +85,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   /**
    * 新建空标签。`draftId` 非空表示从草稿恢复。
-   *
-   * 编码与行尾取文件配置里的默认值：设置页改了默认值，新建文件就该按它落盘，
-   * 否则那三项设置永远是「改了也不生效」。
+   * 编码与行尾取文件配置里的默认值，否则那三项设置永远是「改了也不生效」。
    */
   function newTab(opts?: { title?: string; draftId?: string }): Tab {
     const file = useSettingsStore().config.file
@@ -171,9 +168,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   /**
    * 把标签从 `from` 挪到 `to`（两处都是当前数组下标）。
-   *
-   * 拖拽排序后标签顺序要能落进会话：`toDOs` 按数组顺序写 `ord`，
-   * 所以这里只动数组就够，不必额外维护一份顺序表。
+   * `toDOs` 按数组顺序写 `ord`，所以这里只动数组就够。
    */
   function moveTab(from: number, to: number) {
     if (from === to || from < 0 || to < 0) return
@@ -187,10 +182,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (tab) tab.split = on
   }
 
-  /**
-   * 节点在磁盘上换了路径；`path` 与 `title` 必须一起换。
-   * `newPath` 为空串表示节点被删除，关掉标签。
-   */
+  /** 节点在磁盘上换了路径；`path` 与 `title` 必须一起换。空串表示节点被删除，关掉标签。 */
   function renamePath(oldPath: string, newPath: string) {
     if (!oldPath) return
     const tab = findByPath(oldPath)
@@ -205,7 +197,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   /**
    * 打开一个文件：已打开则聚焦；否则 stat → 按形态读内容或只建标签 → 建标签。
-   * 超过阈值的文本弹窗选普通打开或分块视图；非文本形态只建标签，正文由预览器按字节读。
+   * 非文本形态只建标签，正文由预览器按字节读。
    */
   async function openPath(path: string, mode?: ReadMode): Promise<Tab | null> {
     const existing = findByPath(path)
@@ -245,8 +237,8 @@ export const useEditorStore = defineStore('editor', () => {
         tab.language = languageOf(path)
         // 二进制进 Hex，能预览的进预览器（DocPreview 自己按扩展名分流）
         tab.view_type = kind === 'binary' ? 'hex' : viewTypeOf(path)
-        // XLSX / ODS 默认进可编辑网格（单元格值与公式可改，样式原地保留）；
-        // 其余非文本类默认进预览（图片 / PDF / Word 没有“编辑”这回事）。
+        // XLSX / XLSM 默认进可编辑网格（单元格值与公式可改，样式原地保留）；
+        // .xls / .ods 走只读预览（后端不具备它们的写回能力）。
         const editableWorkbook = kind === 'sheet' && isWorkbookSheet(path)
         tab.showing_preview = kind !== 'binary' && !editableWorkbook
         tab.read_only = !editableWorkbook
@@ -429,9 +421,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   /**
    * 会话恢复后把超大标签改成分块模式。
-   *
-   * 只对文本形态的标签做（Markdown / 代码 / 纯文本）：二进制与表格各有自己的
-   * 打开路径，分块视图对它们没有意义。stat 失败就保持原样，交给组件层报错。
+   * 只对文本形态的标签做：二进制与表格各有自己的打开路径。
    */
   async function markOversizedAsChunked() {
     const candidates = tabs.value.filter(

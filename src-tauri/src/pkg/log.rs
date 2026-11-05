@@ -78,8 +78,7 @@ fn rolling_appender(path: &std::path::Path) -> BoxMakeWriter {
             return Box::new(f);
         }
         // 连临时目录都写不了：日志降级为丢弃。
-        // 这里绝对不能 panic：本函数本身就是 panic 钩子的写出路径，
-        // 在里面再 panic 会把「记录一个崩溃」变成「在记录时又崩一次」。
+        // 这里绝对不能 panic：本函数是 panic 钩子的写出路径，再 panic 会把「记录一个崩溃」变成「在记录时又崩一次」。
         if let Ok(f) = OpenOptions::new()
             .create(true)
             .append(true)

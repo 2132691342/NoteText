@@ -1,7 +1,5 @@
 // 预览：markdown / xlsx / csv / 图片 / HTML / 纯文本各走一条链路。
-// 二进制不进 CodeMirror：解成文本是一屏乱码，而用户点开 .xlsx 想看的是表格。
-// Word / PDF / PPT 不做内置渲染：那类文件的内嵌渲染器体积大且还原度有限，
-// 统一给「用外部程序打开」的出路，比一个半成品预览诚实。
+// 二进制不进 CodeMirror：解成文本是一屏乱码。Word / PDF / PPT 不做内置渲染，统一给「用外部程序打开」的出路。
 :<template>
   <div class="nt-doc-preview">
     <div class="nt-doc-head">
@@ -23,6 +21,10 @@
       <ElButton size="small" @click="emit('openHex')">
         <NtIcon name="hash" size="sm" />
         <span class="nt-btn-text">{{ t('tool.hexViewer') }}</span>
+      </ElButton>
+      <ElButton size="small" @click="provideSaveAsXlsx" :disabled="!canSaveAsXlsx">
+        <NtIcon name="save" size="sm" />
+        <span class="nt-btn-text">{{ t('viewer.saveAsXlsx') }}</span>
       </ElButton>
       <ElButton size="small" @click="openExternal">
         <NtIcon name="external" size="sm" />
@@ -98,10 +100,8 @@ import { useToastStore } from '@/stores/toast'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useSettingsStore } from '@/stores/settings'
 import NtIcon from '@/components/common/NtIcon.vue'
-import { baseName, copyText, extName } from '@/utils'
+import { baseName, copyText } from '@/utils'
 import { kindOf } from '@/utils/fileKind'
-import { encodingShort } from '@/utils/encoding'
-import type { TablePreviewVO } from '@/types/api'
 import { docVersionOf, get } from '@/composables/useEditorRegistry'
 
 const props = defineProps<{ path: string; tabId?: number }>()
@@ -128,9 +128,13 @@ const kind = ref<Kind>('loading')
 
 /** 头部读数：表格是区域与行列数，Word 是页数。 */
 const meta = ref('')
-/** 缩放：只作用于表格与 Word，PDF/图片由各自组件管。 */
+/** 缩放：只作用于表格，图片由自己那层容器管。 */
 const zoom = ref(1)
 const showZoom = computed(() => kind.value === 'sheet')
+
+/** 能不能「另存为 xlsx」：只有已经读进 workbook 的表格才行。
+   *  老 .xls / .ods 看得到但改不了，转成 xlsx 就能进网格编辑。 */
+const canSaveAsXlsx = computed(() => kind.value === 'sheet' && workbook != null)
 
 /** 工作表页签。单表不显示页签栏。 */
 const sheets = ref<string[]>([])
@@ -157,9 +161,9 @@ async function classify() {
       return
     case 'sheet':
       kind.value = 'sheet'
-      // CSV / TSV 走后端切行：几十 MB 的导出表也能开，编码也由后端探测
-      if (isDelimited(props.path)) await renderDelimited(run)
-      else await renderXlsx(run)
+      // CSV / TSV 不进这里：它们走可编辑网格（SheetEditor），不走只读预览。
+      // 预览器一旦退化成 "截取前 2000 行" 就只是在重复一件做不好的事。
+      await renderXlsx(run)
       return
     case 'markdown':
       kind.value = 'markdown'
@@ -178,10 +182,7 @@ async function classify() {
   }
 }
 
-/**
- * 纯文本预览走 read_file（带编码探测），不走字节硬解 UTF-8——
- * 后者对 GBK / UTF-16 文件只会得到乱码。
- */
+/** 纯文本预览走 read_file（带编码探测），不走字节硬解 UTF-8——后者对 GBK / UTF-16 文件只会得到乱码。 */
 async function renderPlainText(run: number) {
   if (!host.value) return
   try {
@@ -197,9 +198,9 @@ async function renderPlainText(run: number) {
 }
 
 /**
- * HTML 正文：编辑器里的实时内容优先（改动立刻能看），视图不在再退回磁盘。
- * computed 里读 docVersion 建立响应依赖——正文变了 iframe 才会跟着换。
- */
+   * HTML 正文：编辑器里的实时内容优先，视图不在再退回磁盘。
+   * computed 里读 docVersion 建立响应依赖——正文变了 iframe 才会跟着换。
+   */
 const diskHtml = ref('')
 const htmlText = computed(() => {
   if (kind.value !== 'html') return ''
@@ -261,10 +262,9 @@ async function renderMarkdown(run: number) {
 }
 
 /**
- * 读文件字节走后端 `read_binary`（base64），不走 WebView 的 fs 插件——
- * 后者等于把整块磁盘读权限交给渲染层，且缺少 20MB 上限保护。
- * 返回 null 表示已给出可读提示，调用方直接返回即可。
- */
+   * 读文件字节走后端 `read_binary`（base64），不走 WebView 的 fs 插件。
+   * 返回 null 表示已给出可读提示，调用方直接返回即可。
+   */
 async function readBytes(): Promise<Uint8Array | null> {
   try {
     const b64 = await api.readBinary(props.path)
@@ -290,102 +290,6 @@ function base64ToBytes(b64: string): Uint8Array {
 const MAX_SHEET_ROWS = 2000
 /** 单表最多渲染的列数：再宽也没人横向翻到底。 */
 const MAX_SHEET_COLS = 80
-
-/** CSV / TSV：交给后端切行，不走 read_binary（那条路有 20MB 上限）。 */
-function isDelimited(path: string): boolean {
-  const ext = extName(path)
-  return ext === 'csv' || ext === 'tsv'
-}
-
-/** 分隔文本预览：后端已按探测编码解码，这里只画。 */
-async function renderDelimited(run: number) {
-  if (!host.value) return
-  try {
-    const data = await api.readTablePreview(props.path)
-    if (run !== token || !host.value) return
-    const built = buildRowsTable(data)
-    host.value.innerHTML = built.html
-    meta.value = built.meta
-  } catch (e) {
-    if (run !== token) return
-    reportBroken(e)
-  }
-}
-
-/** 列号 0 → A、26 → AA：表头字母行自己算，不必为它加载整个 xlsx 库。 */
-function colName(i: number): string {
-  let n = i
-  let s = ''
-  do {
-    s = String.fromCharCode(65 + (n % 26)) + s
-    n = Math.floor(n / 26) - 1
-  } while (n >= 0)
-  return s
-}
-
-/** 把后端切好的行画成表格：与 xlsx 同一套骨架、同一个行数上限。 */
-function buildRowsTable(data: TablePreviewVO): { html: string; meta: string } {
-  if (data.rows.length === 0) {
-    return { html: `<p class="nt-sheet-note">${t('viewer.sheetEmpty')}</p>`, meta: '' }
-  }
-  const totalCols = Math.max(1, data.total_cols)
-  const colEnd = Math.min(totalCols, MAX_SHEET_COLS)
-  const rowEnd = Math.min(data.rows.length, MAX_SHEET_ROWS)
-
-  // 列宽按前 200 行估：CSV 没有列信息，等宽会让长名字全被裁掉
-  const cols: string[] = []
-  const sampleRows = Math.min(rowEnd, 200)
-  for (let c = 0; c < colEnd; c += 1) {
-    let longest = 4
-    for (let r = 0; r < sampleRows; r += 1) {
-      const s = data.rows[r]?.[c] ?? ''
-      let w = 0
-      for (const ch of s) w += /[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 2 : 1
-      if (w > longest) longest = w
-    }
-    cols.push(`${Math.min(360, Math.max(56, Math.round(longest * 7.2) + 18))}px`)
-  }
-
-  const parts: string[] = [
-    '<table class="nt-sheet-table"><colgroup><col style="width:44px">',
-    cols.map((w) => `<col style="width:${w}">`).join(''),
-    '</colgroup>',
-    '<tr class="nt-sheet-head"><td class="nt-sheet-corner"></td>',
-  ]
-  for (let c = 0; c < colEnd; c += 1) parts.push(`<td class="nt-sheet-col">${colName(c)}</td>`)
-  parts.push('</tr>')
-
-  for (let r = 0; r < rowEnd; r += 1) {
-    // 第一行是表头：冻住，长表往下滚也能对上列
-    const freeze = r === 0 ? ' class="nt-sheet-freeze"' : ''
-    parts.push(`<tr${freeze}><td class="nt-sheet-rownum">${r + 1}</td>`)
-    for (let c = 0; c < colEnd; c += 1) {
-      const text = data.rows[r]?.[c] ?? ''
-      const numeric = /^-?[\d,]+(\.\d+)?%?$/.test(text.trim()) && text.trim() !== ''
-      parts.push(`<td${numeric ? ' class="is-num"' : ''}>${escapeHtml(text)}</td>`)
-    }
-    parts.push('</tr>')
-  }
-  parts.push('</table>')
-
-  const clipped = data.truncated || data.rows.length > MAX_SHEET_ROWS
-  // total_rows = 0 表示文件太大、后端没统计总数：文案不能写「共 0 行」
-  const known = data.total_rows > rowEnd
-  if (clipped) {
-    parts.push(
-      `<p class="nt-sheet-note">${
-        known
-          ? t('viewer.sheetTruncated', { shown: rowEnd, total: data.total_rows })
-          : t('viewer.sheetTruncatedUnknown', { shown: rowEnd })
-      }</p>`,
-    )
-  }
-  const totalText = known ? String(data.total_rows) : `${data.rows.length}+`
-  return {
-    html: parts.join(''),
-    meta: `${totalText} × ${totalCols} · ${encodingShort(data.encoding)}`,
-  }
-}
 
 /** 工作簿常驻：切页签不必重新解压文件。 */
 let workbook: import('xlsx').WorkBook | null = null
@@ -431,9 +335,9 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * 把工作表渲染成表格：自己拼 HTML（读列宽 / 数字右对齐 / 行数上限 / 合并单元格），
- * 不用 sheet_to_html——它不读列宽、不给数字对齐、也不处理行数上限。
- */
+   * 把工作表渲染成表格：自己拼 HTML（读列宽 / 数字右对齐 / 行数上限 / 合并单元格）。
+   * 不用 sheet_to_html——它不读列宽、不给数字对齐、也不处理行数上限。
+   */
 function buildSheetTable(
   lib: typeof import('xlsx'),
   ws: import('xlsx').WorkSheet,
@@ -560,6 +464,37 @@ async function onHostClick(e: MouseEvent) {
 
 function openExternal() {
   void api.openPath(props.path)
+}
+
+/**
+   * 把当前工作簿另存为到 .xlsx：调用方应该是 .xls / .ods 的用户。
+   * 后端只对 OOXML 做原地单元格补丁，老 .xls（BIFF）与 ODS 只能读——转一份 xlsx 就进了可编辑链路。
+   */
+async function provideSaveAsXlsx() {
+  const wb = workbook
+  const lib = xlsxLib
+  if (!wb || !lib) return
+  const suggested = baseName(props.path).replace(/\.(xlsx|xlsm|xls|ods)$/i, '') + '.xlsx'
+  const dest = await api.saveFileDialog(suggested)
+  if (!dest) return
+  try {
+    const out = lib.write(wb, { type: 'array', bookType: 'xlsx' })
+    const b64 = bytesToBase64(new Uint8Array(out as ArrayBuffer))
+    await api.writeBinary(dest, b64)
+    toast.ok(t('viewer.savedAsXlsx', { name: baseName(dest) }))
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  }
+}
+
+/** bytes → base64：分块拼字符串，避免大数组走到 apply 的参数上限。 */
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(bin)
 }
 
 onMounted(classify)

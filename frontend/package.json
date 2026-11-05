@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc -b --force"
+    "typecheck": "vue-tsc -b --force",
+    "check:grid": "node scripts/check-grid-window.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.6.0",

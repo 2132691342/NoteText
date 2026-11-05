@@ -67,41 +67,67 @@
     </div>
 
     <div
-      v-else
-      ref="scrollEl"
-      class="nt-sheet-body"
-      @wheel="onWheel"
-      @scroll="onScroll"
+      v-else-if="loading"
+      class="nt-sheet-loading"
     >
-      <div class="nt-sheet-inner" :style="{ height: `${scrollHeight}px` }">
+      <span class="nt-spinner" />
+      <span class="nt-readout">{{ t('sheet.indexing') }}</span>
+    </div>
+
+    <!--
+      ref 必须叫 scrollHost：useSheetGrid 用这个名字量视口高度。
+      绑错名字 → viewport 恒为 0 → 渲染窗口只剩 overscan 那几行（25 行）。
+    -->
+    <div v-else ref="scrollHost" class="nt-sheet-body" @wheel="onWheel" @scroll="onScroll">
+      <div
+        class="nt-sheet-grid"
+        :style="{ height: `${scrollHeight}px`, width: `${totalWidth + GUTTER}px` }"
+      >
+        <!-- 列字母行：吸顶。宽表横向滚动时定位全靠它 -->
+        <div class="nt-sheet-header">
+          <div class="nt-sheet-cols">
+            <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
+            <div
+              v-for="c in totalCols"
+              :key="c - 1"
+              class="nt-sheet-head-cell"
+              :style="{ width: `${colWidth(c - 1)}px` }"
+            >
+              {{ colName(c - 1) }}
+            </div>
+          </div>
+        </div>
+
         <div class="nt-sheet-window" :style="{ transform: `translateY(${windowTop}px)` }">
           <div v-for="row in windowRows" :key="row.index" class="nt-sheet-row">
             <span class="nt-sheet-gutter">{{ row.index + 1 }}</span>
             <div
-              v-for="ci in totalCols"
-              :key="ci"
+              v-for="c in totalCols"
+              :key="c - 1"
               class="nt-sheet-cell"
               :class="{
-                'is-editing': editing?.row === row.index && editing?.col === ci - 1,
-                'is-hit': isHit(row.index, ci - 1),
-                'is-dirty': isDirtyCell(row.index, ci - 1),
+                'is-editing': isEditing(row, c - 1),
+                'is-hit': isHit(row.index, c - 1),
+                'is-dirty': isDirtyCell(row.index, c - 1),
               }"
-              @click="startEdit(row.index, ci - 1, row.cells[ci - 1])"
+              :style="{ width: `${colWidth(c - 1)}px` }"
+              @click="startEdit(row.index, c - 1, row.cells[c - 1], row.cells)"
             >
               <input
-                v-if="editing?.row === row.index && editing?.col === ci - 1"
+                v-if="isEditing(row, c - 1)"
                 ref="editEl"
-                v-model="editing.draft"
+                v-model="editingDraft"
                 class="nt-sheet-input"
                 spellcheck="false"
                 @keydown.enter.prevent="commitEdit(0)"
-                @keydown.tab.prevent="commitEdit(1)"
+                @keydown.tab.prevent="commitEdit($event.shiftKey ? -1 : 1)"
                 @keydown.esc.prevent="cancelEdit"
                 @blur="commitEdit(0)"
               />
-              <span v-else class="nt-sheet-cell-text" :title="displayText(row.cells[ci - 1])">
-                {{ displayText(row.cells[ci - 1]) }}
+              <span v-else class="nt-sheet-cell-text" :title="displayText(row.cells[c - 1])">
+                {{ displayText(row.cells[c - 1]) }}
               </span>
+              <span class="nt-sheet-col-resize" @mousedown.stop.prevent="startResize($event, c - 1)" />
             </div>
           </div>
         </div>
@@ -131,7 +157,11 @@ import { api, normalizeError } from '@/api'
 import type { CellEdit, CellValue, SheetHit } from '@/types/api'
 import type { Tab } from '@/stores/editor'
 import { useEditorStore } from '@/stores/editor'
-import { registerTableFocus, registerTableProvider, unregisterTableProvider } from '@/composables/useEditorRegistry'
+import {
+  registerTableFocus,
+  registerTableProvider,
+  unregisterTableProvider,
+} from '@/composables/useEditorRegistry'
 import { useSheetGrid } from '@/composables/useSheetGrid'
 import { useToastStore } from '@/stores/toast'
 import { baseName } from '@/utils'
@@ -141,7 +171,17 @@ const { t } = useI18n()
 const editor = useEditorStore()
 const toast = useToastStore()
 
+/** 行号栏宽度：与 CSS 的 .nt-sheet-gutter 必须同值。 */
+const GUTTER = 64
+
 const editing = ref<{ row: number; col: number; draft: string } | null>(null)
+/** 编辑框的双向绑定：v-model 不能直接绑可空的 editing.draft。 */
+const editingDraft = computed({
+  get: () => editing.value?.draft ?? '',
+  set: (v: string) => {
+    if (editing.value) editing.value.draft = v
+  },
+})
 const editEl = ref<HTMLInputElement | null>(null)
 const gotoInput = ref('')
 /** 查找框：Ctrl+F 聚焦它。 */
@@ -152,6 +192,7 @@ const saving = ref(false)
 
 const pathRef = computed(() => props.tab.path)
 const {
+  loading,
   error,
   sheets,
   activeSheet,
@@ -159,9 +200,13 @@ const {
   totalCols,
   pendingGroups,
   dirtyCount,
+  scrollHost,
   scrollHeight,
   windowTop,
   windowRows,
+  totalWidth,
+  colWidth,
+  setColWidth,
   open: openGrid,
   selectSheet,
   onWheel,
@@ -174,6 +219,42 @@ const {
   path: pathRef,
   onError: (msg) => toast.bad(msg),
 })
+
+/** 列号 0 → A、26 → AA。 */
+function colName(i: number): string {
+  let n = i
+  let s = ''
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s
+    n = Math.floor(n / 26) - 1
+  } while (n >= 0)
+  return s
+}
+
+function isEditing(row: { index: number }, col: number): boolean {
+  return editing.value?.row === row.index && editing.value?.col === col
+}
+
+// ---- 列宽拖拽 ----
+
+let resizing: { col: number; startX: number; startW: number } | null = null
+
+function startResize(e: MouseEvent, col: number) {
+  resizing = { col, startX: e.clientX, startW: colWidth(col) }
+  const onMove = (ev: MouseEvent) => {
+    if (!resizing) return
+    setColWidth(resizing.col, resizing.startW + (ev.clientX - resizing.startX))
+  }
+  const onUp = () => {
+    resizing = null
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'col-resize'
+}
 
 /** 单元格值的显示文本。 */
 function displayText(v: CellValue | null | undefined): string {
@@ -243,23 +324,46 @@ function stepFind(delta: number) {
 
 // ---- 单元格编辑 ----
 
-function startEdit(row: number, col: number, value: CellValue | null | undefined) {
+function startEdit(
+  row: number,
+  col: number,
+  value: CellValue | null | undefined,
+  _cells?: (CellValue | null)[],
+) {
+  if (col >= totalCols.value) return
   editing.value = { row, col, draft: displayText(value) }
-  void nextTick(() => editEl.value?.focus())
+  void nextTick(() => {
+    editEl.value?.focus()
+    editEl.value?.select()
+  })
 }
 
 function cancelEdit() {
   editing.value = null
 }
 
+/**
+ * 提交编辑。move：0 = 原地收尾；1 = 右移（Tab）；-1 = 左移（Shift+Tab）。
+ * 值一律存成文本：公式的编辑要走公式栏，网格只改显示值。
+ */
 function commitEdit(move: number) {
   const ed = editing.value
   if (!ed) return
-  // 文本一律存成文本：公式的编辑要走「公式栏」，这里只改值。
   setCell(ed.row, ed.col, { kind: 'text', text: ed.draft })
   editing.value = null
   syncDirty()
-  if (move === 1) startEdit(ed.row, ed.col + 1, null)
+  if (move === 0) return
+  let col = ed.col + move
+  let row = ed.row
+  if (col >= totalCols.value) {
+    col = 0
+    row = row + 1
+  } else if (col < 0) {
+    col = totalCols.value - 1
+    row = Math.max(row - 1, 0)
+  }
+  scrollToRow(row)
+  startEdit(row, col, null)
 }
 
 function onGoto() {
@@ -421,10 +525,58 @@ function sheetEdits(): Map<number, Map<string, CellValue | null>> {
   min-height: 0;
   overflow: auto;
   font-size: var(--nt-fs-sm);
+  position: relative;
 }
 
-.nt-sheet-inner {
+.nt-sheet-loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nt-sp-3);
+}
+
+.nt-sheet-grid {
   position: relative;
+  min-width: 100%;
+}
+
+/* 表头：列字母行吸顶，宽表横滚时靠它定位 */
+.nt-sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--nt-elev-raised);
+  border-bottom: 1px solid var(--nt-border-strong);
+}
+
+.nt-sheet-cols {
+  display: flex;
+  height: 24px;
+}
+
+.nt-sheet-corner {
+  flex: none;
+  width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nt-ink-muted);
+  background: var(--nt-editor-gutter-bg);
+  border-right: 1px solid var(--nt-border);
+  font-size: var(--nt-fs-2xs);
+  user-select: none;
+}
+
+.nt-sheet-head-cell {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--nt-sp-2);
+  border-right: 1px solid var(--nt-border);
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--nt-ink);
 }
 
 .nt-sheet-window {
@@ -441,7 +593,7 @@ function sheetEdits(): Map<number, Map<string, CellValue | null>> {
 
 .nt-sheet-gutter {
   flex: none;
-  width: 72px;
+  width: 64px;
   padding: 0 var(--nt-sp-2);
   display: flex;
   align-items: center;
@@ -456,7 +608,6 @@ function sheetEdits(): Map<number, Map<string, CellValue | null>> {
 
 .nt-sheet-cell {
   flex: none;
-  width: 120px;
   display: flex;
   align-items: center;
   padding: 0 var(--nt-sp-2);
@@ -464,6 +615,7 @@ function sheetEdits(): Map<number, Map<string, CellValue | null>> {
   border-right: 1px solid var(--nt-border);
   overflow: hidden;
   cursor: cell;
+  position: relative;
 }
 
 .nt-sheet-cell:hover {
@@ -494,10 +646,27 @@ function sheetEdits(): Map<number, Map<string, CellValue | null>> {
   width: 100%;
   height: 100%;
   border: none;
-  outline: 1px solid var(--nt-primary);
+  outline: 2px solid var(--nt-primary);
+  outline-offset: -2px;
   padding: 0 var(--nt-sp-2);
   background: var(--nt-elev-raised);
-  color: var(--nt-ink-1);
+  color: var(--nt-ink);
   font: inherit;
+}
+
+/* 列宽拖拽手柄：骑在右边界上，命中区 7px 够拓 */
+.nt-sheet-col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.nt-sheet-col-resize:hover {
+  background: var(--nt-primary);
+  opacity: 0.4;
 }
 </style>

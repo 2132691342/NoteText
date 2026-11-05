@@ -95,9 +95,7 @@ export function registerCommands() {
 
   /**
    * 按指定编码重新读一个标签。
-   *
    * 与 reload 的区别：reload 走后端的自动探测，这里强制用用户选的编码。
-   * 用于「文件是 GBK 但被猜成 UTF-8，打开一片乱码」这个场景。
    */
   async function reopenWithEncoding(tabId: number, encoding: string) {
     const tab = editor.tabs.find((t) => t.id === tabId)
@@ -1451,9 +1449,7 @@ export function registerCommands() {
 
   /**
    * 目录级查找的结果写进侧栏面板。
-   *
-   * 浮窗负责收集条件，结果落在面板——命中几十个文件时用户要反复点开，
-   * 浮窗一关结果就没了。
+   * 浮窗负责收集条件，结果落在面板——浮窗一关结果就没了。
    */
   function pushFindResults(hits: import('@/types/api').BatchFileHits[], count: number) {
     findResults.set(hits, count)

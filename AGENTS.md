@@ -465,9 +465,9 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），15 条链路按
-  「文件(3) / 会话(2) / 批量 / 大表格(4) / 表格编辑 / 压缩(3) / 系统关联」七组排列，每条编排是一个独立编译单元；
-  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 14 条
+- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），17 条链路按
+  「文件(3) / 会话(2) / 批量 / 大表格(5) / 表格编辑 / 压缩(4) / 系统关联」七组排列，每条编排是一个独立编译单元；
+  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 16 条
 - **源码内不挂 `#[cfg(test)]` 单元测试**：简单断言分散在各文件会让验证入口失去焦点
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
@@ -506,6 +506,7 @@ mod dialog_stub;
 | 压缩 | `archive_lifecycle_covers_all_formats_update_and_split` | 某格式往返丢内容 / 中文名与层级塌 / 改名后认不出 tar 家族 / 合并后字节变了 |
 | | `archive_rejects_escape_and_distinguishes_password_from_corruption` | 恶意条目写到目标目录外 / 缺密码与密码错混成一个 / 损坏包测试照样说「好」 |
 | | `archive_readonly_formats_list_extract_and_refuse_create` | 只读能力表与引擎能力漂移 / CAB 往返丢内容 / 创建只读格式留半文件 / 只读容器头偏移算错解出垃圾 / 真实包头解析错导致空列表 |
+| | `archive_decodes_legacy_codepage_entry_names` | GBK 条目名显示成锟斤拷 / 列条目与解压名字不一致（选中一个、解出另一个）/ UTF-8 名字被重解 |
 | 系统关联 | `file_assoc_toggle_registers_and_restores_shell_entries` | 双击没反应（open 命令丢引号 / ProgId 挂错）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：

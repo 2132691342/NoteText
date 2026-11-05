@@ -1,10 +1,6 @@
 //! 大表格的记录对齐索引：把分隔文本（CSV / TSV）与 JSONL 切成记录边界对齐的块。
 //! 索引是稀疏的（每块一条记录），行号 → 字节偏移靠块内顺扫，内存与行数无关。
-//!
-//! 字节级扫描对全部受支持的单字节编码都是安全的：换行、引号、分隔符这三个
-//! ASCII 字节（0x0A / 0x22 / 0x2C 0x09 0x3B 0x7C）都不是 GB18030 / Big5 /
-//! Shift_JIS / EUC-JP / EUC-KR 的续字节取值范围（0x40–0x7E、0x80–0xFE），
-//! 所以不会把一个汉字的尾巴误判成分隔符。
+//! 字节级扫描对全部受支持的单字节编码都安全：换行、引号、分隔符这三个 ASCII 字节都不是各双字节编码的续字节取值范围，不会把汉字尾巴误判成分隔符。
 
 use std::collections::HashMap;
 use std::fs;
@@ -32,6 +28,10 @@ const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
 pub const MAX_TABLE_RECORDS: u64 = 20_000_000;
 /// JSONL 表头采样行数：只从前若干行收集键集合，不必扫全文件。
 const JSONL_HEADER_SAMPLE: usize = 1000;
+/// 列宽采样行数：每列宽度只需要「采样行里最长的那条」。
+const COL_WIDTH_SAMPLE_ROWS: usize = 200;
+/// 列宽上限（字符宽度）：超长文本列封顶，否则一列吃掉整块屏。
+const COL_WIDTH_MAX: f64 = 60.0;
 
 /// 一块记录的元数据。
 #[derive(Debug, Clone)]
@@ -66,6 +66,8 @@ pub struct TableIndex {
     pub header: Vec<String>,
     /// 首行是否表头。
     pub has_header: bool,
+    /// 采样得到的列宽（字符宽度）；`None` = 该列没采到样本。
+    pub col_widths: Vec<Option<f64>>,
     pub size: u64,
 }
 
@@ -176,6 +178,7 @@ impl TableService {
             kind: index.kind,
             encoding: index.encoding.clone(),
             delimiter: index.delimiter.to_string(),
+            col_widths: index.col_widths.clone(),
             size,
             total_rows: index.total_rows as usize,
             total_cols: index.total_cols,
@@ -190,9 +193,7 @@ impl TableService {
     }
 
     /// 顺序扫描建索引：块边界落在记录边界上。
-    ///
-    /// 单字节编码按字节扫（快，不解码）；UTF-16 按码元扫。
-    /// 扫描器跨块保持状态，引号字段里的换行不会把记录切断。
+    /// 单字节编码按字节扫（快，不解码）；UTF-16 按码元扫。扫描器跨块保持状态，引号字段里的换行不会把记录切断。
     fn scan(&self, params: ScanParams<'_>) -> AppResult<TableIndex> {
         let ScanParams {
             path: p,
@@ -359,6 +360,10 @@ impl TableService {
         };
 
         let total_rows = row_index.max(1);
+
+        // 列宽采样：只读前若干条记录，按「每列最长字段」估宽度。
+        let col_widths = sample_col_widths(p, enc, delim, kind, &header, total_cols)?;
+
         Ok(TableIndex {
             path: p.to_string_lossy().to_string(),
             kind,
@@ -372,6 +377,7 @@ impl TableService {
             total_cols,
             header,
             has_header,
+            col_widths,
             size,
         })
     }
@@ -464,9 +470,7 @@ impl TableService {
     }
 
     /// 表格内查找：先字节级搜块，命中才解析。
-    ///
-    /// 逐块解析成字段再比对是 O(文件) 的字符串分配（105MB 的表要造 260 万个 String）。
-    /// 改成先在块字节里搜关键字（SIMD），整块没命中就跳过，连解析都不用做。
+    /// 逐块解析成字段再比对是 O(文件) 的字符串分配；先在块字节里搜关键字（SIMD），整块没命中就跳过，连解析都不用做。
     pub fn find(
         &self,
         path: &str,
@@ -563,7 +567,6 @@ impl TableService {
     }
 
     /// 块级预筛：这块里有没有可能命中。
-    ///
     /// 大小写不敏感时把整块小写化一次（一次 1MB 分配，好过逐字段小写化）。
     fn block_may_contain(
         &self,
@@ -614,6 +617,7 @@ impl TableService {
             total_cols: index.total_cols,
             header: index.header.clone(),
             has_header: index.has_header,
+            col_widths: index.col_widths.clone(),
             block_size: TARGET_BLOCK,
             block_count: index.blocks.len(),
             line_ending: index.line_ending.clone(),
@@ -730,6 +734,75 @@ fn read_first_record(p: &Path, enc: &str, delim: char) -> AppResult<Option<Vec<S
     Ok(parse_delimited(first, delim).into_iter().next())
 }
 
+/// 列宽采样：按前若干条记录里「每列最长字段」估字符宽度。
+/// 不给列宽信息时网格只能等宽渲染，一列名字与一列备注拿到同样宽度。只在建索引时读一次头部，不扫全文件。
+fn sample_col_widths(
+    p: &Path,
+    enc: &str,
+    delim: char,
+    kind: TableKind,
+    header: &[String],
+    total_cols: usize,
+) -> AppResult<Vec<Option<f64>>> {
+    if total_cols == 0 {
+        return Ok(Vec::new());
+    }
+    let head = read_head(p, 512 * 1024)?;
+    let (_, body) = encoding::strip_bom(&head, enc);
+    let text = match encoding::decode(body, enc) {
+        Ok(t) => t,
+        Err(_) => String::from_utf8_lossy(body).into_owned(),
+    };
+
+    let rows: Vec<Vec<String>> = match kind {
+        TableKind::Csv => parse_delimited(&text, delim)
+            .into_iter()
+            .take(COL_WIDTH_SAMPLE_ROWS)
+            .collect(),
+        TableKind::Jsonl => parse_jsonl_block(&text, header)
+            .into_iter()
+            .take(COL_WIDTH_SAMPLE_ROWS)
+            .collect(),
+        TableKind::JsonArray => parse_json_array_block(&text, header)
+            .into_iter()
+            .take(COL_WIDTH_SAMPLE_ROWS)
+            .collect(),
+    };
+
+    // 表头本身就是宽度下限：列名被裁成「...」比数字列太窄更难接受。
+    let mut widths = vec![0f64; total_cols];
+    for (i, name) in header.iter().enumerate().take(total_cols) {
+        widths[i] = cell_width(name);
+    }
+    for row in &rows {
+        for (i, cell) in row.iter().enumerate().take(total_cols) {
+            let w = cell_width(cell);
+            if w > widths[i] {
+                widths[i] = w;
+            }
+        }
+    }
+    Ok(widths
+        .into_iter()
+        .map(|w| Some(w.clamp(4.0, COL_WIDTH_MAX)))
+        .collect())
+}
+
+/// 一个字段的显示宽度（字符宽度）：中日韩按 2 个半角算。
+/// 按 `chars` 逐个判而不是按字节：UTF-8 下一个汉字 3 字节，按字节算会让中文列宽是实际的三倍。
+fn cell_width(s: &str) -> f64 {
+    let mut w = 0f64;
+    for ch in s.chars().take(120) {
+        // CJK 统一表意文字 / 全角区按 2，其余按 1。
+        let c = ch as u32;
+        let wide = (0x2E80..=0x9FFF).contains(&c)
+            || (0xF900..=0xFAFF).contains(&c)
+            || (0xFF00..=0xFFEF).contains(&c);
+        w += if wide { 2.0 } else { 1.0 };
+    }
+    w
+}
+
 /// 读 JSONL 前若干行的键集合（并集，按首次出现顺序）。
 fn read_jsonl_keys(p: &Path, enc: &str, sample: usize) -> AppResult<Vec<String>> {
     let head = read_head(p, 1024 * 1024)?;
@@ -815,10 +888,7 @@ fn parse_json_array_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
 }
 
 /// 切出顶层数组的各个元素文本。
-///
-/// 与 `JsonArrayScanner` 的边界约定一致：元素文本**含尾部的分隔符**
-/// （`,` 或 `]`），这样字节级扫描与文本级解析切在同一处。
-///
+/// 与 `JsonArrayScanner` 的边界约定一致：元素文本**含尾部的分隔符**（`,` 或 `]`），这样字节级扫描与文本级解析切在同一处。
 /// 开头可有可无 `[`：分页读到的是数组的片段，片段从元素中间开始。
 fn json_array_elements(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -896,9 +966,7 @@ fn json_array_elements(text: &str) -> Vec<String> {
 }
 
 /// 去掉元素尾部的分隔符（`,` 或 `]`）与空白。
-///
-/// 只去**一个**分隔符：`trim_end_matches` 会把 `[[1,2]]` 的两个方括号都去掉，
-/// 元素内容就坏了。
+/// 只去**一个**分隔符：`trim_end_matches` 会把 `[[1,2]]` 的两个方括号都去掉，元素内容就坏了。
 fn strip_element_sep(el: &str) -> &str {
     let trimmed = el.trim_end();
     match trimmed.chars().last() {

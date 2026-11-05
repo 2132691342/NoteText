@@ -73,8 +73,8 @@ export function useQuitGuard() {
   }
 
   /**
-   * 标签正文：视图在就用视图的；视图被路由卸了（设置页 / 帮助页退出）
-   * 就退回卸载前的暂存。直接拿 getText 的空串写盘会把文件清空。
+   * 标签正文：视图在就用视图的，被路由卸了就退回卸载前的暂存。
+   * 直接拿 getText 的空串写盘会把文件清空。
    */
   function textOf(tabId: number): string {
     const v = get(tabId)
