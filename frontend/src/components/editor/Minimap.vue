@@ -37,8 +37,12 @@ let raf = 0
 /** 上一次绘制时的正文档号：正文没变就不重画。 */
 let drawnVersion = -1
 
+/** 正文版本号：computed 让它成为绘制 watcher 的真依赖。 */
+const version = computed(() => (props.tabId != null ? docVersionOf(props.tabId) : 0))
+
 function draw() {
-  if (props.tabId != null && docVersionOf(props.tabId) === drawnVersion) {
+  const v = version.value
+  if (v === drawnVersion) {
     syncViewport()
     return
   }
@@ -75,6 +79,7 @@ function draw() {
     const y = ((i - 1) / doc.lines) * h
     ctx.fillRect(indent * 0.5, y, Math.max(len * 0.5, 1), Math.max(step - 1, 1))
   }
+  drawnVersion = v
   syncViewport()
 }
 
@@ -109,9 +114,24 @@ onMounted(() => {
 onBeforeUnmount(() => {
   scrollTarget?.removeEventListener('scroll', schedule)
   if (raf) cancelAnimationFrame(raf)
+  if (repaintTimer) window.clearTimeout(repaintTimer)
 })
 
-watch(() => props.lineCount, () => draw())
+/**
+ * 正文变化与行数变化都触发重画，但打字期间不重画：
+ * 一次输入一个字符就把整篇轮廓重扫一遍，长文档上这笔钱纯属浪费。
+ * 停顿 220ms 后画一次，缩略图跟得上视觉，也不抢输入的主线程。
+ */
+let repaintTimer = 0
+function scheduleRepaint() {
+  if (repaintTimer) window.clearTimeout(repaintTimer)
+  repaintTimer = window.setTimeout(() => {
+    repaintTimer = 0
+    draw()
+  }, 220)
+}
+
+watch([() => props.lineCount, version], () => scheduleRepaint())
 watch(() => props.visible, (v) => v && draw())
 
 /** 点击跳转：按点击位置的比例换算成目标滚动位置。 */

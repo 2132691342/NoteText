@@ -59,9 +59,54 @@
       >
         {{ t('chunked.discardBlock') }}
       </ElButton>
+      <ElButton size="small" :title="t('chunked.find')" @click="toggleFind">
+        <NtIcon name="search" size="sm" />
+      </ElButton>
       <span class="nt-readout nt-chunked-ro">
         {{ editing ? t('chunked.editingWarn') : t('chunked.readonly') }}
       </span>
+    </div>
+
+    <!-- 查找条：GB 级文件不能靠肉眼翻块，流式扫描一轮一轮往下要 -->
+    <div v-if="findOpen" class="nt-chunked-find">
+      <ElInput
+        ref="findInput"
+        v-model="findText"
+        size="small"
+        class="nt-chunked-find-input"
+        :placeholder="t('chunked.findPlaceholder')"
+        clearable
+        @keydown.enter.prevent="startFind"
+      />
+      <ElButton size="small" :loading="finding" :disabled="!findText" @click="startFind">
+        {{ t('chunked.find') }}
+      </ElButton>
+      <ElButton
+        size="small"
+        :disabled="finding || !findHits.length"
+        @click="stepFind(1)"
+      >
+        {{ t('chunked.findNext') }}
+      </ElButton>
+      <ElButton
+        size="small"
+        :disabled="finding || !findHits.length"
+        @click="stepFind(-1)"
+      >
+        {{ t('chunked.findPrev') }}
+      </ElButton>
+      <ElCheckbox v-model="findCase" size="small" :disabled="finding">
+        {{ t('chunked.findCase') }}
+      </ElCheckbox>
+      <span class="nt-readout">
+        <template v-if="finding">{{ t('chunked.finding') }}</template>
+        <template v-else-if="findHits.length">
+          {{ findCursor + 1 }} / {{ findHits.length }}{{ findMore ? '+' : '' }}
+        </template>
+        <template v-else-if="findDone">{{ t('chunked.noMatch') }}</template>
+      </span>
+      <span class="nt-chunked-spacer" />
+      <ElButton size="small" text @click="findOpen = false">{{ t('common.close') }}</ElButton>
     </div>
 
     <!-- 建索引进度：GB 级文件要顺序扫一遍，几秒钟内给得出可信反馈 -->
@@ -86,10 +131,10 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { ElButton, ElButtonGroup, ElInput } from 'element-plus'
+import { ElButton, ElButtonGroup, ElCheckbox, ElInput } from 'element-plus'
 import { EditorState, Compartment } from '@codemirror/state'
 import {
   EditorView,
@@ -103,7 +148,7 @@ import {
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { api, normalizeError } from '@/api'
-import type { BigFileMetaVO } from '@/types/api'
+import type { BigFileHitVO, BigFileMetaVO } from '@/types/api'
 import type { Tab } from '@/stores/editor'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
@@ -292,6 +337,117 @@ async function onCancel() {
   }
 }
 
+// ---- 查找：逐块流式扫描，一轮一页 ----
+
+const findOpen = ref(false)
+const findText = ref('')
+const findCase = ref(false)
+const finding = ref(false)
+/** 已拿到的命中（可能只是前几页）。 */
+const findHits = ref<BigFileHitVO[]>([])
+const findCursor = ref(0)
+/** 后端还有没扫完的部分：状态栏显示 `n+`。 */
+const findMore = ref(false)
+/** 至少跑过一轮且没有命中：用于区分「还没查」与「查过没找到」。 */
+const findDone = ref(false)
+/** 下一轮的扫描起点（字节偏移）。 */
+const nextOffset = ref(0)
+const findInput = ref<{ focus: () => void } | null>(null)
+
+/** 每轮扫描的字节预算：4MB 在机械盘上也是毫秒级，用户点一次就有反馈。 */
+const FIND_BUDGET = 4 * 1024 * 1024
+/** 一次最多取多少条命中：再多列表也没人翻。 */
+const FIND_LIMIT = 500
+
+function toggleFind() {
+  findOpen.value = !findOpen.value
+  if (findOpen.value) void nextTick(() => findInput.value?.focus())
+}
+
+/** 从头开始查：重置游标与命中表。 */
+async function startFind() {
+  if (!findText.value || !props.tab.path) return
+  findHits.value = []
+  findCursor.value = 0
+  nextOffset.value = 0
+  findMore.value = false
+  findDone.value = false
+  await scanRound()
+}
+
+/** 继续扫描一轮（后端按 budget 分批，一轮不满意可以再点「下一个」）。 */
+async function scanRound() {
+  if (!props.tab.path || !findText.value) return
+  finding.value = true
+  try {
+    const res = await api.bigFile.find({
+      path: props.tab.path,
+      query: findText.value,
+      match_case: findCase.value,
+      whole_word: false,
+      from_offset: nextOffset.value,
+      limit: FIND_LIMIT,
+      budget: FIND_BUDGET,
+    })
+    const hits = res.hits ?? []
+    if (hits.length > 0) findHits.value = [...findHits.value, ...hits]
+    nextOffset.value = res.next_offset
+    findMore.value = res.has_more
+    findDone.value = true
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+    findMore.value = false
+  } finally {
+    finding.value = false
+  }
+}
+
+/**
+ * 上一个 / 下一个命中。
+ *
+ * 游标走到已取结果的尽头而文件还没扫完时，先补一轮扫描再前进——
+ * 用户点「下一个」的意图是「给我下一个命中」，不是「让我自己去点扫描」。
+ */
+async function stepFind(delta: number) {
+  if (!findHits.value.length) {
+    await startFind()
+    if (findHits.value.length) await jumpToHit(0)
+    return
+  }
+  const next = findCursor.value + delta
+  if (next < 0) {
+    findCursor.value = findHits.value.length - 1
+  } else if (next >= findHits.value.length) {
+    if (findMore.value) {
+      await scanRound()
+      findCursor.value = Math.min(next, findHits.value.length - 1)
+    } else {
+      findCursor.value = 0
+    }
+  } else {
+    findCursor.value = next
+  }
+  await jumpToHit(findCursor.value)
+}
+
+/** 跳到第 n 条命中所在的块，并把光标落到那一行。 */
+async function jumpToHit(n: number) {
+  const hit = findHits.value[n]
+  if (!hit) return
+  findCursor.value = n
+  const idx = await api.bigFile.gotoLine(props.tab.path, hit.line)
+  await loadBlock(idx, hit.line)
+  // 命中行整行选中：只把光标放过去，用户还得自己找词在哪。
+  if (view) {
+    const local = Math.max(1, Math.min(hit.line - blockStartLine.value + 1, view.state.doc.lines))
+    const line = view.state.doc.line(local)
+    const from = Math.min(line.from + hit.col - 1, line.to)
+    const to = Math.min(from + findText.value.length, line.to)
+    view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true })
+    view.focus()
+  }
+}
+
 onMounted(async () => {
   if (!host.value || !props.tab.path) return
   view = new EditorView({
@@ -408,6 +564,21 @@ onBeforeUnmount(() => {
 
 .nt-chunked-ro {
   color: var(--nt-ink-muted);
+}
+
+.nt-chunked-find {
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-2);
+  flex: none;
+  height: var(--nt-h-toolbar);
+  padding: 0 var(--nt-sp-2);
+  border-bottom: 1px solid var(--nt-border);
+  background: var(--nt-elev-raised);
+}
+
+.nt-chunked-find-input {
+  width: 220px;
 }
 
 .nt-chunked-progress {

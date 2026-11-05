@@ -136,6 +136,7 @@ export default {
   },
   editor: {
     openFailedTitle: '文件无法读取',
+    openWithSystem: '用系统程序打开',
   },
   toolbar: {
     new: '新建',
@@ -289,6 +290,13 @@ export default {
     discardBody: '当前块有未保存的修改，放弃后无法恢复。',
     unsavedTitle: '本块还有未保存的修改',
     unsavedBody: '切换块会丢掉本块的改动。要继续吗？',
+    find: '查找',
+    findPlaceholder: '在整份文件里查找',
+    findNext: '下一个',
+    findPrev: '上一个',
+    findCase: '区分大小写',
+    finding: '正在扫描…',
+    noMatch: '没有命中',
   },
   // CSV / TSV 可编辑网格
   sheet: {
@@ -905,6 +913,7 @@ export default {
     removeFromList: '从列表移除',
     refresh: '刷新',
     result: '结果',
+    retry: '重试',
   },
   error: {
     pathEmpty: '路径不能为空',

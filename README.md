@@ -109,7 +109,7 @@ npm --prefix frontend run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc
 ```
 
 ## 项目结构
@@ -129,7 +129,7 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id / text
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/chain_tests.rs   # 12 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
+│   └── tests/                   # 集成测试：chain_*.rs 每域一条长链路（编译 lib 而不链接 WebView）
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
@@ -190,7 +190,7 @@ NoteText/
 | [assets/specs/11](assets/specs/11-visual-tokens.md) | 视觉令牌与主题 |
 | [assets/specs/12](assets/specs/12-testing.md) | 测试与验证：12 条长链路、七组、本地与 CI 门禁 |
 | [assets/specs/13](assets/specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
-| [assets/specs/14](assets/specs/14-api-contract.md) | invoke 命令契约（115 个命令对照表） |
+| [assets/specs/14](assets/specs/14-api-contract.md) | invoke 命令契约（117 个命令对照表） |
 | [assets/specs/15](assets/specs/15-error-codes.md) | 错误码分段与处置动作 |
 | [assets/specs/16](assets/specs/16-page-structure.md) | 页面与组件地图 |
 | [assets/specs/17](assets/specs/17-deployment.md) | 构建与分发 |
@@ -203,14 +203,14 @@ NoteText/
 
 ## 测试
 
-12 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按七组排列
+12 个集成测试按域拆成 `src-tauri/tests/chain_*.rs` 多个文件，按七组排列
 （文件 / 会话 / 批量 / 备份 / 压缩 / 表格编辑 / 系统关联；系统关联一条仅 Windows）。
 **每个测试函数名就是它守护的那件坏事**，失败时报文直接指出坏在哪。
 全量约 1 秒；同一域的相近故事合并成一条，一条测试就是一条完整的用户故事。
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- archive
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- archive
 ```
 
 判据见 [AGENTS.md §3](AGENTS.md) 与 [assets/specs/12](assets/specs/12-testing.md)：
@@ -222,7 +222,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- archive
 | 会话 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null` |
 | 批量 | 扫描阶段不落盘、应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
 | 备份 | 五个用户数据表导出后导得回；不在备份里的本机数据不被抹掉 |
-| 压缩 | 十五种格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
+| 压缩 | 16 种可写格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
 | 表格编辑 | 改单元格保住样式表与未编辑工作表；共享串解析、跨表查找、新增行都正确 |
 | 系统关联 | 关联注册写对注册表三件套；注销不留悬空默认、不误伤另一组 |
 

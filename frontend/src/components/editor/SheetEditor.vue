@@ -357,8 +357,15 @@ const replaceText = ref('')
 /** 命中位置：`r:c`。前端已全量在内存里，不必走 IPC。 */
 const hits = ref<Array<{ r: number; c: number }>>([])
 
+/** 命中位置集合：`r:c`。数组 some() 在每个可见格上都会跑，命中多时滚动掉帧。 */
+const hitSet = computed(() => {
+  const set = new Set<string>()
+  for (const h of hits.value) set.add(`${h.r}:${h.c}`)
+  return set
+})
+
 function isHit(r: number, c: number): boolean {
-  return hits.value.some((h) => h.r === r && h.c === c)
+  return hitSet.value.has(`${r}:${c}`)
 }
 
 /** 扫描全表：包含匹配、不区分大小写（与 XLSX 那边的默认行为一致）。 */

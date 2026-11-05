@@ -9,10 +9,7 @@ use crate::app::bootstrap::AppState;
 use crate::domain::file::{FileContentVO, ReadMode};
 use crate::pkg::error::{codes, AppError, AppResult};
 
-/// 读文本文件。`mode` 决定全量 / 前段 / 行区间。
-/// `encoding` 给值时跳过自动探测（用户指定编码重开）。
-/// `allow_big` 是用户在大文件弹窗里显式选了「普通打开」：上限放宽到 200MB。
-/// 标 async 的原因与 read_table_preview 一致——几十 MB 的读取解码不能在主线程上做。
+/// 读文本文件：返回文本、编码、行尾与行数。`allow_big` 放宽全量上限到 200MB。
 #[tauri::command(async)]
 pub fn read_file(
     state: State<'_, AppState>,
@@ -127,6 +124,15 @@ pub fn big_file_goto_line(
     line: usize,
 ) -> AppResult<usize> {
     state.services.big_file.block_for_line(&path, line)
+}
+
+/// 大文件流式查找：逐块扫描，一轮最多读 budget 字节。
+#[tauri::command(async)]
+pub fn big_file_find(
+    state: State<'_, AppState>,
+    req: crate::domain::file::BigFileFindReq,
+) -> AppResult<crate::domain::file::BigFileFindVO> {
+    state.services.big_file.find(&req)
 }
 
 /// 取消建索引。

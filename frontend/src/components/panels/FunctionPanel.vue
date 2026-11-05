@@ -31,7 +31,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { useEditorStore } from '@/stores/editor'
@@ -47,15 +47,37 @@ interface Symbol {
   kind: Kind
 }
 
-const symbols = computed<Symbol[]>(() => {
+/**
+ * 符号表。
+ *
+ * **不能写成 computed(() => extract(getText(id)))**：那会让每次按键都把整篇
+ * 正文 `toString()` 一遍再跑一遍正则，几百 KB 的文件上打字就卡。
+ * 这里由正文版本号驱动的防抖刷新填充，打字期间不重扫。
+ */
+const symbols = ref<Symbol[]>([])
+
+/** 正文版本号：只用来触发「停手后重扫」的 watch。 */
+const version = computed(() => (editor.active ? docVersionOf(editor.active.id) : 0))
+
+/** 重扫防抖：用户停手 260ms 后扫一次。 */
+let scanTimer = 0
+function scheduleScan() {
+  if (scanTimer) window.clearTimeout(scanTimer)
+  scanTimer = window.setTimeout(() => {
+    scanTimer = 0
+    rescan()
+  }, 260)
+}
+
+function rescan() {
   const tab = editor.active
-  if (!tab) return []
-  // 注册表是普通 Map：不读一次版本号，computed 求值一次后就永不失效。
-  docVersionOf(tab.id)
+  if (!tab) {
+    symbols.value = []
+    return
+  }
   const text = getText(tab.id)
-  if (!text) return []
-  return extract(text, tab.language)
-})
+  symbols.value = text ? extract(text, tab.language) : []
+}
 
 function iconOf(kind: Kind): string {
   switch (kind) {
@@ -80,12 +102,18 @@ function onJump(s: Symbol) {
   )
 }
 
+/** 手动刷新：立刻重扫（按钮点下去就该有反馈）。 */
 function scan() {
-  // 手动刷新走版本号：setPosition 改的不是 symbols 的依赖，推不动它。
+  if (scanTimer) window.clearTimeout(scanTimer)
+  scanTimer = 0
   if (editor.activeId != null) bumpDocVersion(editor.activeId)
+  rescan()
 }
 
 onMounted(scan)
+onBeforeUnmount(() => {
+  if (scanTimer) window.clearTimeout(scanTimer)
+})
 
 /**
  * 每种语言的符号正则。只认「行首缩进 + 关键字」的形态：
@@ -163,11 +191,9 @@ function patternsFor(lang: string): Array<[RegExp, Kind]> {
   }
 }
 
-// 切换文件时重扫：computed 依赖 editor.active.id。
-watch(
-  () => editor.activeId,
-  () => scan(),
-)
+// 切文件立刻重扫；同一个文件里打字则等停手。
+watch(() => editor.activeId, () => scan())
+watch(version, () => scheduleScan())
 </script>
 
 <style scoped>

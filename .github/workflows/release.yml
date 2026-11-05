@@ -53,15 +53,31 @@ jobs:
       - name: 构建 NSIS 安装器
         run: ./frontend/node_modules/.bin/tauri build --bundles nsis
 
-      # 产物在 workspace 根的 target/ 下。
+      # 体积门禁按构成判处：exe 里除壳之外还有归档 / 压缩引擎与完整编码码表，都是纯代码。
+      # 越界只有两种原因——符号没剥掉，或有大文件被 include_bytes! 打进来。
       - name: 校验产物
         shell: pwsh
         run: |
           $exe = 'target/release/NoteText.exe'
           if (-not (Test-Path $exe)) { throw "主程序不存在：$exe" }
           $mb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
-          Write-Host "NoteText.exe = $mb MB"
-          if ($mb -gt 20) { throw "主程序异常偏大（$mb MB），检查是否误打包了资源" }
+          Write-Host "主程序 NoteText.exe = $mb MB（前端资产 + Rust 壳 + 归档 / 编码引擎）"
+
+          # 上限取当前 release profile（lto=fat / strip / 依赖 opt-level=z）实测值 + 15% 余量。
+          if ($mb -gt 24) { throw "主程序异常偏大（$mb MB）：检查 strip / lto 配置，或是否有大文件被 include_bytes! 打包" }
+
+          # 调试目录项非空说明符号没剥干净（只提示，不阻断）。
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
+          $optOff = $peOff + 24
+          $magic = [BitConverter]::ToUInt16($bytes, $optOff)
+          if ($magic -eq 0x20B) {
+            $debugDirOff = $optOff + 112 + 6 * 8
+            $debugRva = [BitConverter]::ToUInt32($bytes, $debugDirOff)
+            if ($debugRva -ne 0) {
+              Write-Host "调试目录仍存在（RVA=$debugRva）：确认 strip 生效即可，不阻断"
+            }
+          }
 
           $setup = Get-ChildItem 'target/release/bundle/nsis' -Filter '*.exe' -ErrorAction SilentlyContinue
           if (-not $setup) { throw '没有找到 NSIS 安装包' }

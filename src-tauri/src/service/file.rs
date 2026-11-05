@@ -21,7 +21,6 @@ use crate::service::encoding;
 pub const MAX_FULL_READ: u64 = 64 * 1024 * 1024;
 
 /// 显式放行后的全量可编辑上限：用户在大文件弹窗选「普通打开」时适用。
-/// 再大就只能走分块视图（service/big_file.rs）。
 /// 与前端 `stores/editor.ts` 的 `BIG_EDIT_LIMIT` 必须同值。
 pub const MAX_FORCE_FULL_READ: u64 = 512 * 1024 * 1024;
 
@@ -216,10 +215,7 @@ impl FileService {
         self.read_as(path, mode, None, false)
     }
 
-    /// 读文本文件，可强制指定编码。`encoding` 给值时跳过探测；
-    /// `allow_big` 是用户在大文件弹窗里显式选了「普通打开」：上限放宽到
-    /// MAX_FORCE_FULL_READ，再大一律拒绝（只能分块只读）。
-    /// 解不动时退回探测编码，不让用户得到打不开的文件。
+    /// 读文本文件，可强制指定编码；解不动时退回探测编码，不让用户拿到打不开的文件。
     pub fn read_as(
         &self,
         path: &str,

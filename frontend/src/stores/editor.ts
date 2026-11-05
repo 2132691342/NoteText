@@ -412,6 +412,40 @@ export const useEditorStore = defineStore('editor', () => {
       const i = Math.min(Math.max(activeIndex, 0), tabs.value.length - 1)
       activeId.value = tabs.value[i].id
     }
+    // 恢复出来的大标签先判一次大小：几十 MB 的文件在会话恢复时被整篇读进
+    // 内存再报「太大」，用户看到的是启动后长时间无响应。这里直接转分块。
+    void markOversizedAsChunked()
+  }
+
+  /**
+   * 会话恢复后把超大标签改成分块模式。
+   *
+   * 只对文本形态的标签做（Markdown / 代码 / 纯文本）：二进制与表格各有自己的
+   * 打开路径，分块视图对它们没有意义。stat 失败就保持原样，交给组件层报错。
+   */
+  async function markOversizedAsChunked() {
+    const candidates = tabs.value.filter(
+      (t) =>
+        t.path &&
+        !t.path.startsWith('draft:') &&
+        !t.chunked &&
+        isTextKind(kindOf(t.path)),
+    )
+    if (candidates.length === 0) return
+    await Promise.all(
+      candidates.map(async (tab) => {
+        try {
+          const meta = await api.statFile(tab.path)
+          if (meta.size > FULL_READ_LIMIT) {
+            tab.chunked = true
+            tab.read_only = true
+            tab.truncated = false
+          }
+        } catch {
+          /* stat 失败：文件可能已不在，保持原样让组件层给错误面 */
+        }
+      }),
+    )
   }
 
   /** 导出成后端 TabDO：保存会话时用。 */

@@ -2,7 +2,7 @@
 
 ## 定位
 
-前端 `api/index.ts` 与后端 `commands/` 的对照表：115 个 invoke 命令的入参出参。
+前端 `api/index.ts` 与后端 `commands/` 的对照表：117 个 invoke 命令的入参出参。
 **改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定
@@ -29,6 +29,7 @@
 | `big_file_cancel` | `path` | `()` |
 | `big_file_close` | `path` | `()`（释放缓存索引） |
 | `big_file_write_block` | `req: BigFileBlockWriteReq` | `BigFileBlockWriteVO`（单块写回，乐观锁过期报 1008） |
+| `big_file_find` | `req: BigFileFindReq` | `BigFileFindVO`（按 `from_offset` 分轮流式扫描，`next_offset` 接续） |
 | `write_file` | `path`, `text`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO` |
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
 | `read_dir` | `dir` | `DirEntry[]` |

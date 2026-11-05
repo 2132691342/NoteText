@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::domain::file::{
-    BigFileBlockVO, BigFileBlockWriteReq, BigFileBlockWriteVO, BigFileMetaVO,
+    BigFileBlockVO, BigFileBlockWriteReq, BigFileBlockWriteVO, BigFileFindReq, BigFileFindVO,
+    BigFileHitVO, BigFileMetaVO,
 };
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::pkg::text::normalize_newlines;
@@ -21,6 +22,8 @@ const TARGET_BLOCK: u64 = 1024 * 1024;
 const BOUNDARY_EXTEND: u64 = 4 * 1024 * 1024;
 /// 编码探测采样：只看头部，GB 级文件也不用为探测付全量解码的钱。
 const ENCODE_SAMPLE: u64 = 64 * 1024;
+/// 扫描缓冲区：1MB 一块，`memchr` 在这个尺寸下吞吐与缓存都占优。
+const SCAN_BUF: usize = 1024 * 1024;
 /// 扫描进度回调的步长：每扫这么多字节回报一次。
 const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
 /// 分块模式上限 64GB：索引要顺序扫一遍文件，再大不承诺只读体验。
@@ -160,9 +163,10 @@ impl BigFileService {
 
         let (_, body) = encoding::strip_bom(&bytes, &index.encoding);
         // 只读视图容错优先：解码失败退有损，给替换符也不给「块打不开」。
+        // 行尾归一走「有 CR 才复制」：绝大多数块本来就只有 LF，没必要整块再拷一份。
         let text = match encoding::decode(body, &index.encoding) {
-            Ok(t) => t,
-            Err(_) => String::from_utf8_lossy(body).into_owned(),
+            Ok(t) => normalize_newlines_if_needed(t),
+            Err(_) => normalize_newlines_if_needed(String::from_utf8_lossy(body).into_owned()),
         };
 
         Ok(BigFileBlockVO {
@@ -170,7 +174,7 @@ impl BigFileService {
             block_index,
             block_count: index.blocks.len(),
             start_line: block.line_start,
-            text: normalize_newlines(&text),
+            text,
             stale,
         })
     }
@@ -212,10 +216,10 @@ impl BigFileService {
         f.read_exact(&mut current)?;
         let (_, body) = encoding::strip_bom(&current, &index.encoding);
         let current_text = match encoding::decode(body, &index.encoding) {
-            Ok(t) => normalize_newlines(&t),
-            Err(_) => normalize_newlines(&String::from_utf8_lossy(body)),
+            Ok(t) => normalize_newlines_if_needed(t),
+            Err(_) => normalize_newlines_if_needed(String::from_utf8_lossy(body).into_owned()),
         };
-        if current_text != normalize_newlines(&req.old_text) {
+        if current_text != normalize_newlines_if_needed(req.old_text.clone()) {
             return Err(AppError::new(
                 codes::FILE_STALE,
                 "这个块已被外部程序修改，请重新加载后再改",
@@ -283,6 +287,138 @@ impl BigFileService {
         })
     }
 
+    /// 逐块流式查找：不整文入内存，一轮最多读 `budget` 字节。
+    ///
+    /// 起点是字节偏移而不是行号：分页视图的「查找下一个」用它接续上一轮，
+    /// 不必每轮重扫文件头。命中行的行列按块内解码后的字符算，与编辑器读数一致。
+    pub fn find(&self, req: &BigFileFindReq) -> AppResult<BigFileFindVO> {
+        if req.query.is_empty() {
+            return Ok(BigFileFindVO {
+                hits: Vec::new(),
+                next_offset: req.from_offset,
+                has_more: false,
+                truncated: false,
+            });
+        }
+        let index = self.index_of(&req.path)?;
+        let size = fs::metadata(&req.path)?.len();
+        let start = req.from_offset.min(size);
+        let budget = req.budget.max(256 * 1024);
+        let limit = req.limit.clamp(1, 5000);
+
+        let needle = if req.match_case {
+            req.query.clone()
+        } else {
+            req.query.to_lowercase()
+        };
+        // 块边界会把匹配词切成两半：每轮多读 needle 那么长的重叠区。
+        let overlap = req.query.len().saturating_sub(1) as u64;
+        let line_mode = index.encoding != "utf-16le" && index.encoding != "utf-16be";
+
+        let base_line = self.line_at_offset(&index, start);
+        let mtime_ms = fs::metadata(&req.path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map(|t| mtime_ms_of(Some(t)))
+            .unwrap_or(index.mtime_ms);
+
+        let mut file = fs::File::open(&req.path)
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用或已移走", e))?;
+
+        let mut hits: Vec<BigFileHitVO> = Vec::new();
+        let mut read_total = 0u64;
+        let mut pos = start;
+        let mut line_no = base_line;
+        let mut truncated = false;
+        let mut buf = vec![0u8; 256 * 1024];
+
+        'outer: while pos < size && read_total < budget {
+            let want = (size - pos).min(buf.len() as u64);
+            file.seek(SeekFrom::Start(pos))?;
+            file.read_exact(&mut buf[..want as usize])?;
+            read_total += want;
+
+            // 重叠区只用于匹配，不推进 pos：否则同一段会被统计两次行号。
+            let tail_len = overlap.min(size - (pos + want));
+            let mut region_bytes = Vec::with_capacity((want + tail_len) as usize);
+            region_bytes.extend_from_slice(&buf[..want as usize]);
+            if tail_len > 0 {
+                let mut extra = vec![0u8; tail_len as usize];
+                file.read_exact(&mut extra)?;
+                region_bytes.extend_from_slice(&extra);
+            }
+            let region = if line_mode {
+                String::from_utf8_lossy(&region_bytes).into_owned()
+            } else {
+                // UTF-16 走块解码器：直接按 2 字节码元解，跨块不会拆字。
+                let units: Vec<u16> = region_bytes
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                String::from_utf16_lossy(&units)
+            };
+
+            let mut from = 0usize;
+            while let Some(rel) = find_in(&region, &needle, req.match_case, from) {
+                // 命中起点已经落在消费区之外（重叠区里）：留给下一轮，避免重复。
+                if rel as u64 >= want {
+                    break;
+                }
+                let line_start = region[..rel].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                let line_end = region[rel..]
+                    .find('\n')
+                    .map(|i| rel + i)
+                    .unwrap_or(region.len());
+                let end = rel + req.query.len().min(region.len() - rel);
+                if req.whole_word {
+                    let before = region[line_start..rel].chars().next_back();
+                    let after = region[end..].chars().next();
+                    if before.is_some_and(is_word_char) || after.is_some_and(is_word_char) {
+                        from = rel + 1;
+                        continue;
+                    }
+                }
+                hits.push(BigFileHitVO {
+                    line: line_no + region[..rel].matches('\n').count(),
+                    col: region[line_start..rel].chars().count() + 1,
+                    text: clip_line(&region[line_start..line_end]),
+                });
+                if hits.len() >= limit {
+                    truncated = true;
+                    break 'outer;
+                }
+                from = rel + req.query.len().max(1);
+            }
+
+            line_no += region[..want as usize].matches('\n').count();
+            pos += want;
+        }
+
+        let next_offset = pos.min(size);
+        // 扫描期间文件被改过：命中位置不可信，直接让人重新打开。
+        if mtime_ms != index.mtime_ms {
+            return Err(AppError::new(
+                codes::FILE_STALE,
+                "查找过程中文件被外部修改，请重新打开后再找",
+            ));
+        }
+        Ok(BigFileFindVO {
+            hits,
+            next_offset,
+            has_more: next_offset < size && !truncated,
+            truncated,
+        })
+    }
+
+    /// 字节偏移所在的全局行号：块索引二分定位，取该块的起始行。
+    fn line_at_offset(&self, index: &BlockIndex, offset: u64) -> usize {
+        let idx = index
+            .blocks
+            .partition_point(|b| b.offset <= offset)
+            .saturating_sub(1);
+        index.blocks.get(idx).map(|b| b.line_start).unwrap_or(1)
+    }
+
     /// 用户取消：置取消位，扫描线程在下一个检查点返回。
     /// 没有条目也先登记一个：open 复用同一个位，先取消后打开同样生效。
     pub fn cancel(&self, path: &str) {
@@ -339,6 +475,9 @@ impl BigFileService {
     }
 
     /// 顺序扫描建索引。块边界落在换行字节上；扫描途中检查取消位。
+    ///
+    /// 找换行走 `memchr` / `memmem`（SIMD），比逐字节比较快一个量级。
+    /// UTF-16 的换行是两字节序列，跨读缓冲区时留尾巴接续，不切坏码元。
     fn scan(
         &self,
         path: &Path,
@@ -348,17 +487,22 @@ impl BigFileService {
         on_progress: Option<&ProgressFn>,
     ) -> AppResult<ScanResult> {
         let utf16 = enc == "utf-16le" || enc == "utf-16be";
-        let mut reader = std::io::BufReader::with_capacity(256 * 1024, fs::File::open(path)?);
-        let mut buf = vec![0u8; 256 * 1024];
+        let pattern: &[u8] = match enc {
+            "utf-16le" => &[0x0A, 0x00],
+            "utf-16be" => &[0x00, 0x0A],
+            _ => b"\n",
+        };
+        let mut reader = std::io::BufReader::with_capacity(SCAN_BUF, fs::File::open(path)?);
+        let mut buf = vec![0u8; SCAN_BUF];
         let mut blocks: Vec<BlockMeta> = Vec::new();
 
-        let mut pos = 0u64; // 已消费的绝对偏移
+        let mut pos = 0u64;
         let mut block_start = 0u64;
         let mut nl_in_block = 0usize;
         let mut line_start = 1usize;
-        let mut last_byte = 0u8; // UTF-16 的 \n 占两字节，判定要看前一位
-        let mut last_nl_end = 0u64; // 最后一个换行的闭字节位置：判文件是否以换行收尾
+        let mut last_nl_end = 0u64;
         let mut last_progress = 0u64;
+        let mut carry = 0usize;
         let mut cancelled = false;
 
         loop {
@@ -366,60 +510,58 @@ impl BigFileService {
                 cancelled = true;
                 break;
             }
-            let n = reader.read(&mut buf)?;
+            let n = reader.read(&mut buf[carry..])?;
             if n == 0 {
                 break;
             }
-            for (i, &b) in buf[..n].iter().enumerate() {
-                let abs = pos + i as u64;
-                let is_nl = if utf16 {
-                    // \n 的末字节落奇数位：LE 是 0A 00，BE 是 00 0A
-                    let odd = abs % 2 == 1;
-                    match enc {
-                        "utf-16le" => odd && b == 0x00 && last_byte == 0x0A,
-                        _ => odd && b == 0x0A && last_byte == 0x00,
-                    }
-                } else {
-                    b == b'\n'
+            let total = n + carry;
+            // 末尾不足一个模式的字节留到下一轮：模式不能被读块边界切断。
+            let usable = total.saturating_sub(pattern.len() - 1);
+            let window = &buf[..total];
+
+            let mut hit = 0usize;
+            while hit < usable {
+                let Some(rel) = find_pattern(&window[hit..usable], pattern) else {
+                    break;
                 };
-
-                // 闭块条件：到了目标大小后撞上换行；或超出边界上限硬切
-                //（连续无换行的病态文件不能拖死索引）。硬切只在已读入的
-                // 字节内进行，UTF-16 还要对齐到码元边界，避免切块越界。
-                let mut end: Option<u64> = None;
-                if is_nl && abs - block_start + 1 >= TARGET_BLOCK {
-                    end = Some(abs + 1);
-                } else if abs - block_start + 1 >= TARGET_BLOCK + BOUNDARY_EXTEND {
-                    let mut e = abs + 1;
-                    if utf16 && e % 2 == 1 {
-                        e += 1;
-                    }
-                    if e <= pos {
-                        end = Some(e);
-                    }
-                }
-
-                if let Some(end) = end {
-                    // 闭在换行上时，这个换行本身属于当前块，行数要计入。
-                    let count = nl_in_block + usize::from(is_nl);
-                    if is_nl {
-                        last_nl_end = end;
-                    }
+                let abs = pos + (hit + rel) as u64;
+                let nl_end = abs + pattern.len() as u64;
+                if nl_end - block_start >= TARGET_BLOCK {
                     blocks.push(BlockMeta {
                         offset: block_start,
-                        byte_len: end - block_start,
+                        byte_len: nl_end - block_start,
                         line_start,
                     });
-                    line_start += count;
-                    block_start = end;
+                    line_start += nl_in_block + 1;
+                    block_start = nl_end;
                     nl_in_block = 0;
-                } else if is_nl {
+                } else {
                     nl_in_block += 1;
-                    last_nl_end = abs + 1;
+                    // 连续无换行的病态文件不能把索引拖死：到上限就地切一刀。
+                    if abs - block_start >= TARGET_BLOCK + BOUNDARY_EXTEND {
+                        let mut cut = abs;
+                        if utf16 {
+                            cut &= !1;
+                        }
+                        if cut > block_start {
+                            blocks.push(BlockMeta {
+                                offset: block_start,
+                                byte_len: cut - block_start,
+                                line_start,
+                            });
+                            block_start = cut;
+                            nl_in_block = 0;
+                        }
+                    }
                 }
-                last_byte = b;
+                last_nl_end = nl_end;
+                hit += rel + pattern.len();
             }
-            pos += n as u64;
+
+            // 尾巴挪到缓冲区开头，下一轮从它后面继续读。
+            carry = total - usable;
+            buf.copy_within(usable..total, 0);
+            pos += usable as u64;
             if let Some(cb) = on_progress {
                 if pos - last_progress >= PROGRESS_STEP {
                     last_progress = pos;
@@ -427,6 +569,8 @@ impl BigFileService {
                 }
             }
         }
+        // 尾巴也是文件正文：先按「无换行」收尾（UTF-16 的半个码元只在截断文件里出现）。
+        pos += carry as u64;
         if cancelled {
             return Err(AppError::new(codes::BIG_INDEX_CANCELLED, "已取消建立索引"));
         }
@@ -434,7 +578,6 @@ impl BigFileService {
             cb(size, size);
         }
 
-        // 收尾块：不足一块的尾巴（可能不含换行）。
         if pos > block_start {
             blocks.push(BlockMeta {
                 offset: block_start,
@@ -444,7 +587,6 @@ impl BigFileService {
             line_start += nl_in_block;
         }
         // 行数 = 换行数 + 末行无换行补的一行（编辑器对空文档显示 1 行）。
-        // line_start 此时是 1 + 换行总数，直接按公式换算。
         let total_lines = if blocks.is_empty() {
             1
         } else if last_nl_end == pos {
@@ -458,6 +600,69 @@ impl BigFileService {
             total_lines,
         })
     }
+}
+
+/// 在字节切片里找模式：单字节走 `memchr`，多字节走 `memmem`。
+fn find_pattern(hay: &[u8], pattern: &[u8]) -> Option<usize> {
+    if pattern.len() == 1 {
+        memchr::memchr(pattern[0], hay)
+    } else {
+        memchr::memmem::find(hay, pattern)
+    }
+}
+
+/// 从字节位置 `from` 开始查找 `needle`；不区分大小写时两侧转小写后做字节查找。
+fn find_in(hay: &str, needle: &str, match_case: bool, from: usize) -> Option<usize> {
+    if from >= hay.len() || hay.len() < needle.len() {
+        return None;
+    }
+    if match_case {
+        return hay[from..].find(needle).map(|i| i + from);
+    }
+    let lower = hay.to_lowercase();
+    if lower.len() == hay.len() {
+        return lower[from..].find(needle).map(|i| i + from);
+    }
+    // 长度变了：按字符逐个比对，返回的仍是原串的字节偏移。
+    let hay_chars: Vec<(usize, char)> = hay.char_indices().collect();
+    let want: Vec<char> = needle.chars().collect();
+    if want.is_empty() {
+        return None;
+    }
+    let start_char = hay[..from].chars().count();
+    for ci in start_char..hay_chars.len() {
+        if ci + want.len() > hay_chars.len() {
+            break;
+        }
+        let mut ok = true;
+        for (k, w) in want.iter().enumerate() {
+            let c = hay_chars[ci + k].1;
+            let lowered = c.to_lowercase().next().unwrap_or(c);
+            if lowered != *w && c != *w {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            return Some(hay_chars[ci].0);
+        }
+    }
+    None
+}
+
+/// 词边界判定：字母数字下划线算词内字符，`whole_word` 命中要求两侧都不在词内。
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// 命中行超长时截断：一行 20 万字符（压缩过的 JSON）塞进列表没人看得见。
+fn clip_line(line: &str) -> String {
+    const MAX: usize = 400;
+    if line.chars().count() <= MAX {
+        return line.to_string();
+    }
+    let head: String = line.chars().take(MAX).collect();
+    format!("{head}…")
 }
 
 struct ScanResult {
@@ -489,6 +694,15 @@ fn copy_range(
         remaining -= n as u64;
     }
     Ok(())
+}
+
+/// 行尾归一：只在真的有 CR 时复制一次，纯 LF 的块原样返回。
+fn normalize_newlines_if_needed(text: String) -> String {
+    if text.contains('\r') {
+        normalize_newlines(&text)
+    } else {
+        text
+    }
 }
 
 /// 修改时间 → 毫秒整数（取不到时 0）。

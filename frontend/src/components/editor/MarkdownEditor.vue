@@ -82,14 +82,25 @@ const exporting = ref(false)
 const name = computed(() => baseName(props.path))
 
 /**
- * 源文本：从编辑器注册表拿，不往 store 里存正文（AGENTS.md §1.2）。
+ * 源文本缓存：**不能写成 computed 直接在每次求值时 `getText`**。
  *
- * `docVersionOf` 是必需的依赖：注册表是普通 Map，只读 getText 的话
- * computed 求值一次拿到 '' 就再不失效，预览会永远停在空态。
+ * `getText` 是 `doc.toString()`，会整篇复制一份：一个 3MB 的 .md 每敲一个字符
+ * 就复制 3MB，输入立刻发涩。这里只在「预览要重新渲染」时取一次，
+ * 由 render() 显式刷新。
  */
+const cachedSource = ref('')
+
+/** 刷新缓存：渲染前调一次，之后预览读的是这份快照。 */
+function refreshSource(): string {
+  const text = getText(props.tab.id)
+  cachedSource.value = text
+  return text
+}
+
+/** 当前源文本（挂载后由 refreshSource 填）。 */
 const source = computed(() => {
   docVersionOf(props.tab.id)
-  return getText(props.tab.id)
+  return cachedSource.value
 })
 
 md.setDark(settings.resolvedTheme === 'dark')
@@ -142,7 +153,8 @@ async function render() {
   // 切到分屏 / 预览时由 mode 的 watcher 补。
   if (mode.value === 'edit') return
   const token = ++renderToken
-  const text = source.value
+  // 先取一次正文快照：之后整轮渲染都读这份，不再反复 toString。
+  const text = refreshSource()
   // 预览容器可能还没挂上（切模式后首帧）：等一个 nextTick 再取，
   // 取不到就整轮作废——不能写成静默 return，那会让预览永远空着。
   if (!doc.value) {

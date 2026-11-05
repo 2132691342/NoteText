@@ -135,6 +135,7 @@ export default {
   },
   editor: {
     openFailedTitle: 'Failed to read file',
+    openWithSystem: 'Open with system app',
   },
   toolbar: {
     new: 'New',
@@ -288,6 +289,13 @@ export default {
     discardBody: 'This block has unsaved edits. Discarding cannot be undone.',
     unsavedTitle: 'This block has unsaved edits',
     unsavedBody: 'Switching blocks will drop the edits here. Continue?',
+    find: 'Find',
+    findPlaceholder: 'Find across the whole file',
+    findNext: 'Next',
+    findPrev: 'Previous',
+    findCase: 'Match case',
+    finding: 'Scanning…',
+    noMatch: 'No matches',
   },
   // CSV / TSV editable grid
   sheet: {
@@ -905,6 +913,7 @@ export default {
     removeFromList: 'Remove from list',
     refresh: 'Refresh',
     result: 'Result',
+    retry: 'Retry',
   },
   error: {
     pathEmpty: 'Path cannot be empty',

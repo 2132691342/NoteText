@@ -36,6 +36,7 @@ macro_rules! command_handlers {
             commands::file::big_file_cancel,
             commands::file::big_file_close,
             commands::file::big_file_write_block,
+            commands::file::big_file_find,
             commands::file::open_file_dialog,
             commands::file::open_files_dialog,
             commands::file::open_folder_dialog,

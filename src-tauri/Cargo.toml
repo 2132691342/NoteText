@@ -42,8 +42,9 @@ dirs = { workspace = true }
 
 # 剪贴板：WebView2 不给渲染层 clipboard-read 权限，粘贴链路必须在壳层兜底。
 # 替代方案 tauri-plugin-clipboard-manager 会把插件权限清单一起带进来，
-# 这里只需要读 / 写纯文本两个命令。
-arboard = "3"
+# 这里只需要读 / 写纯文本两个命令，所以关掉默认的 image-data
+# （那条特性会拖进整个 image 编解码栈，对二进制体积是纯粹的浪费）。
+arboard = { version = "3", default-features = false }
 
 # 压缩内核（specs/18）：创建 / 解压 / 浏览 / 测试 / 转换 / 追加删除 / 分卷
 sevenz-rust = { workspace = true }
@@ -56,6 +57,7 @@ zstd = { workspace = true }
 lz4_flex = { workspace = true }
 brotli = { workspace = true }
 crc32fast = { workspace = true }
+memchr = { workspace = true }
 walkdir = { workspace = true }
 tempfile = { workspace = true }
 

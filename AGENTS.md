@@ -20,7 +20,7 @@
 | Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
 | 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
 | 表格与图片预览 | XLSX | 按扩展名分流，表格多工作表可切；Word / PDF / PPT 不在内置渲染范围内 |
-| 大文件 / 表格 | 标准库 `File + Seek` · zip · 原生 XML 补丁 | 1MB 块索引逐块解码；XLSX 只重写命中单元格，其余部件字节级原样（assets/specs/19） |
+| 大文件 / 表格 | 标准库 `File + Seek` · zip · 原生 XML 补丁 | 1MB 块索引逐块解码；XLSX 只重写命中单元格，其余部件字节级原样（assets/specs/19）；`memchr` 按 SIMD 找换行（索引扫描的热路径，15MB 从 4s 降到 0.5s） |
 | 图表 | ECharts | ^5.5.x（按需引入，色值取 `--nt-ch-*`） |
 | 国际化 | Vue I18n | ^9.10.x（zh-CN 默认 + en；设置页可切换，EP 文案同步） |
 | 样式 | 原生 CSS 设计令牌 | `themes.css` + `ep-theme.css` + `base.css` + `content.css`；色值与尺寸只在 `themes.css` 定义 |
@@ -93,7 +93,7 @@ NoteText/
 │   │   ├── platform/           # ⑧ 平台相关：Win32 消息框 / AppHandle 存取
 │   │   └── pkg/                # ⑨ 叶子工具包（AppError / paths / log / id / text）
 │   ├── capabilities/           # Tauri 权限清单
-│   └── tests/chain_tests.rs    # 集成测试（编译 lib 而不链接 WebView）
+│   └── tests/                   # 集成测试：每域一个 chain_*.rs（编译 lib 而不链接 WebView）
 └── frontend/src/               # 前端唯一源码目录
 ```
 
@@ -176,7 +176,7 @@ Rust 的 nil slice 序列化成 `null`，前端按数组读就是
 
 - 出参里的切片与 map 字段**构造时一律初始化**（`Vec::new()` / `BTreeMap::new()`）
 - 前端接住数组字段时同样按「可能是 null」处理（`res.entries ?? []`）
-- `tests/chain_tests.rs` 的会话链路守护这一点（空列表必须序列化成 `[]`）
+- `tests/chain_session.rs` 的会话链路守护这一点（空列表必须序列化成 `[]`）
 
 #### 2.3.3 前端目录（强制）
 
@@ -456,13 +456,13 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），12 条测试按
-  「文件(3) / 会话 / 批量 / 备份 / 压缩(4) / 表格编辑 / 系统关联」七组排列，编译只链接一次 lib；
-  系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 11 条
+- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），12 条测试按
+  「文件(3) / 会话 / 批量 / 备份 / 压缩(4) / 表格编辑 / 系统关联」七组排列，每条编排是一个独立编译单元；
+  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 11 条
 - **源码内不挂 `#[cfg(test)]` 单元测试**：简单断言分散在各文件会让验证入口失去焦点
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
-- 全量测试亚秒级；局部改动可以用 `cargo test --test chain_tests -- <关键字>` 只跑一条链路
+- 全量测试亚秒级；局部改动可只跑一个域：`cargo test --test chain_archive -- <关键字>`
 
 ### 3.3 验证入口
 
@@ -474,7 +474,7 @@ mod dialog_stub;
 | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Rust 格式门禁 |
 | `cargo check --manifest-path src-tauri/Cargo.toml --all-targets` | 全目标编译检查 |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | 静态检查 |
-| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` | 12 条链路测试 |
+| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc` | 12 条链路测试 |
 
 `tauri::generate_context!()` 会在 Rust 编译期读取 `frontend/dist`；新 checkout 中该目录
 不存在，所以 `cargo check`、Clippy 与测试前都要先构建前端。
@@ -484,7 +484,7 @@ mod dialog_stub;
 | 分组 | 测试 | 坏法 |
 |---|---|---|
 | 文件 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 |
-| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale |
+| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 整文查找命中行号对不上 / 查找一轮一轮接不上 |
 | | `file_ops_refuse_overwrite_cycle_escape_and_partial_delete` | 无声覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
 | 表格编辑 | `sheet_edit_preserves_styles_and_finds_across_sheets` | 改单元格把字体 / 填充 / 图表全丢了 / 共享串解成乱码 / 改一张表动了另一张 / 行尾多出重复 `</row>` |
 | 会话 | `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays` | 空列表序列化成 null 白屏 / 标签顺序与活跃项丢失 / 关光标签丢会话行 |
@@ -500,8 +500,8 @@ mod dialog_stub;
 
 | 改动位置 | 命令 |
 |---|---|
-| 某个域的行为 | `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` |
-| 只改了压缩 / 只改了一条链路 | `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- <关键字>` |
+| 某个域的行为 | `cargo test --manifest-path src-tauri/Cargo.toml --test chain_file` 等 |
+| 只改了压缩 / 只改了一条链路 | `cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- <关键字>` |
 | 拿不准 | 按 §3.3 顺序执行全部五条命令 |
 
 
@@ -514,7 +514,7 @@ npm --prefix frontend run build                                      # 先生成
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check      # 必须无输出
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_backup --test chain_archive --test chain_archive_readonly --test chain_sheet --test chain_file_assoc
 ./frontend/node_modules/.bin/tauri build                              # 产物 target/release/NoteText.exe
 ```
 

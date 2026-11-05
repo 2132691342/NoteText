@@ -117,6 +117,46 @@ pub struct BigFileBlockVO {
     pub stale: bool,
 }
 
+/// 大文件查找请求：逐块流式扫描，命中数与扫描字节数都有上限。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileFindReq {
+    pub path: String,
+    /// 查找词（字面子串，不按正则解析）。
+    pub query: String,
+    pub match_case: bool,
+    pub whole_word: bool,
+    /// 从多少字节偏移开始往后找：定位到下一个命中就用上一轮末尾。
+    pub from_offset: u64,
+    /// 最多返回多少条命中（前端一页显示 500 条就够）。
+    pub limit: usize,
+    /// 一轮扫描最多读多少字节：超过就返回 `has_more = true` 让前端继续要。
+    pub budget: u64,
+}
+
+/// 一条查找命中：全局行号 + 列 + 该行文本。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileHitVO {
+    /// 1-based 全局行号。
+    pub line: usize,
+    /// 1-based 列号（字符数，不是字节）。
+    pub col: usize,
+    /// 命中所在的整行文本（过长会截断到 400 字符）。
+    pub text: String,
+}
+
+/// 大文件查找结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileFindVO {
+    /// 命中列表；空列表序列化成 `[]`。
+    pub hits: Vec<BigFileHitVO>,
+    /// 下一轮扫描的起点（字节偏移）。已扫到文件尾时等于文件长度。
+    pub next_offset: u64,
+    /// 是否还有未扫描的部分（用户可继续要更多）。
+    pub has_more: bool,
+    /// 命中数是否因 `limit` 被截断。
+    pub truncated: bool,
+}
+
 /// 大文件单块写回请求：只替换一个块的字节区间，`old_text` 用作乐观锁基线。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BigFileBlockWriteReq {

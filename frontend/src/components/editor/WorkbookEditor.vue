@@ -151,9 +151,42 @@ const saving = ref(false)
 const editingCell = ref<{ r: number; c: number; draft: string } | null>(null)
 const editEl = ref<HTMLInputElement | null>(null)
 
-/** 待写回的改动：key = `r:c`。只在保存时一次性提交。 */
-const pending = ref<Map<string, CellValue | null>>(new Map())
-const dirtyCount = computed(() => pending.value.size)
+/**
+ * 待写回的改动：`sheetIndex` → (`r:c` → 值)。
+ *
+ * **必须按工作表分开存**：之前只有一张 map，切到另一张表改完再保存时，
+ * 后端只收到「当前表的下标 + 两张表的改动」，另一张表的改动会被写到
+ * 错误的表里（数据被改坏，且没有任何提示）。
+ * 现在每张表一组改动，保存时按组逐表提交。
+ */
+type SheetEdits = Map<string, CellValue | null>
+const pendingBySheet = ref<Map<number, SheetEdits>>(new Map())
+
+/** 当前工作表的待写回改动。 */
+const pending = computed<SheetEdits>(
+  () => pendingBySheet.value.get(activeIndex.value) ?? new Map(),
+)
+const dirtyCount = computed(() => {
+  let n = 0
+  for (const m of pendingBySheet.value.values()) n += m.size
+  return n
+})
+
+/** 写一组改动到「某张表」（默认当前表），返回新的外层 Map（触发响应式）。 */
+function setPending(map: SheetEdits, sheetIndex = activeIndex.value) {
+  const next = new Map(pendingBySheet.value)
+  if (map.size === 0) next.delete(sheetIndex)
+  else next.set(sheetIndex, map)
+  pendingBySheet.value = next
+}
+
+/** 改一格：返回新的编辑表并提交（所有编辑入口都走它）。 */
+function editCell(key: string, value: CellValue | null, sheetIndex = activeIndex.value) {
+  const cur = pendingBySheet.value.get(sheetIndex)
+  const map = new Map(cur ?? [])
+  map.set(key, value)
+  setPending(map, sheetIndex)
+}
 
 /** 查找状态。 */
 const findText = ref('')
@@ -179,15 +212,26 @@ const cols = computed(() => {
 const extraCols = ref(0)
 const extraRows = ref(0)
 
-/** 单元格取值：待写回改动优先，其次工作簿里的值。 */
+/**
+ * 单元格位置索引：`r:c` → 值。
+ *
+ * **不能每次取值都扫一遍 cells**：一张 20 万格的表按行渲染时，
+ * 每格一次 O(n) 查找就是几十亿次比较，滚动直接卡死。
+ * 索引跟着当前工作表走，切表 / 重新载入时重建。
+ */
+const cellIndex = computed(() => {
+  const map = new Map<string, CellValue>()
+  for (const c of sheet.value?.cells ?? []) map.set(`${c.row}:${c.col}`, c.value)
+  return map
+})
+
+/** 单元格取值：待写回改动优先，其次工作簿里的值（走索引，O(1)）。 */
 function cell(r: number, c: number): string {
   const k = `${r}:${c}`
   const p = pending.value.get(k)
   if (p !== undefined) return p === null ? '' : display(p)
-  const s = sheet.value
-  if (!s) return ''
-  const hit = s.cells.find((x) => x.row === r && x.col === c)
-  return hit ? display(hit.value) : ''
+  const v = cellIndex.value.get(k)
+  return v === undefined ? '' : display(v)
 }
 
 function display(v: CellValue): string {
@@ -212,9 +256,18 @@ function cellWidth(c: number): string {
   return `${Math.min(MAX_COL_W, Math.max(56, Math.round(w * 7.4) + 16))}px`
 }
 
+/** 命中位置集合：`r:c`。Set 而不是数组遍历——每格一次 some() 会让滚动掉帧。 */
+const hitSet = computed(() => {
+  const set = new Set<string>()
+  for (const h of findHits.value) {
+    if (h.sheet_index === activeIndex.value) set.add(`${h.row}:${h.col}`)
+  }
+  return set
+})
+
 /** 查找命中高亮。 */
 function isHit(r: number, c: number): boolean {
-  return findHits.value.some((h) => h.sheet_index === activeIndex.value && h.row === r && h.col === c)
+  return hitSet.value.has(`${r}:${c}`)
 }
 
 // ---- 虚拟滚动 ----
@@ -243,7 +296,7 @@ async function load() {
   try {
     workbook.value = await api.sheet.open(props.tab.path)
     activeIndex.value = workbook.value.sheets[0]?.index ?? 0
-    pending.value = new Map()
+    pendingBySheet.value = new Map()
     extraRows.value = 0
     extraCols.value = 0
     findHits.value = []
@@ -288,9 +341,7 @@ function commitEdit(r: number, c: number, move: number) {
   }
   // 值类型推断：纯数字存成数值，其余按文本。公式以 = 开头。
   const next = parseInput(text)
-  const map = new Map(pending.value)
-  map.set(`${r}:${c}`, next)
-  pending.value = map
+  editCell(`${r}:${c}`, next)
   if (move === 1) startEdit(r, c + 1)
 }
 
@@ -320,13 +371,14 @@ function deleteRow() {
   const ed = editingCell.value
   if (!ed) return
   // 删行 = 把这一整行所有单元格清空（XLSX 没有「物理删行」的轻量语义）。
-  const map = new Map(pending.value)
-  const s = sheet.value
+  const map: SheetEdits = new Map(pending.value)
   for (let c = 0; c < cols.value; c += 1) {
-    const has = s?.cells.some((x) => x.row === ed.r && x.col === c)
-    if (has || map.has(`${ed.r}:${c}`)) map.set(`${ed.r}:${c}`, null)
+    const key = `${ed.r}:${c}`
+    // 有值或有待改动的格子才清空：逐格 some() 扫全表在 20 万格上是白烧 CPU，
+    // 用 cellIndex 判存在性（O(1)）。
+    if (cellIndex.value.has(key) || map.has(key)) map.set(key, null)
   }
-  pending.value = map
+  setPending(map)
   editingCell.value = null
   toast.info(t('sheet.rowCleared'))
 }
@@ -339,13 +391,13 @@ function deleteCol() {
   const n = cols.value
   if (n <= 1) return
   // 删末列 = 把该列所有单元格清空。
-  const map = new Map(pending.value)
-  const s = sheet.value
+  const map: SheetEdits = new Map(pending.value)
+  const col = n - 1
   for (let r = 0; r < rowCount.value; r += 1) {
-    const has = s?.cells.some((x) => x.row === r && x.col === n - 1)
-    if (has || map.has(`${r}:${n - 1}`)) map.set(`${r}:${n - 1}`, null)
+    const key = `${r}:${col}`
+    if (cellIndex.value.has(key) || map.has(key)) map.set(key, null)
   }
-  pending.value = map
+  setPending(map)
   if (extraCols.value > 0) extraCols.value -= 1
 }
 
@@ -384,7 +436,7 @@ async function runFind() {
 /** 全部替换：把命中格的文本里的查找词换掉（不动公式格，避免改坏表达式）。 */
 function replaceAll() {
   if (findHits.value.length === 0) return
-  const map = new Map(pending.value)
+  const map: SheetEdits = new Map(pending.value)
   let n = 0
   for (const h of findHits.value) {
     // 只替换当前表的命中：跨表替换容易改错，用户切到那张表再替换一次更安全。
@@ -395,7 +447,7 @@ function replaceAll() {
     map.set(`${h.row}:${h.col}`, nextText === '' ? null : { kind: 'text', text: nextText })
     n += 1
   }
-  pending.value = map
+  setPending(map)
   findHits.value = []
   toast.ok(t('sheet.replaced', { n }))
 }
@@ -403,24 +455,33 @@ function replaceAll() {
 // ---- 保存 ----
 
 async function save() {
-  if (!workbook.value || !props.tab.path || pending.value.size === 0) return
+  if (!workbook.value || !props.tab.path || pendingBySheet.value.size === 0) return
   saving.value = true
   try {
-    const edits: CellEdit[] = []
-    for (const [key, value] of pending.value) {
-      const [r, c] = key.split(':').map(Number)
-      edits.push({ row: r, col: c, value })
+    // 按工作表逐组提交：一组改动只带一个 sheet_index，跨表改动不会被写错位置。
+    let changed = 0
+    let backupPath: string | null = null
+    for (const [sheetIndex, group] of pendingBySheet.value) {
+      if (group.size === 0) continue
+      const edits: CellEdit[] = []
+      for (const [key, value] of group) {
+        const [r, c] = key.split(':').map(Number)
+        edits.push({ row: r, col: c, value })
+      }
+      const res = await api.sheet.save({
+        path: props.tab.path,
+        sheet_index: sheetIndex,
+        edits,
+        // 只备份第一组：多组连续提交时每张表都复制一份 .bak 会互相覆盖。
+        backup: backupPath === null,
+      })
+      changed += res.changed
+      if (backupPath === null) backupPath = res.backup_path
     }
-    const res = await api.sheet.save({
-      path: props.tab.path,
-      sheet_index: activeIndex.value,
-      edits,
-      backup: true,
-    })
     toast.ok(
-      res.backup_path
-        ? t('sheet.savedWithBackup', { n: res.changed })
-        : t('sheet.saved', { n: res.changed }),
+      backupPath
+        ? t('sheet.savedWithBackup', { n: changed })
+        : t('sheet.saved', { n: changed }),
     )
     // 保存后重读：让网格与磁盘一致（新值类型可能变了）。
     await load()
@@ -433,7 +494,7 @@ async function save() {
 }
 
 function discard() {
-  pending.value = new Map()
+  pendingBySheet.value = new Map()
   toast.info(t('sheet.discarded'))
 }
 

@@ -46,6 +46,9 @@ zstd = { version = "0.13", features = ["zstdmt"] }
 lz4_flex = "0.11"
 brotli = "7"
 crc32fast = "1"
+# memchr：大文件索引与逐块扫描的核心循环按 SIMD 找换行，比逐字节比较快一个量级。
+# 它不是 regex：只做单字节 / 多字节模式的向量化查找，体积约 10KB。
+memchr = "2"
 walkdir = "2"
 tempfile = "3"
 
@@ -71,8 +74,15 @@ windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
 # 改回 unwind 后，命令线程上的 panic 被 Tauri 接住变成一个错误返回，
 # 窗口与未保存内容都还在（日志里也留得下现场）。
 panic = "unwind"
-codegen-units = 16
+lto = "fat"
+opt-level = "s"
+codegen-units = 1
 strip = "symbols"
+
+# 依赖的优化档比本 crate 更低一档：体积几乎全在依赖里（压缩 / 编码 / 归档引擎），
+# 而热路径（逐块扫描、流式拷贝）写在本 crate，"s" 保留循环与内联。
+[profile.release.package."*"]
+opt-level = "z"
 
 [profile.dev]
 # 反编 Tauri 依赖时栈会更深，默认 256 帧在 WebView 回调里不够用。

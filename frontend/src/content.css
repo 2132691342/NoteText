@@ -1503,3 +1503,39 @@
   /* 纸张保持自己的宽度：压窄会重排分页，看到的内容就和 Word 里对不上了。
      面板不够宽时由外层滚动 + 缩放解决。 */
 }
+
+/* 挂载失败面：CodeEditor / SheetEditor / WorkbookEditor / ChunkedViewer 共用。
+   这条规则原本只在 CodeEditor 的 scoped 样式里，别处用了同名类却没有样式，
+   结果是「打不开」时界面上只有一段裸字。放全局只此一份。 */
+.nt-mount-error {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nt-sp-2);
+  min-height: 0;
+  padding: var(--nt-sp-6);
+}
+
+.nt-mount-error-title {
+  font-size: var(--nt-fs-md);
+  font-weight: 600;
+  color: var(--nt-ink-2);
+}
+
+.nt-mount-error-detail {
+  font-size: var(--nt-fs-sm);
+  color: var(--nt-ink-muted);
+  max-width: 480px;
+  text-align: center;
+  word-break: break-all;
+}
+
+/* 挂不上时的出路按钮：至少给一条「用系统程序打开」的路，
+   否则用户面对的是一句错误提示和一个关不掉的标签。 */
+.nt-mount-error-actions {
+  display: flex;
+  gap: var(--nt-sp-2);
+  margin-top: var(--nt-sp-2);
+}

@@ -36,8 +36,9 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
   补上 `tags-ignore` 才能把 tag 彻底排除在这条之外
 - `release.yml` 只认 `push.tags`，且用 `v[0-9]+.[0-9]+.[0-9]+` 而不是 `v*`：
   形如 `v1.0.0` 的 tag 才会发版，顺带挡掉误推的 `v-next` 之类分支式 tag
-- `release.yml` 在上传前校验产物存在且体积未异常偏大（>20MB 即失败）：
-  前端误引一个大包会让安装包翻倍，本地不易察觉，这里是最后一道回归信号
+- `release.yml` 在上传前校验产物存在且体积未异常偏大（>24MB 即失败）：
+  上限按当前 release profile 的实测值留余量，判据是「符号有没有剥干净 /
+  有没有大文件被 `include_bytes!` 打进来」，不是「数字本身好不好看」
 
 其余约定，改动流水线前要知道：
 
@@ -67,21 +68,41 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 之后离线可用。
 
 产物只有一个 exe：前端资源由 `tauri.conf.json` 的 `frontendDist` 指向
-`frontend/dist`，由 `tauri-build` 在编译期嵌进二进制。
-不内置运行时（Node / Python 都不需要），所以 exe 只有 ~5MB。
+`frontend/dist`，由 `tauri-build` 在编译期嵌进二进制（前端 dist 8.8MB 原始体积，
+Tauri 资产压缩后约 3.4MB）。不内置运行时（Node / Python 都不需要）。
+
+### 体积构成
+
+exe 里除了 Tauri 壳，还有几块纯代码的大头：
+
+| 构成 | 量级 | 说明 |
+|---|---|---|
+| 归档 / 压缩引擎 | ~5MB | 7z、zip、rar、cab、tar、zstd、xz、brotli、bzip2、lz4 各自的解码器 |
+| `encoding_rs` 码表 | ~1.5MB | GB18030 / Big5 / Shift_JIS / EUC 的完整映射表 |
+| SQLite（`bundled`） | ~1MB | 用系统 SQLite 就得多一份外部依赖 |
+| 前端资产（压缩后） | ~3.4MB | `frontend/dist` 8.8MB，其中 mermaid 家族占 4.4MB（按需 JSON chunk） |
+| Tauri 壳 + Windows 绑定 | ~4MB | webview2-com、windows-sys 的 COM 接口声明 |
 
 ### 构建体积参考
 
 | 形态 | 体积 |
 |---|---|
 | `--debug` exe | ~40MB |
-| `--release` exe | ~5MB（strip symbols） |
-| NSIS 安装包 | ~2.5MB（LZMA 压缩） |
+| `--release` exe | ~20MB |
+| NSIS 安装包 | ~7MB（LZMA 压缩） |
 
-release profile 设了 `strip = "symbols"` 与 `panic = "unwind"`：
-命令线程上的 panic 被 Tauri 接成错误返回，窗口与未保存内容都还在。
-**没开 `lto = true`**：全量 LTO 让每次 build 多等 30s+，
-而编辑器启动已 < 1s，不值得。
+release profile 的四项一起决定这个数字，缺一项就回到 27MB：
+
+| 配置 | 作用 | 去掉后 |
+|---|---|---|
+| `strip = "symbols"` | 剥符号表 | +7MB |
+| `lto = "fat"` | 跨 crate 内联后死代码才真正可删 | +5MB |
+| `codegen-units = 1` | 单编译单元，LTO 才完整 | 部分抵消上面一条 |
+| `[profile.release.package."*"] opt-level = "z"` | 依赖按体积档编，本 crate 仍用默认档 | +1MB |
+| `panic = "unwind"` | **必须保留** | 改成 abort 会多省 1MB，但任意 panic 都会带走整个进程 |
+
+第一次全量 release 编译约 7~8 分钟（LTO 是主要成本）。这个代价只在出包时付一次，
+日常 `cargo check` / 测试不受影响。
 
 ## 安装器
 

@@ -5,6 +5,13 @@
     <div v-if="mountError" class="nt-mount-error">
       <span class="nt-mount-error-title">{{ tr('editor.openFailedTitle') }}</span>
       <span class="nt-mount-error-detail">{{ mountError }}</span>
+      <!-- 出路：读不了的文件不该只留一句错误。系统默认程序打开是最后一条通路。 -->
+      <div class="nt-mount-error-actions">
+        <button class="nt-text-btn" @click="openExternally">
+          {{ tr('editor.openWithSystem') }}
+        </button>
+        <button class="nt-text-btn" @click="retryOpen">{{ tr('common.retry') }}</button>
+      </div>
     </div>
   </div>
   <!-- 选区浮条：fixed 定位贴选区起点上方（coordsAtPos 给的是视口坐标） -->
@@ -313,7 +320,8 @@ function baseExtensions(editable: boolean, big = false) {
   ]
 }
 
-onMounted(async () => {
+/** 挂载（读正文 → 建视图 → 恢复光标）。重试入口也走它。 */
+async function mount() {
   if (!host.value) return
 
   // 读正文：路由往返的暂存优先（未保存的修改在这里），其次 openPath 已读到
@@ -421,7 +429,26 @@ onMounted(async () => {
   if (props.viewId !== 'second') {
     void nextTick(() => view?.focus())
   }
-})
+}
+
+onMounted(() => void mount())
+
+/** 用系统默认程序打开：读不了的文件（被占用 / 权限 / 超大）的最后一条出路。 */
+async function openExternally() {
+  if (!props.tab.path) return
+  try {
+    const { openPath } = await import('@tauri-apps/plugin-opener')
+    await openPath(props.tab.path)
+  } catch (e) {
+    toast.bad(normalizeErr(e).message)
+  }
+}
+
+/** 重试挂载：文件被别的程序放开后（另存 / 退出 Word）不必关标签重建。 */
+function retryOpen() {
+  mountError.value = ''
+  void nextTick(() => void mount())
+}
 
 onBeforeUnmount(() => {
   window.clearTimeout(detailTimer)
@@ -1113,30 +1140,7 @@ if (marksRendererMine.value) {
   display: none;
 }
 
-/* 挂载失败：标签还在，但要画清「为什么是空的」 */
-.nt-mount-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--nt-sp-2);
-  height: 100%;
-  padding: var(--nt-sp-6);
-}
-
-.nt-mount-error-title {
-  font-size: var(--nt-fs-md);
-  font-weight: 600;
-  color: var(--nt-ink-2);
-}
-
-.nt-mount-error-detail {
-  font-size: var(--nt-fs-sm);
-  color: var(--nt-ink-muted);
-  max-width: 480px;
-  text-align: center;
-  word-break: break-all;
-}
+/* 挂载失败面的样式在 content.css：多处共用，容易漏掉同名类没样式 */
 
 /* 选区浮条：贴选区上方的一步操作条。出现 / 收起都要有过渡，
    突然弹出会打断选词的视线。 */

@@ -98,6 +98,8 @@ import type {
   BigFileBlockVO,
   BigFileBlockWriteReq,
   BigFileBlockWriteVO,
+  BigFileFindReq,
+  BigFileFindVO,
   WorkbookVO,
   SheetSaveReq,
   SheetSaveVO,
@@ -208,6 +210,7 @@ export const api = {
       call<number>('big_file_goto_line', { path, line }),
     writeBlock: (req: BigFileBlockWriteReq) =>
       call<BigFileBlockWriteVO>('big_file_write_block', { req }),
+    find: (req: BigFileFindReq) => call<BigFileFindVO>('big_file_find', { req }),
     cancel: (path: string) => call<void>('big_file_cancel', { path }),
     close: (path: string) => call<void>('big_file_close', { path }),
   },
