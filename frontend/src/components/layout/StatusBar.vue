@@ -54,7 +54,14 @@
       </button>
     </template>
 
-    <span v-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
+    <span
+      v-if="tab?.big_file"
+      class="nt-readout nt-status-readonly"
+      :title="t('bigfile.readonlyHint')"
+    >
+      {{ t('bigfile.mode') }}
+    </span>
+    <span v-else-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
       {{ t('status.partial') }}
     </span>
     <span v-else-if="tab?.read_only" class="nt-readout nt-status-readonly">
@@ -88,7 +95,7 @@ import { useArchiveStore } from '@/stores/archive'
 import { useDialogStore } from '@/stores/dialogs'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { getPosition } from '@/composables/useEditorRegistry'
-import { get, docVersionOf } from '@/composables/useEditorRegistry'
+import { get, getText, docVersionOf } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
 import { formatSize } from '@/utils'
 import { encodingShort } from '@/utils/encoding'
@@ -131,7 +138,7 @@ const statsTitle = computed(() => {
 /** 详细统计按需拉取（悬停 / 点击行数读数），不随每次按键重算全文。 */
 async function fetchStats() {
   const id = editor.activeId
-  if (id == null) {
+  if (id == null || !get(id)) {
     detail.value = null
     return
   }
@@ -143,7 +150,7 @@ async function fetchStats() {
   const version = docVersionOf(id)
   if (version === detailVersion) return
   try {
-    const s = await api.textStats(doc.toString())
+    const s = await api.textStats(getText(id))
     detailVersion = version
     detail.value = {
       chars: s.chars,
@@ -203,10 +210,18 @@ function onCursor(e: Event) {
   pos.value = { line: d.line, col: d.col, selection_len: d.selection_len }
 }
 
+/** 行数由编辑器推（O(1) 的 `doc.lines`）；详细统计等编辑器停手后单独问。 */
 function onStats(e: Event) {
   const d = (e as CustomEvent).detail as { tabId?: number; lines: number }
   if (!d || d.tabId !== editor.activeId) return
   lines.value = d.lines
+}
+
+/** 编辑器停手 600ms 后的统计通知：这时全文只取一次值得。 */
+function onDetailStats(e: Event) {
+  const d = (e as CustomEvent).detail as { tabId?: number }
+  if (!d || d.tabId !== editor.activeId) return
+  void fetchStats()
 }
 
 /** 活跃标签变了主动拉一次：切换标签时编辑器不会重发光标事件。 */
@@ -238,12 +253,14 @@ function onEditorReady(e: Event) {
 onMounted(() => {
   document.addEventListener('nt-cursor', onCursor)
   document.addEventListener('nt-stats', onStats)
+  document.addEventListener('nt-detail-stats', onDetailStats)
   document.addEventListener('nt-editor-ready', onEditorReady)
   syncFromEditor()
 })
 onUnmounted(() => {
   document.removeEventListener('nt-cursor', onCursor)
   document.removeEventListener('nt-stats', onStats)
+  document.removeEventListener('nt-detail-stats', onDetailStats)
   document.removeEventListener('nt-editor-ready', onEditorReady)
 })
 

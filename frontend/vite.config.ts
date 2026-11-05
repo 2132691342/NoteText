@@ -60,7 +60,7 @@ export default defineConfig({
     target: 'es2022',
     // WebView2 支持 es2022；不引 legacy 转换（省体积，也避免 polyfill 掩盖真实不兼容）
     //
-    // 不写 manualChunks：重库（xlsx / docx-preview / vue-pdf-embed / mermaid）
+    // 不写 manualChunks：重库（xlsx / mermaid / cytoscape 这类）
     // 都写在动态 import 里，Rollup 默认策略只在真实边界切块，
     // 按需落到异步 chunk，既省首屏 preload 也不需要维护包名清单。
   },

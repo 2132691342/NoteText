@@ -424,6 +424,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.clearTimeout(detailTimer)
   // 路由离开编辑器视图时正文会随视图销毁：脏文档先暂存，回来时找回。
   if (view && isDirty(props.tab.id)) {
     stashDoc(props.tab.id, view.state.doc.toString())
@@ -453,6 +454,7 @@ function onUpdate(vu: ViewUpdate) {
     emitCursor(vu.state)
     emitStats(vu.state)
     emitHistory()
+    scheduleDetailStats()
     return
   }
   if (vu.selectionSet) {
@@ -508,6 +510,23 @@ function emitScroll(v: EditorView) {
   const max = v.scrollDOM.scrollHeight - v.scrollDOM.clientHeight
   if (max <= 0) return
   editor.setScroll(props.tab.id, v.scrollDOM.scrollTop / max)
+}
+
+/**
+ * 详细统计（字符 / 词 / 非空行）延迟 600ms 且只在停手后算一次。
+ *
+ * 以前 StatusBar 每次 `nt-stats` 都调 `api.textStats(getText(id))`，
+ * 而 `getText` 是全文 `toString()`：一个 7MB 的 json 每敲一个字就复制 7MB
+ * 再过一次 IPC。现在正文变化只推进行数（O(1)），详细统计攒到停手后问一次。
+ */
+let detailTimer = 0
+function scheduleDetailStats() {
+  window.clearTimeout(detailTimer)
+  detailTimer = window.setTimeout(() => {
+    document.dispatchEvent(
+      new CustomEvent('nt-detail-stats', { detail: { tabId: props.tab.id } }),
+    )
+  }, 600)
 }
 
 // ---- 配置变化：只 reconfigure 对应的 compartment ----

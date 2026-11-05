@@ -80,6 +80,11 @@ pub fn extract_archive(req: &ExtractArchiveReq, ctx: &TaskCtx) -> AppResult<Extr
             let codec = tar_codec(&src, format);
             extract_tar(reader, codec, &dest, selected.as_deref(), policy, ctx)?
         }
+        ArchiveFormat::Cab => super::cabinet::extract_cab(req, &dest, ctx)?,
+        ArchiveFormat::Rar => super::readonly::extract_rar(req, &dest, ctx)?,
+        ArchiveFormat::Lzh => super::readonly::extract_lzh(req, &dest, ctx)?,
+        ArchiveFormat::Cpio => super::readonly::extract_cpio(req, &dest, ctx)?,
+        ArchiveFormat::Ar => super::readonly::extract_ar(req, &dest, ctx)?,
         _ => extract_single(&src, format, &dest, policy, ctx)?,
     };
     out.dest = dest.to_string_lossy().to_string();

@@ -49,6 +49,15 @@ crc32fast = "1"
 walkdir = "2"
 tempfile = "3"
 
+# 只读扩展（assets/specs/18）：RAR 解压、LHA/LZH 解压、CAB 读写。
+# unrar-rs 覆盖 RAR4/RAR5、分卷、加密与恢复卷；delharc 覆盖 LH0-13 与 LZ4/LZ5；
+# cab 支持 MSZIP/Quantum 读、Store/MSZIP 写，LZX 压缩段读不了时明确提示。
+unrar-rs = { version = "0.15", default-features = false, features = ["crypto-rust"] }
+delharc = { version = "0.6", features = ["std", "lh1", "lz"] }
+cab = "0.6"
+# CAB 条目时间戳是 PrimitiveDateTime，转毫秒要用它的 API；显式声明避免版本漂移
+time = "0.3"
+
 # Windows 注册表（assets/specs/17 文件关联）：winreg 已在依赖图里（tauri 传递依赖），
 # 直接引用零新增；windows-sys 只开 Shell 一个 feature，用于 SHChangeNotify 广播关联变更。
 winreg = "0.56"

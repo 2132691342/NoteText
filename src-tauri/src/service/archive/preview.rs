@@ -90,6 +90,18 @@ pub fn preview_entry(req: &PreviewEntryReq, ctx: &TaskCtx) -> AppResult<PreviewE
             let codec = tar_codec(src, format);
             read_tar_entry(reader, codec, &name, req.max_bytes, &mut buf)?;
         }
+        ArchiveFormat::Cab => {
+            buf = super::cabinet::read_cab_entry(src, &name, req.max_bytes as usize)?;
+        }
+        ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar => {
+            buf = super::readonly::read_entry_bytes(
+                src,
+                format,
+                &name,
+                req.max_bytes as usize,
+                req.password.as_deref(),
+            )?;
+        }
         // 单文件系：整个文件就是内容
         _ => {
             let mut f = File::open(src)?;

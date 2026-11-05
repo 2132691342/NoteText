@@ -59,6 +59,12 @@ crc32fast = { workspace = true }
 walkdir = { workspace = true }
 tempfile = { workspace = true }
 
+# 只读扩展：RAR / LHA / CAB / cpio / ar（specs/18）
+unrar-rs = { workspace = true }
+delharc = { workspace = true }
+cab = { workspace = true }
+time = { workspace = true }
+
 # 壳层：Tauri 本体 + 对话框 + 单实例 + 托盘
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }

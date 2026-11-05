@@ -48,6 +48,12 @@ pub fn test_archive(req: &TestArchiveReq, ctx: &TaskCtx) -> AppResult<TestArchiv
             let codec = tar_codec(src, format);
             test_tar(reader, codec, ctx, &mut out)?
         }
+        // 只读容器：逐条目解到 sink 核验，任何一条失败就报出来。
+        ArchiveFormat::Cab
+        | ArchiveFormat::Rar
+        | ArchiveFormat::Lzh
+        | ArchiveFormat::Cpio
+        | ArchiveFormat::Ar => test_readonly(src, &req.password, ctx, &mut out)?,
         _ => test_single(src, format, ctx, &mut out)?,
     }
     out.ok = out.failures.is_empty();
@@ -267,6 +273,40 @@ fn test_tar(
 }
 
 /* ---------------- 单文件压缩系 ---------------- */
+
+/// 只读容器的完整性测试：解到 sink 逐条目核验。
+/// 走「全部解压再删」而非只列条目：只列条目测不出数据损坏，用户点测试要的正是「能否完整取出」。
+fn test_readonly(
+    src: &Path,
+    password: &Option<String>,
+    ctx: &TaskCtx,
+    out: &mut TestArchiveVO,
+) -> AppResult<()> {
+    let tmp = tempfile::tempdir()?;
+    let req = crate::domain::archive::ExtractArchiveReq {
+        archive: src.to_string_lossy().to_string(),
+        dest: tmp.path().to_string_lossy().to_string(),
+        entries: None,
+        password: password.clone(),
+        overwrite: "overwrite".into(),
+        create_subdir: false,
+    };
+    let format = detect_format(src).ok_or_else(|| err_undetectable(src))?;
+    let dest = tmp.path().to_path_buf();
+    let result = match format {
+        ArchiveFormat::Cab => crate::service::archive::cabinet::extract_cab(&req, &dest, ctx),
+        ArchiveFormat::Rar => crate::service::archive::readonly::extract_rar(&req, &dest, ctx),
+        ArchiveFormat::Lzh => crate::service::archive::readonly::extract_lzh(&req, &dest, ctx),
+        ArchiveFormat::Cpio => crate::service::archive::readonly::extract_cpio(&req, &dest, ctx),
+        ArchiveFormat::Ar => crate::service::archive::readonly::extract_ar(&req, &dest, ctx),
+        _ => return Ok(()),
+    };
+    match result {
+        Ok(r) => out.tested += r.file_count,
+        Err(e) => out.failures.push(e.message),
+    }
+    Ok(())
+}
 
 fn test_single(
     src: &Path,

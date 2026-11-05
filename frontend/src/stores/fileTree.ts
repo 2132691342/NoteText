@@ -126,6 +126,30 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     }
   }
 
+  /**
+   * 按变更路径局部刷新：文件系统事件带来的是具体路径，
+   * 没必要整个工作目录重读一遍。只刷「变化路径的父目录」以及它已展开的子目录。
+   */
+  async function refreshPaths(paths: string[]) {
+    if (!root.value) return
+    const rootValue = root.value
+    const dirs = new Set<string>()
+    for (const p of paths) {
+      const cut = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'))
+      if (cut > 0) dirs.add(p.slice(0, cut))
+    }
+    // 没有父目录可算（相对路径），或待刷目录过多（事件洪水）就退回整棵树。
+    if (dirs.size === 0 || dirs.size > MAX_REFRESH_DIRS) {
+      await refresh(rootValue)
+      return
+    }
+    await Promise.all(
+      [...dirs]
+        .filter((d) => children.value.has(d))
+        .map((d) => refresh(d)),
+    )
+  }
+
   function isExpanded(path: string) {
     return expanded.value.has(path)
   }
@@ -200,6 +224,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     close,
     refresh,
     refreshAll,
+    refreshPaths,
     inTree,
     isExpanded,
     toggle,

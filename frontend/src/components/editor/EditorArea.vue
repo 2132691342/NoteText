@@ -239,7 +239,7 @@ onBeforeUnmount(() => {
         :style="slotStyle(tab)"
       >
         <template v-if="mounted.has(tab.id)">
-          <!-- 分块只读优先：超大文件不进 CodeEditor 链路（没有注册表条目，
+          <!-- 分块视图优先：超大文件不进 CodeEditor 链路（没有注册表条目，
                小地图与统计读不到视图时会自动降级，不会误报） -->
           <ChunkedViewer v-if="tab.chunked" :tab="tab" />
           <div v-else-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">
@@ -279,8 +279,9 @@ onBeforeUnmount(() => {
       </template>
 
       <Minimap
-        v-if="settings.config.editor.minimap && mainView"
+        v-if="settings.config.editor.minimap && mainView && !editor.active?.chunked"
         :view="mainView"
+        :tab-id="editor.activeId ?? undefined"
         :line-count="lineCount"
         :visible="true"
       />

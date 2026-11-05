@@ -76,6 +76,7 @@ macro_rules! command_handlers {
             commands::batch::batch_apply_rename,
             // 压缩 / 归档（assets/specs/18）
             commands::archive::open_archive,
+            commands::archive::open_archive_entry,
             commands::archive::preview_archive_entry,
             commands::archive::get_archive_formats,
             commands::archive::create_archive,

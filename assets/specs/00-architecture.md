@@ -15,7 +15,8 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。内核是 CodeMirror
 编辑器负责「改文本」，NoteText 负责让「打开 / 保存 / 查找 / 转换 / 恢复 / 打包」都不打断你。
 ```
 
-第四条是独立子系统：15 种格式、任务队列、增删 / 转换 / 分卷、路径穿越与密码三态
+第四条是独立子系统：20 种格式（可写 16 / 只读 4）、任务队列、增删 / 转换 / 分卷、
+路径穿越与密码三态
 （见 [18](18-archive.md)）；系统文件关联见 [17](17-deployment.md)。
 大文件分块浏览、表格可编辑网格与崩溃恢复是另一组互补能力
 （见 [19](19-large-files-and-sheet-edit.md)）：它们守的是「文件打不开、改不了、丢得掉」。
@@ -177,7 +178,7 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
   json tag 一一对应；
 - 错误由 `api/index.ts` 的 `normalizeError` 归一成 `{ code, message, details }`；
 - **二进制不经 `Vec<u8>`**：它会序列化成 `number[]`，几 MB 就把通道堵死。
-  图片 / PDF / docx / Hex 走 `read_binary`，出参是 base64（体积 +33% 而不是 +300%），
+  图片 / Hex 走 `read_binary`，出参是 base64（体积 +33% 而不是 +300%），
   且读取带 20MB 上限。全部命令的对照表见 [14](14-api-contract.md)。
 
 ### emit（后端 → 前端）
@@ -234,7 +235,7 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-全部 10 条长链路测试在 `src-tauri/tests/chain_tests.rs` 一个文件里
+全部 12 条长链路测试在 `src-tauri/tests/chain_tests.rs` 一个文件里
 （组织方式见 [12](12-testing.md)）。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。

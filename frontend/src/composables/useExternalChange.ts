@@ -104,7 +104,7 @@ export function useExternalChange() {
   onMounted(async () => {
     unlisten = await listen<string[]>('fs:changed', (ev) => {
       for (const path of ev.payload) schedule(path)
-      // 文件树刷新：外部新建 / 删除文件要反映出来。
+      // 文件树只刷变化路径的父目录：外部新建 / 删除文件要反映出来。
       scheduleTreeRefresh(ev.payload)
     })
   })
@@ -119,7 +119,7 @@ export function useExternalChange() {
   async function handlePath(path: string) {
     const tab = editor.findByPath(path)
     if (!tab) return
-    // 分块只读标签不重读全文：读块时后端按修改时间报 stale。
+    // 分块标签不重读全文：读块时后端按修改时间报 stale。
     if (tab.chunked) return
     if (tab.dirty) {
       // 脏标签不覆盖：用户手里有未保存的修改，替用户做决定就是丢内容。

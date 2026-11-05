@@ -201,6 +201,23 @@ pub struct JoinPartsReq {
     pub dest: String,
 }
 
+/// 解出单个条目并打开：压缩包里的文本直接看，不必先整包解压。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OpenEntryReq {
+    pub archive: String,
+    pub entry: String,
+    pub password: Option<String>,
+}
+
+/// 解出单条目的结果：落地路径 + 是否为临时副本。
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct OpenEntryVO {
+    pub path: String,
+    pub size: u64,
+    /// 落到临时目录（关掉标签后由系统回收）：前端提示「副本」。
+    pub temporary: bool,
+}
+
 /// 归档内条目预览。
 #[derive(Debug, Clone, Deserialize)]
 pub struct PreviewEntryReq {

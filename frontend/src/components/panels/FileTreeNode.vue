@@ -111,12 +111,14 @@ onMounted(() => {
     },
     { rootMargin: '300px' },
   )
+  window.addEventListener('nt-tree-reveal', onTreeReveal)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('nt-tree-edit', onTreeEdit)
   window.removeEventListener('nt-tree-expand', onTreeExpand)
   observer?.disconnect()
   observer = null
+  window.removeEventListener('nt-tree-reveal', onTreeReveal)
 })
 
 async function toggle() {
@@ -135,6 +137,32 @@ async function toggle() {
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 「在树里定位当前文件」：面板发出 reveal 事件，节点自己判断是否在路径上。
+ *
+ * 逐级展开再滚动到可视区——打开深层文件后侧栏还停在根目录，
+ * 是「这个文件到底在哪」这类问题的唯一答案。
+ */
+async function onTreeReveal(e: Event) {
+  const d = (e as CustomEvent).detail as { path?: string } | undefined
+  const target = d?.path
+  if (!target) return
+  const norm = (v: string) => v.replaceAll(String.fromCharCode(92), '/').toLowerCase()
+  const mine = norm(props.entry.path)
+  const want = norm(target)
+  if (!want.startsWith(mine + '/')) return
+  if (props.entry.is_dir && !expanded.value) {
+    await toggle()
+  }
+  // 滚动到可视区：等子节点渲染完再滚，否则位置还算不出来。
+  void nextTick(() => {
+    const row = document.querySelector<HTMLElement>(
+      `.nt-tree-row[data-path="${CSS.escape(props.entry.path)}"]`,
+    )
+    if (want === mine) row?.scrollIntoView({ block: 'nearest' })
+  })
 }
 
 /** 右键：交给父面板统一弹菜单（父层才有 ContextMenu 与完整菜单项）。 */

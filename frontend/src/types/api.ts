@@ -19,7 +19,7 @@ export interface EditorPosition {
   selection_len: number
 }
 
-export type ViewType = 'code' | 'markdown' | 'richtext' | 'hex' | 'image' | 'log' | 'diff'
+export type ViewType = 'code' | 'markdown' | 'hex' | 'image' | 'log' | 'diff'
 
 // ---- 文件域 ----
 
@@ -35,6 +35,68 @@ export interface DirEntry {
   size: number
   modified_at: number
   read_only: boolean
+  /** 目录项恒为 false：二进制判定只在打开具体文件时做（后端 read_dir 不嗅探）。 */
+  is_binary: boolean
+}
+
+/** 大文件元信息：前端据此初始化虚拟滚动与状态栏读数。 */
+export interface BigFileMetaVO {
+  path: string
+  size: number
+  encoding: string
+  line_ending: 'crlf' | 'lf' | 'cr'
+  has_bom: boolean
+  total_lines: number
+  indexed: boolean
+  longest_line: number
+}
+
+export interface BigFilePageReq {
+  path: string
+  start_line: number
+  lines: number
+  encoding?: string | null
+}
+
+export interface BigFilePageVO {
+  path: string
+  start_line: number
+  lines: string[]
+  count: number
+  total_lines: number
+  capped: boolean
+}
+
+export interface BigFileFindReq {
+  path: string
+  query: string
+  match_case: boolean
+  whole_word: boolean
+  from_line: number
+  skip: number
+  limit: number
+  encoding?: string | null
+}
+
+export interface BigFileHitVO {
+  line: number
+  col: number
+  text: string
+  approximate: boolean
+}
+
+export interface BigFileFindVO {
+  hits: BigFileHitVO[]
+  end_of_file: boolean
+  scanned_bytes: number
+}
+
+export interface BigFileSaveReq {
+  path: string
+  dest: string
+  start_line: number
+  end_line: number
+  encoding?: string | null
 }
 
 export interface FileMeta {
@@ -899,6 +961,19 @@ export interface FormatCapabilities {
   write: boolean
   container: boolean
   encryption: boolean
+}
+
+/** 解出单个条目到临时目录：返回落地路径，前端直接打开。 */
+export interface OpenEntryReq {
+  archive: string
+  entry: string
+  password?: string | null
+}
+
+export interface OpenEntryVO {
+  path: string
+  size: number
+  temporary: boolean
 }
 
 export interface ArchiveFormatVO {

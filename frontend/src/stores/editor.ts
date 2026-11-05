@@ -38,6 +38,11 @@ export interface Tab {
   showing_preview: boolean
   /** 内容被截断（大文件只读了前段）：此时只读，禁止保存。 */
   truncated: boolean
+  /**
+   * 走大文件分页视图：超过 64MB 的文本不再进 CodeMirror，
+   * 改由后端建行索引 + 虚拟滚动渲染，内存与文件体积无关。
+   */
+  big_file: boolean
   /** 截断时实际读入的字节数：状态栏据此提示「已读前 X MB」。 */
   truncated_bytes: number
   /** 分屏时次视图是否打开。 */
@@ -54,11 +59,13 @@ export interface Tab {
 let nextId = 1
 
 /**
- * 全量读入的大小上限，与后端 `service::file::MAX_FULL_READ` 对齐（32MB）。
- * 超过它弹窗让用户选打开方式——把几百 MB 的日志整篇塞进 CodeMirror 会
- * 直接卡死界面。两边必须同值：只改一边会出现「前端以为能全读、后端拒绝」。
+ * 全量读入的提示阈值，与后端 `service::file::MAX_FULL_READ` 对齐。
+ * 超过它弹窗让用户选普通打开还是分块打开；两边必须同值。
  */
-const FULL_READ_LIMIT = 32 * 1024 * 1024
+const FULL_READ_LIMIT = 64 * 1024 * 1024
+
+/** 大文件模式的提示阈值（MB）：与上面同源，文案里不写死数字。 */
+export const FULL_READ_LIMIT_MB = Math.round(FULL_READ_LIMIT / 1024 / 1024)
 
 /**
  * 显式放行后的全量可编辑上限，与后端 `service::file::MAX_FORCE_FULL_READ`
@@ -107,6 +114,7 @@ export const useEditorStore = defineStore('editor', () => {
       showing_preview: false,
       truncated: false,
       truncated_bytes: 0,
+      big_file: false,
       split: false,
       encoding_uncertain: false,
       chunked: false,
@@ -161,6 +169,19 @@ export const useEditorStore = defineStore('editor', () => {
     if (tab) tab.scroll_ratio = ratio
   }
 
+  /**
+   * 把标签从 `from` 挪到 `to`（两处都是当前数组下标）。
+   *
+   * 拖拽排序后标签顺序要能落进会话：`toDOs` 按数组顺序写 `ord`，
+   * 所以这里只动数组就够，不必额外维护一份顺序表。
+   */
+  function moveTab(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return
+    if (from >= tabs.value.length || to >= tabs.value.length) return
+    const [moved] = tabs.value.splice(from, 1)
+    tabs.value.splice(to, 0, moved)
+  }
+
   function setSplit(id: number, on: boolean) {
     const tab = tabs.value.find((t) => t.id === id)
     if (tab) tab.split = on
@@ -184,7 +205,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   /**
    * 打开一个文件：已打开则聚焦；否则 stat → 按形态读内容或只建标签 → 建标签。
-   * 大文件降级读前段并标记只读；非文本形态只建标签，正文由预览器按字节读。
+   * 超过阈值的文本弹窗选普通打开或分块视图；非文本形态只建标签，正文由预览器按字节读。
    */
   async function openPath(path: string, mode?: ReadMode): Promise<Tab | null> {
     const existing = findByPath(path)
@@ -259,7 +280,7 @@ export const useEditorStore = defineStore('editor', () => {
       // 挂载时不带 mode 的重读会被后端拒绝，用户看到错误面）。
       stagePendingContent(tab.id, content.text)
       applyContent(tab, content)
-      // 截断的标签一律只读：保存会把截断后的内容写回磁盘，那是数据丢失。
+      // 编码置信度低也置只读以外不做处理：真正的截断只有显式 head 模式才有。
       if (content.truncated) {
         tab.read_only = true
         tab.truncated = true
@@ -307,7 +328,9 @@ export const useEditorStore = defineStore('editor', () => {
     // 分块只读标签不做全量重读：读块时后端按修改时间报 stale，够用。
     if (tab.chunked) return
     try {
-      // 截断标签按原样读前段：全量读会在 >32MB 的文件上直接报错，重载永远失败
+      // 大文件模式没有完整正文可重载：只刷元数据。
+      // 截断标签按原样读前段：全量读会在上限之外的文件上直接报错，重载永远失败。
+      if (tab.big_file) return
       const c = await api.readFile(tab.path, undefined, tab.truncated ? { mode: 'head' } : undefined)
       // 只更新元数据，正文由组件层按 fs:changed 事件决定是否替换
       // （用户正在编辑时不强制覆盖，见 composables/useExternalChange.ts）。
@@ -378,6 +401,7 @@ export const useEditorStore = defineStore('editor', () => {
         showing_preview: false,
         truncated: false,
         truncated_bytes: 0,
+        big_file: false,
         split: d.split,
         encoding_uncertain: false,
         chunked: false,
@@ -430,6 +454,7 @@ export const useEditorStore = defineStore('editor', () => {
     setPosition,
     setScroll,
     setSplit,
+    moveTab,
     renamePath,
     openPath,
     reload,
@@ -520,10 +545,6 @@ export function viewTypeOf(path: string): ViewType {
     case 'md':
     case 'markdown':
       return 'markdown'
-    case 'docx':
-    case 'doc':
-    case 'rtf':
-      return 'richtext'
     case 'png':
     case 'jpg':
     case 'jpeg':

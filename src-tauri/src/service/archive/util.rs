@@ -98,7 +98,7 @@ pub fn err_undetectable(path: &Path) -> AppError {
     if has_rar_magic(path) {
         return AppError::new(
             codes::ARCHIVE_UNSUPPORTED,
-            "RAR 暂不支持内置解压：请用系统程序打开，或先用 7-Zip 转成 zip / 7z",
+            "RAR 暂不支持内置解压：请用系统程序打开，或先转成 zip / 7z",
         );
     }
     AppError::new(
@@ -158,6 +158,7 @@ pub fn method_id(m: CompressMethod) -> &'static str {
         CompressMethod::Xz => "xz",
         CompressMethod::Lz4 => "lz4",
         CompressMethod::Brotli => "brotli",
+        CompressMethod::MsZip => "mszip",
     }
 }
 
@@ -171,6 +172,7 @@ pub fn parse_method(s: &str) -> Option<CompressMethod> {
         "xz" => CompressMethod::Xz,
         "lz4" => CompressMethod::Lz4,
         "brotli" | "br" => CompressMethod::Brotli,
+        "mszip" => CompressMethod::MsZip,
         _ => return None,
     })
 }

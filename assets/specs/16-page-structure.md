@@ -33,8 +33,9 @@ App.vue
 ├── EditorArea.vue        编辑区：按形态分发 + 分屏 + 拖放提示
 │   ├── CodeEditor.vue      CodeMirror 容器（compartments）
 │   ├── MarkdownEditor.vue  Markdown 三态：编辑 / 分屏 / 预览
-│   ├── DocPreview.vue      只读预览：xlsx / csv / docx / pdf / 图片 / 文本，含「读不了」的出路卡片
+│   ├── DocPreview.vue      只读预览：xlsx / csv / 图片 / Markdown / HTML / 文本，含「读不了」的出路卡片
 │   ├── ChunkedViewer.vue   大文件分块视图：块导航 + 单块解锁编辑
+│   ├── HexView.vue         十六进制视图（虚拟滚动，只渲染可视区）
 │   ├── SheetEditor.vue     CSV / TSV 可编辑文本网格（虚拟滚动）
 │   ├── WorkbookEditor.vue  XLSX / ODS 单元格网格（值与公式可改）
 │   └── Minimap.vue         小地图（canvas 轮廓，虚拟滚动跟随）

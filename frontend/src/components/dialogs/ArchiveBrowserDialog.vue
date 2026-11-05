@@ -104,6 +104,10 @@
         <template v-else>
           <div class="nt-barch-pvhead">
             <span>{{ t('archive.previewOf', { name: shortName(preview!.name) }) }}</span>
+            <!-- 直接进编辑器读：预览只有 256KB，长文件要看全文就走这条路 -->
+            <ElButton size="small" :loading="openingEntry" @click="openInEditor">
+              {{ t('archive.openInEditor') }}
+            </ElButton>
             <button class="nt-icon-btn" @click="preview = null">
               <NtIcon name="x" size="sm" />
             </button>
@@ -143,6 +147,7 @@ import { useVirtualList } from '@/composables/useVirtualList'
 import { api, normalizeError } from '@/api'
 import { useDialogStore } from '@/stores/dialogs'
 import { useToastStore } from '@/stores/toast'
+import { useEditorStore } from '@/stores/editor'
 import { baseName, dirName, formatSize, formatTime, joinPath } from '@/utils'
 import type { ArchiveEntryVO, ArchiveFormatVO, ArchiveInfoVO, PreviewEntryVO } from '@/types/api'
 
@@ -348,6 +353,28 @@ async function onConvert() {
     toast.bad(normalizeError(e).message)
   } finally {
     converting.value = false
+  }
+}
+
+/** 解出这一条到临时目录并用编辑器打开：读全文，不只是前 256KB。 */
+const openingEntry = ref(false)
+async function openInEditor() {
+  const target = preview.value
+  if (!target) return
+  openingEntry.value = true
+  try {
+    const res = await api.archive.openEntry({
+      archive: path.value,
+      entry: target.name,
+      password: password.value || null,
+    })
+    emit('close')
+    await useEditorStore().openPath(res.path)
+    toast.info(t('archive.openedTempCopy', { name: shortName(target.name) }))
+  } catch (e) {
+    toast.bad(normalizeError(e).message)
+  } finally {
+    openingEntry.value = false
   }
 }
 

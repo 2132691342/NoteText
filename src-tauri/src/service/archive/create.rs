@@ -178,6 +178,16 @@ pub fn create_archive(req: &CreateArchiveReq, ctx: &TaskCtx) -> AppResult<Create
         ArchiveFormat::Xz => create_single(ctx, &items, &dest, CompressMethod::Xz, level)?,
         ArchiveFormat::Lz4 => create_single(ctx, &items, &dest, CompressMethod::Lz4, level)?,
         ArchiveFormat::Br => create_single(ctx, &items, &dest, CompressMethod::Brotli, level)?,
+        ArchiveFormat::Cab => {
+            super::cabinet::create_cab(&items, &dest, !matches!(level, CompressLevel::Store), ctx)?
+        }
+        // 只读格式：编译期就拦住，不给「走到一半才发现写不了」。
+        ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar => {
+            return Err(AppError::new(
+                codes::ARCHIVE_UNSUPPORTED,
+                format!("{} 只支持解压，不支持创建：请改用 zip / 7z", format.id()),
+            ))
+        }
     }
 
     // 分卷：压缩完成后按大小切（与常见工具的 volume 行为一致）

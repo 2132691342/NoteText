@@ -26,8 +26,8 @@ pub mod snippet;
 pub use archive::{
     AddEntriesReq, ArchiveEntryVO, ArchiveInfoVO, ConvertArchiveReq, ConvertArchiveVO,
     CreateArchiveReq, CreateArchiveVO, DeleteEntriesReq, ExtractArchiveReq, ExtractArchiveVO,
-    JoinPartsReq, JoinPartsVO, OpenArchiveVO, PreviewEntryReq, PreviewEntryVO, SplitFileReq,
-    TestArchiveReq, TestArchiveVO, UpdateArchiveVO,
+    JoinPartsReq, JoinPartsVO, OpenArchiveVO, OpenEntryReq, OpenEntryVO, PreviewEntryReq,
+    PreviewEntryVO, SplitFileReq, TestArchiveReq, TestArchiveVO, UpdateArchiveVO,
 };
 pub use archive_format::{
     ArchiveFormat, ArchiveFormatVO, CompressLevel, CompressMethod, FormatCapabilitiesVO,

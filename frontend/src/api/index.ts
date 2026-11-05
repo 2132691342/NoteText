@@ -145,6 +145,8 @@ import type {
   ExtractArchiveReq,
   JoinPartsReq,
   OpenArchiveVO,
+  OpenEntryReq,
+  OpenEntryVO,
   PreviewEntryReq,
   PreviewEntryVO,
   SplitFileReq,
@@ -322,6 +324,8 @@ export const api = {
       call<OpenArchiveVO>('open_archive', { path, password: password ?? null }),
     previewEntry: (req: PreviewEntryReq) =>
       call<PreviewEntryVO>('preview_archive_entry', { req }),
+    /** 解出单条目到临时目录：点开压缩包里的文本直接读，不必整包解压。 */
+    openEntry: (req: OpenEntryReq) => call<OpenEntryVO>('open_archive_entry', { req }),
     formats: () => call<ArchiveFormatVO[]>('get_archive_formats'),
     create: (req: CreateArchiveReq) => call<string>('create_archive', { req }),
     extract: (req: ExtractArchiveReq) => call<string>('extract_archive', { req }),

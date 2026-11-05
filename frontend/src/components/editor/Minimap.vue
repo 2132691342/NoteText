@@ -10,9 +10,15 @@
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EditorView } from '@codemirror/view'
-import { debounce } from '@/utils'
+import { docVersionOf } from '@/composables/useEditorRegistry'
 
-const props = defineProps<{ view: EditorView; lineCount: number; visible: boolean }>()
+const props = defineProps<{
+  view: EditorView
+  lineCount: number
+  visible: boolean
+  /** 所属标签 id：正文变化靠版本号感知，不必每帧把全文拷一次。 */
+  tabId?: number
+}>()
 
 const cv = ref<HTMLCanvasElement | null>(null)
 /** 视口高亮：top/height 用比例，避免与像素换算耦合。 */
@@ -28,8 +34,14 @@ const viewStyle = computed(() => ({
 }))
 
 let raf = 0
+/** 上一次绘制时的正文档号：正文没变就不重画。 */
+let drawnVersion = -1
 
 function draw() {
+  if (props.tabId != null && docVersionOf(props.tabId) === drawnVersion) {
+    syncViewport()
+    return
+  }
   if (!props.visible) return
   const canvas = cv.value
   const view = props.view
@@ -66,8 +78,6 @@ function draw() {
   syncViewport()
 }
 
-/** 打字期间的重绘防抖：轮廓不需要逐键刷新，停手 200ms 后画一次。 */
-const drawSoon = debounce(draw, 200)
 
 /** 视口矩形：跟编辑器的滚动位置走。 */
 function syncViewport() {
@@ -101,7 +111,7 @@ onBeforeUnmount(() => {
   if (raf) cancelAnimationFrame(raf)
 })
 
-watch(() => props.lineCount, () => drawSoon())
+watch(() => props.lineCount, () => draw())
 watch(() => props.visible, (v) => v && draw())
 
 /** 点击跳转：按点击位置的比例换算成目标滚动位置。 */
