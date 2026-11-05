@@ -1,8 +1,8 @@
 //! 大表格长链路：建索引 → 分页 → 跨块查找 → 覆盖层写回 → 另存为。
 //!
 //! 表格这一域的复杂度全在「记录边界」上：引号字段里的换行、跨行的 JSON 元素、
-//! GB18030 的双字节分隔符，三者都可能把一条记录切错或把记录数算错。
-//! 所以链路按形态分三条：分隔文本一条、JSON 系一条、规模上限一条。
+//! 多字节编码的字符边界、文件末尾的无换行记录，都可能把一条记录切错或把行号算错。
+//! 链路按形态分三条：分隔文本与规模一条、编码与边界一条、JSON 系一条。
 
 mod common;
 
@@ -35,7 +35,7 @@ fn csv_table_indexes_pages_finds_and_writes_back() {
         text.push_str(&format!("{i},name-{i},{}\n", i * 3));
     }
     let path = write(dir.path(), "rows.csv", text.as_bytes());
-    let meta = svc.open(&path, None, None, None).expect("建索引失败");
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
 
     assert_eq!(meta.total_rows, 50_001, "含表头行共 50001 行");
     assert_eq!(meta.total_cols, 3, "应有 3 列");
@@ -78,12 +78,6 @@ fn csv_table_indexes_pages_finds_and_writes_back() {
     let (last, _) = svc.page(&path, 50_000, 10).expect("读末页失败");
     assert_eq!(last.len(), 1, "末页只剩 1 行");
     assert_eq!(last[0], vec!["49999", "name-49999", "149997"]);
-
-    // ---- 深处取页：不能靠从头扫 ----
-    // 下标 49999 对应数据行 49998（下标 0 是表头）。
-    let (deep, _) = svc.page(&path, 49_999, 2).expect("深处读页失败");
-    assert_eq!(deep[0][0], "49998", "深处首行下标应对齐");
-    assert_eq!(deep[1][0], "49999", "深处下一行下标应连续");
 
     // ---- 整表查找：命中行号要能定位回同一行 ----
     let (hits, total, truncated, done) = svc
@@ -165,7 +159,7 @@ fn csv_table_indexes_pages_finds_and_writes_back() {
         text.push_str(&format!("{i},\"line1\nline2 \"\"quoted\"\" ,tail\"\n"));
     }
     let path = write(dir.path(), "quoted.csv", text.as_bytes());
-    let meta = svc.open(&path, None, None, None).expect("建索引失败");
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
     assert_eq!(meta.total_rows, 30_001, "带换行的字段不该多算行");
 
     let (rows, _) = svc.page(&path, 10, 3).expect("读页失败");
@@ -179,32 +173,17 @@ fn csv_table_indexes_pages_finds_and_writes_back() {
     assert_eq!(last.len(), 2);
     assert_eq!(last[1][0], "29999");
 
-    // ---- 记录边界：GB18030 的汉字尾字节不能被误判成分隔符 ----
-    let csv = "姓名,城市\n张三,北京\n李四,上海\n王五,广州\n";
-    let bytes = notetext_lib::service::encoding::encode(csv, "gb18030").expect("编码失败");
-    let path = write(dir.path(), "gb.csv", &bytes);
-    let meta = svc.open(&path, None, None, None).expect("建索引失败");
-    assert_eq!(meta.total_rows, 4);
-    assert_eq!(meta.encoding, "gb18030", "应探测为 GB18030");
-
-    let (rows, _) = svc.page(&path, 0, 10).expect("读页失败");
-    assert_eq!(rows[1], vec!["张三", "北京"], "汉字不该被切断或乱码");
-    assert_eq!(rows[3], vec!["王五", "广州"]);
-
-    // ---- 规模上限：百万行表格，分页仍要给满一整页 ----
-    //
-    // 这条守护的是一个具体故障：渲染层把滚动容器的模板 ref 绑错名字
-    // （绑成 `scrollEl` 而 composable 读 `scrollHost`），viewport 量到 0，
-    // 虚拟滚动窗口退化成 `ceil(0/26) + 24 + 1 = 25` 行——
-    // 一百万行的表只显示 25 行，而且滑不动、拖不动。
-    // 后端这一侧必须能稳定吐出满页，前端才有东西可画。
+    // ---- 规模上限：百万行表格，任意深度都要给满页且行号严格对齐 ----
+    // 满页是底线：前端虚拟滚动窗口退化时只能画几十行，后端必须能稳定吐出 500 行。
     let mut big = String::with_capacity(20 * 1024 * 1024);
     big.push_str("id,name,qty\n");
     for i in 0..1_000_000 {
         big.push_str(&format!("{i},name-{i},{}\n", i % 1000));
     }
     let path = write(dir.path(), "million.csv", big.as_bytes());
-    let meta = svc.open(&path, None, None, None).expect("百万行建索引失败");
+    let meta = svc
+        .open(&path, None, None, None, None)
+        .expect("百万行建索引失败");
     assert_eq!(meta.total_rows, 1_000_001, "含表头共 1000001 行");
     assert_eq!(meta.total_cols, 3);
 
@@ -238,6 +217,103 @@ fn csv_table_indexes_pages_finds_and_writes_back() {
     assert_eq!(tail[0][0], "999999");
 }
 
+/// 编码与边界链路：GB18030 深处分页、UTF-16LE BOM、无尾换行末行、表头误判纠正、强制编码遇 BOM 归一。
+///
+/// 这五件事坏的形态都是「用户看到的内容不对」：深处的汉字解成替换符、
+/// UTF-16 的行号错位、最后一行永远取不到、首行数据被当成表头吞掉、
+/// 强制 UTF-8 打开带 BOM 的文件时首格多出 U+FEFF。
+#[test]
+fn csv_table_decodes_deep_pages_and_counts_trailing_row() {
+    let (dir, _state) = boot();
+    let svc = TableService::new();
+
+    // ---- GB18030 十万行：探测生效，深处分页的汉字不解成替换符 ----
+    //
+    // 4 行的 GB 用例只能覆盖表头附近；深处的块要整块解码，
+    // 编码一旦判错（比如按 UTF-8 严格解失败退 lossy），深处页整页是替换符。
+    let mut text = String::from("序号,名称,备注\n");
+    for i in 0..100_000 {
+        text.push_str(&format!("{i},名称-{i},备注{i}\n"));
+    }
+    let bytes = notetext_lib::service::encoding::encode(&text, "gb18030").expect("编码失败");
+    let path = write(dir.path(), "gb_big.csv", &bytes);
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
+    assert_eq!(meta.encoding, "gb18030", "应探测为 GB18030");
+    assert_eq!(meta.total_rows, 100_001, "含表头共 100001 行");
+
+    let (deep, _) = svc.page(&path, 90_000, 50).expect("深处读页失败");
+    assert_eq!(deep.len(), 50, "深处应给满页");
+    assert_eq!(
+        deep[0],
+        vec!["89999", "名称-89999", "备注89999"],
+        "深处的汉字应对"
+    );
+    assert!(
+        deep.iter()
+            .all(|r| r.iter().all(|c| !c.contains('\u{FFFD}'))),
+        "深处分页不该出现替换符"
+    );
+
+    // ---- UTF-16LE（带 BOM）：跨多块的索引与分页 ----
+    //
+    // UTF-16 的记录边界按码元扫，块偏移换算错一个字节整块解出乱码。
+    // 行数要够跨块（块目标 1MB）：15 万行 × 约 40 字节 ≈ 6MB。
+    let mut utf16_text = String::from("id,名称,备注\n");
+    for i in 0..150_000 {
+        utf16_text.push_str(&format!("{i},名称-{i},备注-{i}\n"));
+    }
+    let mut u16_bytes = notetext_lib::service::encoding::bom_bytes("utf-16le").to_vec();
+    u16_bytes.extend(
+        notetext_lib::service::encoding::encode(&utf16_text, "utf-16le").expect("编码失败"),
+    );
+    let path = write(dir.path(), "utf16.csv", &u16_bytes);
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
+    assert_eq!(meta.encoding, "utf-16le", "应探测为 UTF-16LE");
+    assert!(meta.has_bom, "应识别 BOM");
+    assert_eq!(meta.total_rows, 150_001, "行数不该因编码多算或漏算");
+    assert!(meta.block_count > 1, "应跨多块，实际 {}", meta.block_count);
+
+    let (rows, _) = svc.page(&path, 0, 3).expect("读首页失败");
+    assert_eq!(rows[1], vec!["0", "名称-0", "备注-0"], "首页内容应正确");
+    let (deep, _) = svc.page(&path, 100_000, 3).expect("深处读页失败");
+    assert_eq!(
+        deep[0],
+        vec!["99999", "名称-99999", "备注-99999"],
+        "跨块后的行号与内容应对齐"
+    );
+
+    // ---- 无尾换行：最后一条记录也计入行号 ----
+    let path = write(dir.path(), "noeol.csv", b"a,b\n1,2\n3,4");
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
+    assert_eq!(meta.total_rows, 3, "末尾没有换行的记录也是一行");
+    let (rows, _) = svc.page(&path, 2, 5).expect("读末行失败");
+    assert_eq!(rows.len(), 1, "只能取到末行这一条");
+    assert_eq!(rows[0], vec!["3", "4"], "末行内容应可取到");
+
+    // ---- 表头误判：首行是文本数据时能被用户纠正 ----
+    let path = write(dir.path(), "nohdr.csv", b"apple,banana\n1,2\n3,4\n");
+    let meta = svc
+        .open(&path, None, None, Some(false), None)
+        .expect("带覆盖建索引失败");
+    assert!(!meta.has_header, "覆盖为 false 就不该判成表头");
+    let (rows, _) = svc.page(&path, 0, 2).expect("读页失败");
+    assert_eq!(rows[0], vec!["apple", "banana"], "首行应作为数据返回");
+
+    // ---- 强制 utf-8 遇到带 BOM 的文件：归一成 utf-8-bom ----
+    //
+    // 不归一的话首格解出 U+FEFF，写回时 BOM 还会丢。
+    let mut bom_bytes = notetext_lib::service::encoding::bom_bytes("utf-8-bom").to_vec();
+    bom_bytes.extend_from_slice(b"a,b\n1,2\n");
+    let path = write(dir.path(), "bom.csv", &bom_bytes);
+    let meta = svc
+        .open(&path, Some("utf-8"), None, None, None)
+        .expect("强制编码建索引失败");
+    assert_eq!(meta.encoding, "utf-8-bom", "带 BOM 应归一到 utf-8-bom");
+    assert!(meta.has_bom);
+    let (rows, _) = svc.page(&path, 0, 2).expect("读页失败");
+    assert_eq!(rows[0][0], "a", "首格不该带 U+FEFF");
+}
+
 /// JSON 系链路：顶层 JSON 数组与 JSONL 各自建索引 → 分页 → 改一个写回。
 ///
 /// 两种形态走的是同一套「记录边界」思路，但边界来源不同：
@@ -259,7 +335,7 @@ fn json_table_indexes_pages_and_writes_back() {
     text.push_str("]\n");
     let path = write(dir.path(), "arr.json", text.as_bytes());
 
-    let meta = svc.open(&path, None, None, None).expect("建索引失败");
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
     assert_eq!(meta.total_rows, 20_000, "两万条元素应算 20000 行");
     assert_eq!(meta.total_cols, 3, "三个字段");
     assert_eq!(meta.header, vec!["id", "name", "note"], "表头取自首个元素");
@@ -307,7 +383,7 @@ fn json_table_indexes_pages_and_writes_back() {
     }
     let path = write(dir.path(), "rows.jsonl", text.as_bytes());
 
-    let meta = svc.open(&path, None, None, None).expect("建索引失败");
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
     assert_eq!(meta.total_rows, 20_000, "两万行应算 20000 行");
     assert_eq!(meta.total_cols, 3, "三个字段");
     assert_eq!(meta.header, vec!["id", "name", "tags"], "表头取自首个对象");

@@ -221,10 +221,12 @@ export const useEditorStore = defineStore('editor', () => {
       const editableSheet = kind === 'sheet' && isTableGrid(path)
       if (editableSheet) {
         // 表格网格自己按页取数，不走全量读：正文不进内存。
+        // 编码给 'auto'：后端按文件头探测，预设 'utf-8' 会让 GB18030 的文件整表乱码。
         const tab = newTab()
         tab.path = path
         tab.title = fileNameOf(path)
         tab.language = languageOf(path)
+        tab.encoding = 'auto'
         tab.view_type = 'code'
         tab.showing_preview = false
         tab.read_only = false

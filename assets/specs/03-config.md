@@ -28,7 +28,7 @@ DB 打不开时本来就 fail-fast，不存在「DB 没起来但日志要先配�
 |---|---|
 | `resolvedTheme` | `theme === "system"` 时跟随 `prefers-color-scheme`，实时更新 |
 | `--nt-fs-scale` | `ui.zoom_level / 100`，只写 CSS 变量 |
-| `--nt-editor-fs` | `editor.font_size × --nt-fs-scale`，写 CSS 变量管编辑器字号 |
+| `--nt-editor-fs` | `editor.font_size × --nt-fs-scale × --nt-vw-scale`，写 CSS 变量管编辑器字号 |
 | `--nt-vw-scale` | 窗口宽 ÷ 1440，上下限 0.8~1.35 |
 
 这几个都只写 CSS 变量，不进配置——进配置就要考虑「用户改了这个，
@@ -58,7 +58,7 @@ function update(patch: Partial<AppConfig>) {
 
 ### 配置项全表
 
-四组，共 45 项。**每一项都在设置界面有对应控件**——没有暗藏的开关。
+四组，共 46 项。**每一项都在设置界面有对应控件**——没有暗藏的开关。
 
 #### EditorConfig（18 项）
 
@@ -110,11 +110,11 @@ function update(patch: Partial<AppConfig>) {
 | `zoom_level` | u32 | 100 | 字号缩放百分比（80–140；工具栏、Ctrl+滚轮、设置滑块同一档） |
 | `close_to_tray` | bool | false | 关闭到托盘 |
 | `restore_session` | bool | true | 启动恢复上次会话 |
-| `recent_limit` | u32 | 20 | 最近文件保留条数 |
+| `recent_limit` | u32 | 20 | 最近文件保留条数（保存链路的记账当前写死 20，仅最近文件面板的 touch 走本配置） |
 | `status_bar_items` | BTreeMap | 空 = 全显 | 状态栏各项显隐 |
 | `sidebar_tab` | String | `files` | 侧栏当前页签 |
 
-#### 顶层（6 项）
+#### 顶层（7 项）
 
 | 项 | 类型 | 默认 | 作用 |
 |---|---|---|---|

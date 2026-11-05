@@ -22,7 +22,7 @@
 |---|---|---|
 | `read_file` | `path`, `mode?`, `encoding?`, `allow_big?` | `FileContentVO` |
 | `read_binary` | `path` | `string`（base64，上限 20MB） |
-| `read_table_preview` | `path`, `encoding?` | `TablePreviewVO`（CSV / TSV，不受 20MB 上限） |
+| `write_binary` | `path`, `data`（base64） | `()`（前端生成字节落盘，如「另存为 xlsx」） |
 | `big_file_open` | `path` | `BigFileMetaVO`（建块索引，进度走 `bigfile:progress` 事件） |
 | `big_file_block` | `path`, `block_index` | `BigFileBlockVO`（含全局起始行与 stale 标记） |
 | `big_file_goto_line` | `path`, `line` | `usize`（块下标，二分定位） |
@@ -213,7 +213,7 @@
 
 | 命令 | 入参 | 出参 |
 |---|---|---|
-| `table_open` | `TableOpenReq`（`path` / `encoding?` / `delimiter?`） | `TableMetaVO`（形态 / 编码 / 总行数 / 列数 / 表头 / 块数） |
+| `table_open` | `TableOpenReq`（`path` / `encoding?` / `delimiter?` / `has_header?`） | `TableMetaVO`（形态 / 编码 / 总行数 / 列数 / 表头 / 块数） |
 | `table_page` | `TablePageReq`（`path` / `start_row` / `rows`） | `TablePageVO`（按记录下标分页，缺列补空串） |
 | `table_find` | `TableFindReq`（`path` / `query` / `match_case?` / `from_row` / `limit`） | `TableFindVO`（命中列表 / 总数 / 截断标记 / 续扫位置） |
 | `table_save` | `TableSaveReq`（`path` / `ops` / `encoding?` / `delimiter?` / `backup?`） | `TableSaveVO` |

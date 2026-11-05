@@ -86,9 +86,8 @@ const loading = ref(false)
 const editing = ref<null | { mode: 'rename' | 'new-file' | 'new-dir'; draft: string }>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
 
-// ---- 大目录增量渲染 ----
-// 哨兵元素进入视口就多渲染一批：不用把递归树拍平成虚拟列表，
-// 也不依赖面板的滚动容器（任意深度的目录都一样工作）。
+// ---- 大目录增量渲染：哨兵元素进入视口就多渲染一批 ----
+// 不把递归树拍平成虚拟列表，也不依赖面板的滚动容器（任意深度都一样工作）。
 const RENDER_CHUNK = 200
 const renderLimit = ref(RENDER_CHUNK)
 const childrenList = computed(() => tree.children.get(props.entry.path) ?? [])

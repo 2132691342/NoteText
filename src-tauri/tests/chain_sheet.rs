@@ -203,3 +203,106 @@ fn sheet_opens_pages_edits_and_preserves_styles() {
         "未编辑的工作表应原样保留"
     );
 }
+
+/// 大工作簿分页链路：两万行的工作表跨窗口取页 + 翻页走缓存 + 切表后回来仍对齐。
+///
+/// 行偏移采样让分页跳过目标窗口之前的字节；跳错一个字节，窗口里的行号
+/// 就和内容对不上。切表会把常驻 XML 换出，切回来必须还能取到同样的内容。
+#[test]
+fn sheet_pages_across_windows_and_survives_sheet_switch() {
+    let (dir, state) = boot();
+    let svc = &state.services.sheet;
+
+    let big = dir.path().join("wide.xlsx");
+    let mut rows = String::new();
+    for i in 1..=20_000u32 {
+        rows.push_str(&format!(
+            r#"<row r="{i}"><c r="A{i}"><v>{i}</v></c><c r="B{i}" t="inlineStr"><is><t>行{i}</t></is></c></row>"#
+        ));
+    }
+    let sheet_xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>"#
+    );
+    {
+        let out = std::fs::File::create(&big).expect("建 xlsx 失败");
+        let mut zip = zip::ZipWriter::new(out);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, body) in [
+            ("[Content_Types].xml", common::CONTENT_TYPES),
+            ("xl/workbook.xml", common::WORKBOOK_XML),
+            ("xl/_rels/workbook.xml.rels", common::WORKBOOK_RELS),
+            ("xl/worksheets/sheet1.xml", sheet_xml.as_str()),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>备注</t></is></c></row></sheetData></worksheet>"#,
+            ),
+        ] {
+            zip.start_file(name, opts).expect("写部件失败");
+            zip.write_all(body.as_bytes()).expect("写内容失败");
+        }
+        zip.finish().expect("收尾失败");
+    }
+    let path = big.to_string_lossy().to_string();
+
+    // ---- 跨窗口取页：每个窗口的行号都要与内容严格对齐 ----
+    for start in [0usize, 4_999, 10_000, 19_997] {
+        let page = svc
+            .page(&SheetPageReq {
+                path: path.clone(),
+                sheet_index: 0,
+                start_row: start,
+                rows: 3,
+            })
+            .unwrap_or_else(|e| panic!("start={start} 分页失败：{e}"));
+        assert_eq!(page.rows.len(), 3, "start={start} 应取到 3 行");
+        assert_eq!(
+            page.rows[0][0].row, start as u32,
+            "start={start} 起始行号错位"
+        );
+        assert_eq!(
+            page.rows[0][0].value.display(),
+            (start + 1).to_string(),
+            "start={start} 单元格内容错位"
+        );
+        assert_eq!(page.rows[0][1].value.display(), format!("行{}", start + 1));
+        assert_eq!(page.total_rows, 20_000, "总行数应来自索引");
+    }
+
+    // ---- 末页：只剩 3 行，不能编造 ----
+    let last = svc
+        .page(&SheetPageReq {
+            path: path.clone(),
+            sheet_index: 0,
+            start_row: 19_997,
+            rows: 10,
+        })
+        .expect("读末页失败");
+    assert_eq!(last.rows.len(), 3);
+    assert_eq!(last.rows[2][0].value.display(), "20000");
+
+    // ---- 切到第二张表再切回来：XML 被换出后内容仍要对齐 ----
+    let other = svc
+        .page(&SheetPageReq {
+            path: path.clone(),
+            sheet_index: 1,
+            start_row: 0,
+            rows: 5,
+        })
+        .expect("读第二张表失败");
+    assert_eq!(other.rows[0][0].value.display(), "备注");
+
+    let again = svc
+        .page(&SheetPageReq {
+            path: path.clone(),
+            sheet_index: 0,
+            start_row: 10_000,
+            rows: 3,
+        })
+        .expect("切回后重读失败");
+    assert_eq!(
+        again.rows[0][0].value.display(),
+        "10001",
+        "切表后内容应对齐"
+    );
+}

@@ -12,11 +12,12 @@
 
 | 能力 | 实现 |
 |---|---|
-| 格式化 / 压缩 | 自写 `pretty_json(v, indent)`：serde_json 的 `to_string_pretty` 固定两空格，而工具窗的缩进输入允许 0–8 |
+| 格式化 / 压缩 | 自写 `pretty_json(v, indent)`：serde_json 的 `to_string_pretty` 固定两空格，而工具窗的缩进输入允许 0–8。输入超过 32MB 走流式路径（`json_stream`）：只处理顶层数组、逐元素格式化、超限截断并提示——几百 MB 的导出 JSON 不 OOM |
 | 键排序 | `sort_json` 递归排序对象键（对比两份配置时先排序，diff 才看得出差异） |
 | 校验 | `serde_json::from_str` 的 `Error` 带 `line()` / `column()`——只说「格式错误」用户找不到在哪 |
 | JSONPath | 极简实现：`$` / `$.a.b` / `$[0]` / `$..key` / `$.a[*]` |
 | 转结构体 | 5 种语言（Rust / Go / TS / Java / Python），按各自命名风格（snake / pascal / camel） |
+| `json_diff` | 后端命令已就位（结构化 diff），前端暂无浮窗消费——作为能力预留 |
 
 **JSONPath 是简化版**：不支持 `$..` 后再接路径（`$..a.b` 报错）。
 完整实现要一个独立的 parser，而工具窗里 95% 的查询是 `$.a.b` 与 `$..name`。

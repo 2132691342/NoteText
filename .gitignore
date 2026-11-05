@@ -37,3 +37,6 @@ Cargo.lock.bak
 # OS
 Thumbs.db
 .DS_Store
+
+# ZCode 会话元数据
+.zcode/

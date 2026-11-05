@@ -50,7 +50,7 @@ App.vue
 | MenuBar | `commands`（分组清单）、`settings`（键位覆盖） | 已打开时滑过即切换；下拉 Teleport 到 body；空分组不进菜单条 |
 | ToolBar | `editor`（撤销可用性、脏标记）、`settings` | 「更多」下拉开工具箱浮窗 |
 | SideBar | `settings`（宽度 / 页签）、`fileTree` | 页签切换只改 `ui.sidebar_tab`；宽度拖拽 180–480 |
-| TabBar | `editor` | 中键关闭；右键菜单（关闭其他 / 已保存 / 复制路径） |
+| TabBar | `editor` | 中键关闭；右键菜单（关闭 / 关闭其他 / 关闭左侧 / 关闭右侧 / 关闭已保存 / 关闭全部 / 复制路径 / 复制文件名 / 在资源管理器中显示） |
 | EditorArea | `editor` | `Ctrl+\` 分屏；拖放打开走 `useFileDrop`；
   每个标签一个常驻 CodeMirror 实例，只在首次激活时挂载 |
 | StatusBar | `editor`、`settings` | 光标 / 统计由编辑器组件发自定义事件推 |
@@ -227,6 +227,7 @@ CodeEditor.vue
 | `composables/useVirtualList.ts` | 大列表的定高虚拟滚动（归档条目表 / 日志 / 目录差异 / 表格网格） |
 | `composables/useTableGrid.ts` | 大表格网格：分页取数、滚动空间压缩、覆盖层编辑 |
 | `composables/useSheetGrid.ts` | 工作簿网格：分页取单元格、改值与公式的覆盖层 |
+| `composables/gridScroll.ts` | 两个网格共用的虚拟滚动坐标系（空间压缩、渲染窗口、`ROW_H` 与 CSS 变量同值约束），见 specs/19 |
 | `composables/useCrashGuard.ts` | 每 30 秒把脏标签正文静默快照进草稿库；异常退出后由草稿箱恢复 |
 
 ## 取舍

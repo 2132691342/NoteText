@@ -20,8 +20,11 @@ use crate::service::table::records::{
 const TARGET_BLOCK: u64 = 1024 * 1024;
 /// 扫描缓冲区：1MB 一次喂进扫描器。
 const SCAN_BUF: usize = 1024 * 1024;
-/// 编码探测采样：只看头部，GB 级文件也不用为探测付全量解码的钱。
-const ENCODE_SAMPLE: u64 = 64 * 1024;
+/// 编码探测采样：头部 512KB，与 `encoding::detect` 的打分样本对齐——
+/// 样本太小，ASCII 开头的 GB18030 文件会误判成 UTF-8。
+const ENCODE_SAMPLE: u64 = 512 * 1024;
+/// 块内行偏移采样步长：每 64 条记录存一个记录起始偏移，分页据此跳过目标窗口之前的字节。
+const SAMPLE_STEP: usize = 64;
 /// 扫描进度回调的步长。
 const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
 /// 索引的记录数上限：2000 万行，再多内存与扫描时间都失去意义。
@@ -44,6 +47,9 @@ pub struct BlockMeta {
     pub first_row: u64,
     /// 本块记录数。
     pub row_count: u64,
+    /// 块内行偏移采样：第 `k` 项是块内第 `k * SAMPLE_STEP` 条记录的起始字节偏移（相对块起点）。
+    /// 分页据此跳过目标窗口之前的字节，不再整块解析。
+    pub row_offsets: Vec<u64>,
 }
 
 /// 一份表格的完整索引。
@@ -82,6 +88,8 @@ struct ScanParams<'a> {
     delimiter: char,
     kind: TableKind,
     has_bom: bool,
+    /// 用户指定的表头判定；`None` = 按启发式。
+    has_header: Option<bool>,
     cancel: &'a AtomicBool,
     on_progress: Option<&'a ProgressFn>,
 }
@@ -119,6 +127,7 @@ impl TableService {
         path: &str,
         encoding_id: Option<&str>,
         delimiter: Option<char>,
+        has_header: Option<bool>,
         on_progress: Option<ProgressFn>,
     ) -> AppResult<TableMetaVO> {
         let p = Path::new(path);
@@ -140,8 +149,12 @@ impl TableService {
         // 编码：指定优先，否则按头部探测。
         let head = read_head(p, ENCODE_SAMPLE)?;
         let (detected, _) = encoding::detect(&head);
-        let enc = encoding_id.unwrap_or(&detected).to_string();
+        let mut enc = encoding_id.unwrap_or(&detected).to_string();
         let (has_bom, _) = encoding::strip_bom(&head, &enc);
+        // 用户指定 utf-8 但文件带 BOM：归一到 utf-8-bom，否则首格解出 U+FEFF，写回时 BOM 也会丢。
+        if has_bom && enc == "utf-8" {
+            enc = "utf-8-bom".into();
+        }
 
         // 形态：JSONL 按扩展名与首行内容判定。
         let kind = detect_kind(p, &head, &enc);
@@ -162,6 +175,7 @@ impl TableService {
             delimiter: delim,
             kind,
             has_bom,
+            has_header,
             cancel: &cancel,
             on_progress: on_progress.as_ref(),
         })?;
@@ -202,6 +216,7 @@ impl TableService {
             delimiter: delim,
             kind,
             has_bom,
+            has_header,
             cancel,
             on_progress,
         } = params;
@@ -211,6 +226,12 @@ impl TableService {
         let mut blocks: Vec<BlockMeta> = Vec::new();
         let mut block_start = 0u64;
         let mut block_rows = 0u64;
+        // 块内行偏移采样：第 0、64、128…条记录的起始偏移（相对块起点）。
+        let mut samples: Vec<u64> = Vec::new();
+        // 当前记录的起始偏移（上一条记录的结束点）。
+        let mut record_start = 0u64;
+        // 最后一条完整记录的结束点：之后还有字节就是没有行尾的最后一条。
+        let mut last_end = 0u64;
         let mut row_index = 0u64;
         let mut max_fields = 0usize;
         let mut pos = 0u64;
@@ -242,9 +263,11 @@ impl TableService {
             if n == 0 {
                 break;
             }
+            // chunk 的文件起点：carry 是上一轮的尾部字节，要往前扣。
+            let carry_len = carry.len() as u64;
             let mut chunk = std::mem::take(&mut carry);
             chunk.extend_from_slice(&buf[..n]);
-            let chunk_base = pos;
+            let chunk_base = pos - carry_len;
             pos += n as u64;
 
             if utf16 {
@@ -286,14 +309,21 @@ impl TableService {
 
             // 块边界：累积的记录够一个块就切。
             for e in ends.drain(..) {
+                // 行偏移采样：块内每 SAMPLE_STEP 条记录记一个起始偏移。
+                if block_rows % SAMPLE_STEP as u64 == 0 {
+                    samples.push(record_start - block_start);
+                }
                 row_index += 1;
                 block_rows += 1;
+                last_end = e.end;
+                record_start = e.end;
                 if e.end - block_start >= TARGET_BLOCK {
                     blocks.push(BlockMeta {
                         offset: block_start,
                         byte_len: e.end - block_start,
                         first_row: row_index - block_rows,
                         row_count: block_rows,
+                        row_offsets: std::mem::take(&mut samples),
                     });
                     block_start = e.end;
                     block_rows = 0;
@@ -314,13 +344,22 @@ impl TableService {
             }
         }
 
-        // 末尾没有换行的残余记录。
+        // 末尾没有换行的残余也是一条记录：此前不计行号，最后一行永远取不到。
+        // JSON 数组不在此列：元素都以 `,` / `]` 收尾，结尾的换行只是格式空白。
+        if last_end < size && kind != TableKind::JsonArray {
+            if block_rows % SAMPLE_STEP as u64 == 0 {
+                samples.push(record_start - block_start);
+            }
+            row_index += 1;
+            block_rows += 1;
+        }
         if block_rows > 0 || block_start < size {
             blocks.push(BlockMeta {
                 offset: block_start,
                 byte_len: size - block_start,
                 first_row: row_index.saturating_sub(block_rows),
                 row_count: block_rows,
+                row_offsets: samples,
             });
         }
 
@@ -340,10 +379,13 @@ impl TableService {
                 let mut has_hdr = false;
                 if let Some(h) = &first {
                     cols = cols.max(h.len());
-                    // 第一行全是文本且不是数字 → 当表头。
+                    // 第一行全是文本且不是数字 → 当表头。启发式只做兜底：用户可以显式覆盖。
                     has_hdr = !h.is_empty()
                         && h.iter()
                             .all(|f| !f.trim().is_empty() && f.trim().parse::<f64>().is_err());
+                }
+                if let Some(f) = has_header {
+                    has_hdr = f;
                 }
                 (first.unwrap_or_default(), has_hdr, cols)
             }
@@ -394,7 +436,8 @@ impl TableService {
         let index = if stale {
             let enc = index.encoding.clone();
             let delim = index.delimiter;
-            self.open(path, Some(&enc), Some(delim), None)?;
+            let hdr = index.has_header;
+            self.open(path, Some(&enc), Some(delim), Some(hdr), None)?;
             self.index_of(path)?
         } else {
             index
@@ -423,13 +466,24 @@ impl TableService {
             if within >= b.row_count as usize {
                 continue;
             }
-            let text = self.read_block_text(index.as_ref(), b)?;
+            // 行偏移采样快进：跳过目标窗口之前的字节，只解析窗口附近。
+            // 采样点是记录起始，从那里切出来的片段按记录边界对齐，解析结果与整块一致。
+            let (skip_in_parsed, text) = match b.row_offsets.get(within / SAMPLE_STEP) {
+                Some(&off) if off > 0 => (
+                    within % SAMPLE_STEP,
+                    self.read_block_text(index.as_ref(), b.offset + off, b.byte_len - off)?,
+                ),
+                _ => (
+                    within,
+                    self.read_block_text(index.as_ref(), b.offset, b.byte_len)?,
+                ),
+            };
             let parsed = match index.kind {
                 TableKind::Csv => parse_delimited(&text, index.delimiter),
                 TableKind::Jsonl => parse_jsonl_block(&text, &index.header),
                 TableKind::JsonArray => parse_json_array_block(&text, &index.header),
             };
-            for rec in parsed.into_iter().skip(within) {
+            for rec in parsed.into_iter().skip(skip_in_parsed) {
                 if remaining == 0 {
                     break;
                 }
@@ -450,18 +504,23 @@ impl TableService {
         Ok((out, stale))
     }
 
-    /// 读一块的字节。
-    fn read_block_bytes(&self, index: &TableIndex, b: &BlockMeta) -> AppResult<Vec<u8>> {
+    /// 读一段字节（块内或块内采样点之后的片段）。
+    fn read_block_bytes(
+        &self,
+        index: &TableIndex,
+        offset: u64,
+        byte_len: u64,
+    ) -> AppResult<Vec<u8>> {
         let mut f = fs::File::open(&index.path)?;
-        f.seek(SeekFrom::Start(b.offset))?;
-        let mut bytes = vec![0u8; b.byte_len as usize];
+        f.seek(SeekFrom::Start(offset))?;
+        let mut bytes = vec![0u8; byte_len as usize];
         f.read_exact(&mut bytes)?;
         Ok(bytes)
     }
 
-    /// 读一块的文本（按整份文件的编码解码）。
-    fn read_block_text(&self, index: &TableIndex, b: &BlockMeta) -> AppResult<String> {
-        let bytes = self.read_block_bytes(index, b)?;
+    /// 读一段的文本（按整份文件的编码解码）。
+    fn read_block_text(&self, index: &TableIndex, offset: u64, byte_len: u64) -> AppResult<String> {
+        let bytes = self.read_block_bytes(index, offset, byte_len)?;
         let (_, body) = encoding::strip_bom(&bytes, &index.encoding);
         match encoding::decode(body, &index.encoding) {
             Ok(t) => Ok(t),
@@ -487,7 +546,8 @@ impl TableService {
         let index = if self.is_stale(&index) {
             let enc = index.encoding.clone();
             let delim = index.delimiter;
-            self.open(path, Some(&enc), Some(delim), None)?;
+            let hdr = index.has_header;
+            self.open(path, Some(&enc), Some(delim), Some(hdr), None)?;
             self.index_of(path)?
         } else {
             index
@@ -515,7 +575,7 @@ impl TableService {
             if row_no >= index.total_rows {
                 break;
             }
-            let bytes = self.read_block_bytes(&index, b)?;
+            let bytes = self.read_block_bytes(&index, b.offset, b.byte_len)?;
             let (_, body) = encoding::strip_bom(&bytes, &index.encoding);
 
             // 1) 块级预筛：不含关键字就整块跳过（不解析）。
@@ -888,8 +948,7 @@ fn parse_json_array_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
 }
 
 /// 切出顶层数组的各个元素文本。
-/// 与 `JsonArrayScanner` 的边界约定一致：元素文本**含尾部的分隔符**（`,` 或 `]`），这样字节级扫描与文本级解析切在同一处。
-/// 开头可有可无 `[`：分页读到的是数组的片段，片段从元素中间开始。
+/// 与 `JsonArrayScanner` 边界一致：元素文本**含尾部分隔符**；开头可有可无 `[`（分页读的是片段）。
 fn json_array_elements(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let bytes = text.as_bytes();

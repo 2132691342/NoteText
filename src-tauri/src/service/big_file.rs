@@ -287,9 +287,7 @@ impl BigFileService {
         })
     }
 
-    /// 整文流式查找：按块扫，命中给全局行列。
-    ///
-    /// 行列号取块索引里的块首行，不重扫整段；不区分大小写时整块只小写化一次。
+    /// 整文流式查找：按块扫，命中给全局行列（行列号取块索引的块首行，不重扫整段）。
     /// 按整份文件的编码解码，GBK / UTF-16 的位置才对。
     pub fn find(&self, req: &BigFileFindReq) -> AppResult<BigFileFindVO> {
         if req.query.is_empty() {
@@ -461,9 +459,7 @@ impl BigFileService {
     }
 
     /// 顺序扫描建索引。块边界落在换行字节上；扫描途中检查取消位。
-    ///
-    /// 找换行走 `memchr` / `memmem`（SIMD）。UTF-16 的换行是两字节序列，
-    /// 跨读缓冲区时留尾巴接续，不切坏码元。
+    /// 找换行走 `memchr`（SIMD）；UTF-16 的换行是两字节，跨缓冲区留尾巴接续。
     fn scan(
         &self,
         path: &Path,

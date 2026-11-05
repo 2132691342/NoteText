@@ -23,6 +23,8 @@ pub struct TableOpenReq {
     pub encoding: Option<String>,
     /// 指定分隔符；`None` = 按前若干行嗅探。
     pub delimiter: Option<String>,
+    /// 覆盖表头判定；`None` = 按启发式。启发式把「首行全是文本」的文件判成表头，用户可以纠正。
+    pub has_header: Option<bool>,
 }
 
 /// 表格元信息：形状与规模，不含任何一行正文。

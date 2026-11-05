@@ -4,9 +4,9 @@
 <template>
   <div class="nt-sheet">
     <div class="nt-sheet-bar">
-      <ElButton size="small" :disabled="!hasHeader || saving" @click="toggleHeader">
+      <ElButton size="small" :disabled="loading || saving" @click="toggleHeader">
         <NtIcon name="list" size="sm" />
-        <span class="nt-btn-text">{{ t('sheet.showHeader') }}</span>
+        <span class="nt-btn-text">{{ hasHeader ? t('sheet.headerOff') : t('sheet.headerOn') }}</span>
       </ElButton>
       <ElButton size="small" :disabled="!selectedRow || saving" @click="doInsertRow">
         <NtIcon name="plus" size="sm" />
@@ -92,8 +92,8 @@
         class="nt-sheet-grid"
         :style="{ height: `${scrollHeight}px`, width: `${totalWidth + GUTTER}px` }"
       >
-        <!-- 表头行：sticky 吸顶。列字母行在外，表头值在内，两层都要吸 -->
-        <div v-if="showHeader" class="nt-sheet-header">
+        <!-- 表头行：sticky 吸顶。列字母行在外，表头值行只在首行真是表头时出现 -->
+        <div class="nt-sheet-header">
           <div class="nt-sheet-cols">
             <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
             <div
@@ -106,7 +106,7 @@
             </div>
           </div>
           <!-- 表头值行：has_header 才是真数据，否则这行只是列字母的补充 -->
-          <div class="nt-sheet-cols nt-sheet-datalabels">
+          <div v-if="hasHeader" class="nt-sheet-cols nt-sheet-datalabels">
             <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
             <div
               v-for="c in totalCols"
@@ -230,8 +230,8 @@ const editEl = ref<HTMLInputElement | null>(null)
 const selectedRow = ref<number | null>(null)
 /** 键盘焦点格：方向键与 Tab 的定位锚点。 */
 const focused = ref<{ orig: number; col: number } | null>(null)
-/** 表头显示开关。 */
-const showHeader = ref(true)
+/** 表头判定覆盖：null = 交给后端启发式。切换即按新判定重建索引。 */
+const headerOverride = ref<boolean | null>(null)
 /** 跳行输入。 */
 const gotoInput = ref('')
 const findInput = ref<{ focus: () => void } | null>(null)
@@ -273,6 +273,9 @@ const {
 } = useTableGrid({
   path: pathRef,
   encoding: computed(() => props.tab.encoding),
+  hasHeader: headerOverride,
+  // 表头带高度：一行列字母（24px）+ 1px 分隔线；有表头值行再加 24px。
+  headerOffset: computed(() => (hasHeader.value ? 49 : 25)),
   onMeta: (m: TableMetaVO) => {
     props.tab.encoding = m.encoding
     props.tab.line_ending = m.line_ending as Tab['line_ending']
@@ -528,8 +531,13 @@ function doDeleteRow() {
   syncDirty()
 }
 
+/**
+ * 切换「首行是否表头」：按新判定重建索引。
+ * 表头误判（首行其实是数据）时用户在这里纠正；重建会丢弃未写回的改动。
+ */
 function toggleHeader() {
-  showHeader.value = !showHeader.value
+  headerOverride.value = !hasHeader.value
+  void openGrid()
 }
 
 /** 跳到指定行号（1 基，与行号栏显示一致）。 */
@@ -734,6 +742,13 @@ onMounted(async () => {
       return props.tab.path
     },
     isDirty: () => editCount.value > 0,
+    // 按指定编码重建索引：表格不走全量读，编码切换只能走这条路。
+    reopen: async (enc: string) => {
+      if (props.tab.encoding === enc) return
+      props.tab.encoding = enc
+      headerOverride.value = null
+      await openGrid()
+    },
   })
   window.addEventListener('keydown', onKeyNav)
 })

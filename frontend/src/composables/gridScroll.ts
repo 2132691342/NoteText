@@ -1,6 +1,4 @@
-// 虚拟滚动的坐标系与窗口计算：大表格与大表格工作簿共用。
-// 四个坐标系：逻辑像素（displayRows × ROW_H）、滚动条像素（压缩后的空间）、
-// 视口逻辑位置（scrollTop / scale）、显示下标（删除的行不占位，插入的行占位）。
+// 虚拟滚动的坐标系与窗口计算：大表格与大表格工作簿共用（逻辑像素 / 压缩滚动条像素 / 显示下标）。
 // 空间压缩的理由：Chrome 的元素高度上限约 33,554,428px，1000 万行 × 26px = 2.6 亿 px。
 
 /** 行高：与 CSS 的 --nt-sheet-row-h 必须同值。 */
@@ -37,27 +35,35 @@ export interface GridWindow {
 
 /**
  * 算一次渲染窗口。
+ * `topOffset` 是吸顶表头的高度：表头占据滚动内容顶部，数据行从它下面开始，
+ * 不算上它，前几行数据会被不透明的 sticky 表头盖住（scrollTop=0 时整片不可见）。
  * `windowTop` 必须用滚动条（压缩）坐标：用逻辑坐标会把窗口推出容器外，滚到中途就什么也看不见。
  */
 export function computeGridWindow(
   displayRows: number,
   viewport: number,
   scrollTop: number,
+  topOffset = 0,
 ): GridWindow {
-  const logicalHeight = displayRows * ROW_H
+  // 表头也算进逻辑高度与滚动空间：否则滚到底时最后几行差一个表头的高度够不着。
+  const logicalHeight = displayRows * ROW_H + topOffset
   const maxLogical = Math.max(0, logicalHeight - viewport)
   const scrollHeight = Math.min(logicalHeight, MAX_SCROLL_PX)
   // 压缩比：滚动条像素 → 逻辑像素。
   // 不能用 scrollHeight / logicalHeight：滚动条到底时对应的是 scrollHeight - viewport，那会让底部差一屏。
   const scale = maxLogical <= 0 ? 1 : (scrollHeight - viewport) / maxLogical
+  // 滚动位置钳到浏览器允许的最大值：越界的入参不该把窗口推出容器外。
+  const st =
+    viewport > 0 ? Math.min(scrollTop, Math.max(0, scrollHeight - viewport)) : scrollTop
   const logicalScroll =
-    maxLogical <= 0 ? 0 : Math.min(scrollTop / scale, maxLogical)
-  const firstVisible = Math.floor(logicalScroll / ROW_H)
+    maxLogical <= 0 ? 0 : Math.min(st / scale, maxLogical)
+  // 数据行从表头下面开始：视口顶部落在表头里时第一可见行还是 0。
+  const firstVisible = Math.max(0, Math.floor((logicalScroll - topOffset) / ROW_H))
   const effViewport = viewport > 0 ? viewport : FALLBACK_VIEWPORT
   const windowStart = Math.max(0, firstVisible - OVERSCAN)
   const visible = Math.ceil(effViewport / ROW_H) + OVERSCAN * 2 + 1
   const windowEnd = Math.min(displayRows, windowStart + visible)
-  const windowTop = scrollTop - (firstVisible - windowStart) * ROW_H
+  const windowTop = st - (firstVisible - windowStart) * ROW_H
   return {
     windowStart,
     windowEnd,

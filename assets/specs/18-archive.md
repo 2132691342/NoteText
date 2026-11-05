@@ -37,7 +37,7 @@
 ## 分层
 
 ```
-commands/archive.rs   invoke 入口：同步四件（open / open_entry / preview / formats）+ 长任务九件（提交队列）
+commands/archive.rs   invoke 入口：同步语义四件（open / open_entry / preview / formats）+ 长任务九件（提交队列）
 service/archive/
 ├── mod.rs            ArchiveService：编排入口，事件 sink 注入点
 ├── queue.rs          TaskManager：并发 2、250ms 心跳、暂停 / 取消、事件推发
@@ -45,6 +45,7 @@ service/archive/
 ├── create.rs         7z / zip / tar 系 / 单文件压缩系 / CAB 写入器
 ├── cabinet.rs        CAB 读写（Store / MSZIP 写，Quantum 读；LZX 明确报 9001）
 ├── readonly.rs       RAR / LHA / cpio / ar 的列条目 / 解压 / 单条目预览
+├── parts.rs          分卷链 PartChain：.001/.002 序列拼成单一顺序流（打开 / 解压分卷包都经此）
 ├── extract.rs        解压（条目过滤、覆盖三策略、防穿越）
 ├── list.rs           打开归档：条目表 + 魔数探测 + tar 流识别
 ├── update.rs         追加 / 删除条目（重建式，仅 7z / zip）
@@ -71,10 +72,10 @@ domain/archive*.rs    REQ / VO / 格式枚举 / 任务快照（一个聚合一�
 | 收尾 | 终态时 progress 收敛到 1，速度定格 | 前端不必处理「完成后还在转圈」 |
 
 长任务**只回任务 id**；`CreateArchiveVO` 等结构化结果作为
-`archive:task-finished` 的 `result` 负载到达。同步命令只有三个：
-`open_archive` / `preview_archive_entry` / `get_archive_formats`——
+`archive:task-finished` 的 `result` 负载到达。同步语义命令四个：
+`open_archive` / `open_archive_entry` / `preview_archive_entry` / `get_archive_formats`——
 打开与预览要么快、要么需要立刻把 9002 递回给用户输密码，进队列反而绕。
-前两者标了 `#[tauri::command(async)]`：Tauri 的同步命令在**主线程**执行，
+前三个标了 `#[tauri::command(async)]`：Tauri 的同步命令在**主线程**执行，
 大包列条目 / 固实 7z 预览解整块会把整个窗口冻住；标 async 后仍在 worker
 线程池跑、立刻返回，语义不变（打开失败还是同步报错）。
 
@@ -102,8 +103,8 @@ brotli 没有魔数，`.tar.br` 走扩展名路径后再探 tar，两条路都�
 其余才说「可能不是压缩包、或用了尚未支持的方法」。
 把「实现了没有」和「文件坏了」混成一句话，用户会拿别的工具一开发现文件好好的。
 
-（RAR 现在能读（`unrar-rs`），不再归为「需外部工具」。扩展现有格式时先改这里，
-否则提示会与能力表矛盾。）
+（RAR 由 `unrar-rs` 只读覆盖，含分卷 / 加密 / 恢复卷。扩展现有格式时先改这里的
+专项提示，否则提示会与能力表矛盾。）
 
 ### zip 条目名的旧编码回退
 
@@ -185,8 +186,8 @@ tar 系追加要重写整条流，收益为负。
 
 两层含义分开：**归档分卷**（`CreateArchiveReq.split_to`，压缩完按大小切）
 与**任意文件分卷**（`split_archive_file` / `join_archive_parts`，对任何文件可用）。
-卷名 `.001` 起三数字编号；打开 `.001` 时若存在后续卷，
-`OpenArchiveVO.parts` 把全序列给前端，浏览浮窗的增删解压都落在首卷。
+卷名 `.001` 起三数字编号；打开 `.001` 时整条卷序列经 `parts::PartChain`
+拼成单一归档流，浏览与解压覆盖全序列；追加 / 删除不支持分卷包。
 
 ## 前端
 

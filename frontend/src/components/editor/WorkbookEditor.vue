@@ -217,6 +217,8 @@ const {
   resetEdits,
 } = useSheetGrid({
   path: pathRef,
+  // 表头带高度：列字母行 24px + 1px 分隔线。
+  headerOffset: computed(() => 25),
   onError: (msg) => toast.bad(msg),
 })
 

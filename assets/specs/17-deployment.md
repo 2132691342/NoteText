@@ -98,7 +98,8 @@ release profile 的四项一起决定这个数字，缺一项就回到 27MB：
 | `strip = "symbols"` | 剥符号表 | +7MB |
 | `lto = "fat"` | 跨 crate 内联后死代码才真正可删 | +5MB |
 | `codegen-units = 1` | 单编译单元，LTO 才完整 | 部分抵消上面一条 |
-| `[profile.release.package."*"] opt-level = "z"` | 依赖按体积档编，本 crate 仍用默认档 | +1MB |
+| `opt-level = "s"`（本 crate） | 体积与速度折中，热路径（索引扫描 / 解码）都在本 crate | +2MB 左右 |
+| `[profile.release.package."*"] opt-level = "z"` | 依赖按体积档编 | +1MB |
 | `panic = "unwind"` | **必须保留** | 改成 abort 会多省 1MB，但任意 panic 都会带走整个进程 |
 
 第一次全量 release 编译约 7~8 分钟（LTO 是主要成本）。这个代价只在出包时付一次，

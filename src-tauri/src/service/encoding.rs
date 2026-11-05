@@ -202,7 +202,9 @@ fn loss(bytes: &[u8], enc: &'static Encoding) -> usize {
 /// 调用方一看就知道拿到的是原缓冲区的切片。
 pub fn strip_bom<'a>(bytes: &'a [u8], encoding: &str) -> (bool, &'a [u8]) {
     match encoding {
-        "utf-8-bom" if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) => (true, &bytes[3..]),
+        // utf-8 与 utf-8-bom 都认 BOM：用户强制 utf-8 打开带 BOM 的文件时，
+        // 不剥的话首格多出 U+FEFF。
+        "utf-8" | "utf-8-bom" if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) => (true, &bytes[3..]),
         "utf-16le" if bytes.starts_with(&[0xFF, 0xFE]) => (true, &bytes[2..]),
         "utf-16be" if bytes.starts_with(&[0xFE, 0xFF]) => (true, &bytes[2..]),
         _ => (false, bytes),

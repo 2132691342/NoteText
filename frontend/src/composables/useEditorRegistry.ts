@@ -46,8 +46,7 @@ export function unregister(tabId: number) {
 }
 
 // ---- 纯文本适配器（表格网格这类非 CodeMirror 的可编辑视图） ----
-// 保存链路（saveTabById）只认 getText / 脏标记 / 基线：给它一个 provider，
-// 表格编辑器的保存、另存为、退出确认就能原样复用，不必塞进一条假 CM 实例。
+// 给它一个 provider，保存链路的保存 / 另存为 / 退出确认就能原样复用，不必塞进一条假 CM 实例。
 
 /** 非编辑器正文的读写适配：表格编辑器持有自己的缓冲，这里只暴露两端。 */
 export interface TextProvider {
@@ -60,9 +59,7 @@ const textProviders = new Map<number, TextProvider>()
 const providerBaselines = new Map<number, string>()
 
 // ---- 表格适配器（大表格：正文不在内存里，保存走专用链路） ----
-//
-// 1000 万行的 CSV 没有「整篇正文」这回事：getText 会撑爆内存。
-// 这类标签注册表格适配器，保存时走后端的覆盖层写回（流式重写整个文件）。
+// 1000 万行的 CSV 没有「整篇正文」这回事：这类标签保存时走后端的覆盖层写回。
 
 /** 表格适配器：改动存在覆盖层里，写盘由后端流式完成。 */
 export interface TableProvider {
@@ -72,6 +69,8 @@ export interface TableProvider {
   saveAs(): Promise<string | null>
   /** 当前是否有未保存的改动。 */
   isDirty(): boolean
+  /** 按指定编码重建索引（表格网格专用；文本标签不走这里）。 */
+  reopen?(encoding: string): Promise<void>
 }
 
 const tableProviders = new Map<number, TableProvider>()

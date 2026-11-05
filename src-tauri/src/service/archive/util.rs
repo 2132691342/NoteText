@@ -376,8 +376,7 @@ pub fn copy_with_ctx<R: Read, W: Write>(src: &mut R, dst: &mut W, ctx: &TaskCtx)
 /* ---------------- zip 条目名的旧编码 ---------------- */
 
 /// 解出 zip 条目的显示名：非 UTF-8 名字按旧编码重解。
-/// 回退顺序：UTF-8 能解就用；不能解依次试 GB18030 / Big5 / Shift_JIS / EUC-KR，取第一份不含替换符且 CJK 占比合理的结果。
-/// 「CJK 占比合理」是防线：GB18030 能解码几乎任何字节串，不比对内容就会把 Shift_JIS 名字解成更错的汉字。
+/// 依次试 GB18030 / Big5 / Shift_JIS / EUC-KR，取第一份不含替换符且 CJK 占比合理的结果（GB18030 几乎什么字节都能解，不比对内容会选错）。
 pub fn decode_zip_name(raw: &[u8]) -> String {
     if let Ok(s) = std::str::from_utf8(raw) {
         return s.to_string();

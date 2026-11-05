@@ -29,7 +29,8 @@
 按扩展名查出后去选 CodeMirror 高亮包。两张表**按语言 id 对齐、不按扩展名逐条相等**——
 少数扩展名两边各有归属：`vue` 前端进 vue 高亮包、后端用 html 的注释符（`<!-- -->`）；
 `ps1` 前端进 powershell 高亮包、后端归 shell（注释符同为 `#`）；
-`csproj` 前端当纯文本、后端用 xml 的注释符。改扩展名归属时两边要一起看。
+`csproj` 前端当纯文本、后端用 xml 的注释符；
+`bat` / `cmd` 前端当纯文本、后端归 shell。改扩展名归属时两边要一起看。
 
 **为什么两边各一份**：后端按扩展名判语言用于会话恢复时记 `language` 字段，
 前端按同一张表选 CodeMirror 高亮。合成一份要引入共享模块，
@@ -173,12 +174,12 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 
 | 形态 | 判定 | 容器 |
 |---|---|---|
-| `binary` | 可执行 / 压缩包 / 媒体，或未知扩展名且 `stat.is_binary` | `HexView.vue`（虚拟滚动，只渲染可视区） |
+| `binary` | 可执行 / 媒体，或未知扩展名且 `stat.is_binary`（iso / img 等极少数归档扩展名也落这里，由 Hex 视图兜底） | `HexView.vue`（虚拟滚动，只渲染可视区） |
 | `legacyDoc` | `.doc` `.docx` `.ppt(x)` `.pdf` `.epub` 等无内置渲染器的文档 | `DocPreview.vue` → 「没有内置渲染」卡片 + 外部程序入口 |
-| `archiveLegacy` | `.rar` `.lzh` `.cab` `.iso` 等无内置解压的归档 | `DocPreview.vue` → 「用外部程序解压后再打开」卡片 |
+| `archive` | 压缩包（20 种格式全由压缩子系统处理） | 归档浏览浮窗（specs/18） |
 | `chunked` | 标签带 `chunked` 标记（>512MB 自动分块，或会话恢复时按 `1004` 降级） | `ChunkedViewer.vue`（1MB 块导航，只读 + 单块解锁编辑） |
-| `sheet` 可编辑 | CSV / TSV / JSONL（无大小限制）；XLSX / XLSM / ODS | `SheetEditor.vue`（大表格网格，分页取数）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
-| `sheet` 只读 | XLS 旧格式 | `DocPreview.vue`（表格只读预览） |
+| `sheet` 可编辑 | CSV / TSV / JSONL / NDJSON（无大小限制）；XLSX / XLSM | `SheetEditor.vue`（大表格网格，分页取数）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
+| `sheet` 只读 | XLS 旧格式与 ODS | `DocPreview.vue`（表格只读预览，可另存为 xlsx 后进网格编辑） |
 | `image` | 扩展名表 | `DocPreview.vue`（动态 import 图片预览器） |
 | `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
 | `html` | `.html` `.htm` `.xhtml` | `CodeEditor.vue`（可编辑）+ `DocPreview.vue` 沙箱 iframe 静态预览（`showing_preview`，不执行脚本） |
@@ -191,9 +192,8 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 
 预览器全部动态 `import`：一个只写纯文本的人不该付 xlsx 的钱。
 
-**`archiveLegacy` 已取消**：RAR / LZH / CAB / cpio / ar 现在都由压缩子系统
-原生解压（specs/18），点开压缩包直接进浏览浮窗，不再有「拿别的工具解压」
-的卡片形态。
+**压缩包直接进浏览浮窗**：RAR / LZH / CAB / cpio / ar 都由压缩子系统
+原生处理（specs/18），点开压缩包就是浏览浮窗，不存在「拿别的工具解压」的中间形态。
 
 **不做办公文档渲染**：Word / PDF / PPT / EPUB 的内嵌渲染器体积 1~2MB 且还原度
 有限，半成品预览不如一句明确的「用系统程序打开」。纯文本内容仍可在 Hex 视图查看。

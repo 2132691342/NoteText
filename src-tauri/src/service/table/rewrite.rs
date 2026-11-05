@@ -192,9 +192,8 @@ pub fn save(req: &TableSaveReq, index: &TableIndex) -> AppResult<TableSaveVO> {
             scanner.feed(&pending[consumed..], base, &mut ends);
             // 偏移全部换算完再动缓冲：扫描与压缩混在一轮里会让后续偏移失真。
             let mut spans: Vec<(usize, usize)> = Vec::with_capacity(ends.len());
-            // prev_end：上一条记录的结束偏移。
-            // 扫描器给的是绝对偏移，本轮的增量要减去上一条的结束点，
-            // 否则第二条起的跨度会变成「累计值」而不是「本条长度」。
+            // prev_end：上一条记录的结束偏移。扫描器给的是绝对偏移，
+            // 本轮的增量要减去它，否则跨度会变成「累计值」而不是「本条长度」。
             let mut prev_end = base;
             for e in ends.drain(..) {
                 let len = (e.end - prev_end) as usize;

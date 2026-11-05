@@ -8,9 +8,11 @@ NoteText 的快捷键可以在「设置 → 快捷键」里改。下面是默认
 |---|---|
 | `Ctrl+N` | 新建标签 |
 | `Ctrl+O` | 打开文件 |
+| `Ctrl+Shift+O` | 最近文件 |
 | `Ctrl+K` | 打开文件夹 |
 | `Ctrl+S` | 保存 |
 | `Ctrl+Shift+S` | 另存为 |
+| `Ctrl+Alt+S` | 保存全部 |
 | `Ctrl+W` | 关闭标签 |
 
 ## 编辑
@@ -28,8 +30,15 @@ NoteText 的快捷键可以在「设置 → 快捷键」里改。下面是默认
 | `Ctrl+D` | 复制当前行 |
 | `Ctrl+Shift+K` | 删除当前行 |
 | `Alt+↑` / `Alt+↓` | 上/下移动当前行 |
+| `Ctrl+]` / `Ctrl+[` | 增加缩进 / 减少缩进 |
 | `Ctrl+/` | 切换行注释 |
 | `Ctrl+Shift+U` / `Ctrl+Shift+G` | 转为大写 / 小写 |
+| `Ctrl+Shift+\` | 括号配对跳转 |
+| `Alt+←` / `Alt+→` | 上一个 / 下一个位置（光标历史） |
+| `Alt+Z` | 自动换行开关 |
+| `Alt+C` | 列编辑模式 |
+| `Ctrl+Shift+M` | 录制 / 停止宏 |
+| `Ctrl+Shift+P` | 回放宏 |
 
 ## 视图
 
@@ -38,9 +47,11 @@ NoteText 的快捷键可以在「设置 → 快捷键」里改。下面是默认
 | `Ctrl+=` / `Ctrl+-` | 放大 / 缩小 |
 | `Ctrl+0` | 重置缩放 |
 | `Ctrl+B` | 显示/隐藏侧栏 |
+| `Ctrl+Alt+B` | 显示 / 隐藏状态栏 |
 | `Ctrl+\` | 分屏 |
 | `F11` | 全屏 |
 | `Ctrl+P` | 打印 |
+| `Ctrl+,` | 设置 |
 
 ## 工具
 
@@ -56,6 +67,9 @@ NoteText 的快捷键可以在「设置 → 快捷键」里改。下面是默认
 | `Ctrl+Shift+L` | 行编辑 |
 | `Ctrl+Shift+C` | 格式转换（JSON/YAML/TOML/XML） |
 | `Ctrl+Shift+V` | 剪贴板历史 |
+| `Ctrl+Alt+H` | 十六进制查看 |
+| `Ctrl+Shift+B` | 批量查找替换 |
+| `Ctrl+Alt+R` | 批量重命名 |
 | `F2` / `Shift+F2` | 切换书签 / 下一个书签 |
 | `F1` | 用户手册 |
 

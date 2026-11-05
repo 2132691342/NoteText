@@ -31,7 +31,16 @@ pub async fn table_open(
         );
     });
     let delim = req.delimiter.as_deref().and_then(|d| d.chars().next());
-    let blocking = move || svc.open(&req.path, req.encoding.as_deref(), delim, Some(progress));
+    let has_header = req.has_header;
+    let blocking = move || {
+        svc.open(
+            &req.path,
+            req.encoding.as_deref(),
+            delim,
+            has_header,
+            Some(progress),
+        )
+    };
     tauri::async_runtime::spawn_blocking(blocking)
         .await
         .map_err(|e| AppError::new(codes::IO_FAILED, format!("索引任务异常退出：{e}")))?

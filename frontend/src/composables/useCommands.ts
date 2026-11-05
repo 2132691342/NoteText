@@ -9,7 +9,7 @@ import { useToastStore } from '@/stores/toast'
 import { useI18n } from 'vue-i18n'
 import { setLocale } from '@/i18n'
 import { api, normalizeError } from '@/api'
-import { getText, getSelection, focusedTabId, commitBaseline, focusTableFind } from '@/composables/useEditorRegistry'
+import { getText, getSelection, focusedTabId, commitBaseline, focusTableFind, getTableProvider } from '@/composables/useEditorRegistry'
 import {
   doUndo,
   doRedo,
@@ -765,7 +765,7 @@ export function registerCommands() {
       id: 'tree.reveal',
       group: 'file',
       labelKey: 'menu.revealInTree',
-      key: 'Control+Shift+E',
+      // 不设默认键：Ctrl+Shift+E 已归属编码转换（stores/commands.ts 的 DEFAULT_KEYBINDINGS）。
       enabled: () => !!tree.root && !!editor.active?.path,
       run: () => {
         const p = editor.active?.path
@@ -989,6 +989,17 @@ export function registerCommands() {
           current: tab.encoding,
         })
         if (!picked || picked === tab.encoding) return
+        // 表格网格不走全量读：编码切换 = 按新编码重建索引（SheetEditor 注册的 reopen）。
+        const tableReopen = getTableProvider(tab.id)?.reopen
+        if (tableReopen) {
+          try {
+            await tableReopen(picked)
+            toast.ok(t('toast.encodingChanged', { encoding: picked }))
+          } catch (e) {
+            toast.bad(normalizeError(e).message)
+          }
+          return
+        }
         await reopenWithEncoding(tab.id, picked)
       },
     },

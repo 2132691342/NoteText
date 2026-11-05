@@ -16,7 +16,8 @@ read(path, mode)
   ├─ stat：不存在 → FILE_NOT_FOUND；超过上限 → FILE_TOO_LARGE（提示用 head）
   ├─ 按 mode 取字节（Full / Head / Range）
   ├─ encoding::detect(&bytes)      BOM → UTF-16 无 BOM → UTF-8 → 候选编码打分
-  ├─ encoding::strip_bom           记录 has_bom，剥掉再解
+  ├─ encoding::strip_bom           记录 has_bom，剥掉再解（utf-8 与 utf-8-bom 都剥，
+  │                                强制 utf-8 打开带 BOM 文件时防首格多出 U+FEFF）
   ├─ encoding::decode
   └─ normalize_newlines            行尾归一成 LF 供编辑器算行列
 ```
@@ -62,10 +63,9 @@ Head 模式保留给截断重载等内部场景；分块模式的块索引、逐
 | 小地图 | `doc.toString().split('
 ')`（每次滚动复制全文） | `doc.line(i)` 按需抽样读行 |
 
-这三处都曾是「打开过大文件之后整机发卡」的直接来源：一篇 7MB 的 JSON
-每敲一个字就要复制 7MB，滚动一次小地图又要复制一次。三类消费方现在都
-只做与文件体积无关的工作——行数走 `doc.lines`，统计攒到停手后，小地图按
-`doc.line(i)` 抽样。
+三类消费方都只做与文件体积无关的工作：行数走 `doc.lines`（O(1) 计数），
+统计攒到停手 600ms 后一次，小地图按 `doc.line(i)` 抽样。
+这样打开大文件后打字与滚动都不触发整篇复制。
 
 **分块视图的三条保护**：`tab.chunked` 为真时整篇写回被拒绝（会把块内容当成全文覆盖），
 自动保存跳过它，状态栏标「分块只读」。用户要落盘只能走「编辑本块」→ `big_file_write_block`，
@@ -89,8 +89,8 @@ write(path, text, encoding?, line_ending?, bom?)
 rename 失败时清掉临时文件，否则同目录会留下一堆 `.xxx.notetext-tmp`。
 
 **保存按「打开时的编码 + 行尾 + BOM」写回**：用户没主动改编码时，
-一次保存不该把整个文件从 GBK 转成 UTF-8。这是编辑器最招人骂的一类 bug——
-同事那边 diff 出几千行。
+一次保存不该把整个文件从 GBK 转成 UTF-8——一次无关的保存就让
+版本控制里出现整文件 diff。
 
 ### 编码探测
 
@@ -101,6 +101,7 @@ detect(bytes) -> (encoding, low_confidence)
   3) UTF-16 无 BOM：NUL 占比 ≥ 20% 且几乎全落同一奇偶位 → utf-16le / utf-16be
   4) UTF-8（末尾截断也算）→ utf-8
   5) 候选编码按解码损失打分：gb18030 → big5 → euc-kr → shift_jis → windows-1252
+     （打分只在头部 512KB 样本上做：全量 5×解码是 GB 级文件打开链路里最贵的一段）
   6) 损失全不为 0 → 取最小者 + low_confidence = true
 ```
 
@@ -134,25 +135,8 @@ detect(bytes) -> (encoding, low_confidence)
 **表里没有的字符解成 U+FFFD / 编成 `?`**：宁可显式问号，不要静默丢字。
 `had_errors` 时记一条 warn 日志，便于排查「为什么存回去丢了几个字」。
 
-### 表格预览（CSV / TSV）
-
-```
-read_table_preview(path, encoding?) -> TablePreviewVO
-  ├─ 读前 8MB（TABLE_HEAD_BYTES），超出部分只统计行数
-  ├─ detect + decode：编码判定与文本链路同一条，不让渲染层自己猜
-  ├─ 截断时丢掉最后一行（半条记录比少一行更误导）
-  ├─ sniff_delimiter：前 10 行里 , / \t / ; / | 出现最多的那个
-  ├─ parse_delimited：引号包裹、"" 转义、字段内分隔符与换行
-  └─ total_rows：尾部按换行统计（最多再扫 128MB，超了记 0 = 未知）
-```
-
-**为什么表格预览走后端切行**：交给前端的表格库要先 `read_binary`（20MB 上限）、
-把 base64 解成字节再按 UTF-8 猜编码。
-大表被上限挡掉、GBK 表整列乱码——用户看到「文件太大打不开」与
-「中文全是乱码」两个症状，根因是同一条链路。
-
-`rows` 上限 5000 行、前端再按 2000 行渲染：再多也没人逐行看，
-但 `total_rows` 仍给出来，用户知道表有多大。
+CSV / TSV / JSONL 与 XLSX 不走本节链路：前者走 `service/table` 的记录对齐
+索引 + 分页取数，后者走 `service/sheet` 的单元格补丁，见 **specs/19**。
 
 ### 目录树
 
@@ -171,8 +155,8 @@ read_dir(dir)
 恒为 false，真正的判定在打开具体文件时由 `stat_file` 做一次。
 
 **外部变更只刷变化路径的父目录**：`fs:changed` 带来的是具体路径，
-`refreshPaths` 按父目录分组重读，不再整棵工作目录递归一遍。
-原先的无条件递归会把「保存一次」变成「几十个目录重新 read_dir」。
+`refreshPaths` 按父目录分组重读，不做整棵工作目录递归——
+无条件递归会把「保存一次」变成「几十个目录重新 read_dir」。
 
 **忽略规则来自配置**：`FileConfig.ignore_patterns` 默认
 `node_modules` / `.git` / `target` / `dist`。匹配按名字精确相等，
@@ -201,8 +185,8 @@ watch_dir(dir, on_change)
 - **文本与二进制都走 invoke**：文本出参是 `String`；二进制的 `Vec<u8>` 会
   序列化成 `number[]`（体积约 4 倍），所以 `read_binary` 出参是 base64，
   并带 20MB 上限。图片 / Hex 都用它——不给渲染层 fs 插件权限；
-- **CSV / TSV 不走 `read_binary`**：表格预览走 `read_table_preview`，
-  按前 8MB 切行，几十 MB 的导出表也能开，且编码由后端判定；
+- **CSV / TSV / JSONL 也不走 `read_binary`**：走 `table_open` 记录对齐索引 +
+  分页取数，几十 MB 的导出表也能开，且编码由后端判定（样本 512KB）；
 - 空文件按 UTF-8，`has_bom = false`，`line_ending = "lf"`；
 - `stat_file` 的 `is_binary` 判据是「前 8KB 含 NUL」，但带 BOM 的 UTF-16
   直接判文本（`FF FE` / `FE FF` 开头）——否则满篇 NUL 会让它被当成二进制；

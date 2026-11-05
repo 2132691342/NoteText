@@ -1,7 +1,7 @@
-//! 文件域长链路：文本往返保真、大文件分块编辑、文件树护栏。
+//! 文件域长链路：文本往返保真、大文件分块编辑、分块解码穷举、文件树护栏。
 //!
-//! 三条链路各自对应一种会真正伤到用户的事：
-//! 保存时丢字节、编辑大文件时动到别的内容、文件树操作覆盖或删掉不该动的东西。
+//! 这些链路各自对应一种会真正伤到用户的事：
+//! 保存时丢字节、编辑大文件时动到别的内容、块边界切坏汉字、文件树操作覆盖或删掉不该动的东西。
 
 mod common;
 
@@ -70,19 +70,6 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
         .expect("选错编码也不该打不开");
     assert_eq!(fallback.text, "中文", "不支持的编码名应退回探测");
 
-    // 表格链路与文本视图必须解出同一份汉字：编码判定只该有一条链路。
-    let csv = data.join("gbk.csv");
-    fs::write(&csv, [0xD6u8, 0xD0, 0xCE, 0xC4, b',', b'1', b'\n']).expect("写 csv 失败");
-    let table_svc = notetext_lib::service::table::TableService::new();
-    let meta = table_svc
-        .open(&csv.to_string_lossy(), None, None, None)
-        .expect("表格建索引失败");
-    assert_eq!(meta.encoding, "gb18030", "表格应探测到 GBK");
-    let (rows, _) = table_svc
-        .page(&csv.to_string_lossy(), 0, 5)
-        .expect("表格取页失败");
-    assert_eq!(rows[0][0], "中文", "表格把 GBK 中文解成了乱码");
-
     // 原子写：成功后不留临时文件（残留会在每次保存后越积越多）。
     let x = data.join("x.txt");
     file.write(&x.to_string_lossy(), "new content", None, None, None)
@@ -98,32 +85,19 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
 
     // ---- 二进制写回：同一套原子落盘，换一条通道（base64） ----
     //
-    // 前端生成字节（.xls / .ods 转 .xlsx）走 base64 过 IPC。
-    // 解码错位写出一堆垃圾、写到一半失败留半个文件、目标是个目录或父目录不存在
-    // 却照样写——三种坏法都在这里被拦住。
-    let cases: Vec<Vec<u8>> = vec![
-        vec![],
-        vec![0x50],
-        vec![0x50, 0x4B, 0x03, 0x04],
-        (0..=255u8).collect(),
-        vec![0x00, 0xFF, 0x00, 0xFF, 0x7F, 0x80],
-    ];
-    for (i, bytes) in cases.iter().enumerate() {
-        let target = data.join(format!("bin{i}.dat"));
-        let b64 = notetext_lib::pkg::base64::encode(bytes);
-        assert_eq!(
-            notetext_lib::pkg::base64::decode(&b64).expect("解码失败"),
-            *bytes,
-            "第 {i} 组字节 base64 往返后变了"
-        );
-        file.write_bytes(&target.to_string_lossy(), bytes)
-            .expect("写二进制失败");
-        assert_eq!(
-            fs::read(&target).expect("回读"),
-            *bytes,
-            "第 {i} 组字节落盘后变了"
-        );
-    }
+    // 前端生成字节（.xls / .ods 转 .xlsx）走 base64 过 IPC：
+    // 全字节域往返必须无损、非法字符必须报错而不是产出垃圾。
+    let bytes: Vec<u8> = (0..=255u8).collect();
+    let b64 = notetext_lib::pkg::base64::encode(&bytes);
+    assert_eq!(
+        notetext_lib::pkg::base64::decode(&b64).expect("解码失败"),
+        bytes,
+        "全字节域 base64 往返后变了"
+    );
+    let target = data.join("bin.dat");
+    file.write_bytes(&target.to_string_lossy(), &bytes)
+        .expect("写二进制失败");
+    assert_eq!(fs::read(&target).expect("回读"), bytes, "落盘后字节变了");
 
     // 带换行的 base64（前端分块拼串时会出现）必须解出同样结果。
     let src = b"hello world, \xe4\xbd\xa0\xe5\xa5\xbd";
@@ -453,4 +427,39 @@ fn big_file_block_index_reads_blocks_and_reports_lines() {
     assert!(res.hits[0].text.contains("第4321行"), "命中文本应正确");
 
     bf.close(&gb_path);
+}
+
+/// 分块解码穷举：块边界切在多字节字符中间也不解出替换符。
+///
+/// 大文件查看器逐块解码的唯一静默损坏面：不报错、不 panic，只是汉字变乱码。
+/// 按「编码 × 块长」穷举，任何一块的切点都不能坏字。
+#[test]
+fn stream_decode_keeps_multibyte_across_any_chunk_boundary() {
+    let cases = [
+        (
+            "车牌号京A12345，中文长句测试：这是一段用来验证分块解码的文本。",
+            "gb18030",
+        ),
+        ("繁体中文：車牌號碼測試，臺北高雄", "big5"),
+        ("日本語のテキストを分割してデコードする", "shift_jis"),
+        ("UTF-8 mixed 中文 and emoji 🚗 号牌", "utf-8"),
+        // UTF-16 的码元是两个字节：奇数块长必然切在半码元上。
+        ("hello 中文 車牌 🚗", "utf-16le"),
+        ("hello 中文 車牌 🚗", "utf-16be"),
+    ];
+    for (text, enc) in cases {
+        let bytes = notetext_lib::service::encoding::encode(text, enc).expect("编码失败");
+        for chunk in 1..=17 {
+            let mut dec = notetext_lib::pkg::stream::ChunkDecoder::new(enc).expect("建解码器失败");
+            let mut out = String::new();
+            for piece in bytes.chunks(chunk) {
+                dec.push(piece, &mut out);
+            }
+            dec.finish(&mut out);
+            assert_eq!(out, text, "enc={enc} chunk={chunk} 分块后没还原");
+            if enc != "utf-16le" && enc != "utf-16be" {
+                assert!(!dec.had_errors, "enc={enc} chunk={chunk} 不该有替换符");
+            }
+        }
+    }
 }

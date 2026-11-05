@@ -1,5 +1,4 @@
-// 大表格网格：分页取数 + 虚拟滚动（空间压缩）+ 覆盖层编辑。
-// 坐标系与窗口计算在 gridScroll.ts。
+// 大表格网格：分页取数 + 虚拟滚动（空间压缩）+ 覆盖层编辑；坐标系在 gridScroll.ts。
 // 关键不变量：**滚动容器的 DOM 必须挂到 scrollHost 上**——量不到视口时窗口只剩几行。
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { api, normalizeError } from '@/api'
@@ -11,9 +10,9 @@ export { ROW_H }
 /** 一页多少行：一次 IPC 取一屏的十几倍。 */
 const PAGE_SIZE = 500
 /** 预取页数：滚到某页之前先把它前后几页取来。 */
-const PREFETCH_PAGES = 2
-/** 页缓存上限：滚动很远时丢最早取的页，避免开着大表吃满内存。 */
-const MAX_CACHED_PAGES = 48
+const PREFETCH_PAGES = 3
+/** 页缓存上限：滚动很远时丢最久没用过的页（LRU），避免开着大表吃满内存。 */
+const MAX_CACHED_PAGES = 80
 /** 列宽：初值、下限、上限（像素）。 */
 export const COL_W_DEFAULT = 160
 const COL_W_MIN = 56
@@ -21,10 +20,14 @@ const COL_W_MAX = 640
 
 export interface TableGridOptions {
   path: Ref<string>
-  /** 编码：不指定时由后端探测。 */
+  /** 编码：`'auto'` 或不指定时由后端探测。 */
   encoding?: Ref<string | undefined>
   /** 分隔符：不指定时由后端嗅探。 */
   delimiter?: Ref<string | undefined>
+  /** 表头判定覆盖；`null` = 交给后端启发式。 */
+  hasHeader?: Ref<boolean | null>
+  /** 吸顶表头的高度（像素）：数据行从它下面开始，不算会把前几行盖住。 */
+  headerOffset?: Ref<number>
   /** 索引建好后回调（供状态栏刷新读数）。 */
   onMeta?: (meta: TableMetaVO) => void
   /** 出错回调。 */
@@ -149,7 +152,12 @@ export function useTableGrid(opts: TableGridOptions) {
   const scrollHeight = computed(() => Math.min(logicalHeight.value, MAX_SCROLL_PX))
   /** 渲染窗口：一次算完，滚动坐标与窗口位置同源。 */
   const grid = computed(() =>
-    computeGridWindow(displayRows.value, viewport.value, scrollTop.value),
+    computeGridWindow(
+      displayRows.value,
+      viewport.value,
+      scrollTop.value,
+      opts.headerOffset?.value ?? 0,
+    ),
   )
   /** 压缩比：滚动条像素 → 逻辑像素。 */
   const scale = computed(() => grid.value.scale)
@@ -309,10 +317,17 @@ export function useTableGrid(opts: TableGridOptions) {
 
   // ---- 取数 ----
 
-  /** 取一页（已在缓存里就跳过）。 */
+  /** 取一页（已在缓存里就跳过，命中时顺手把它挪到 LRU 队尾）。 */
   async function ensurePage(pageIdx: number) {
     if (!meta.value || pending.has(pageIdx)) return
-    if (pages.value.has(pageIdx)) return
+    if (pages.value.has(pageIdx)) {
+      const at = pageOrder.indexOf(pageIdx)
+      if (at >= 0 && at !== pageOrder.length - 1) {
+        pageOrder.splice(at, 1)
+        pageOrder.push(pageIdx)
+      }
+      return
+    }
     if (pageIdx < 0 || pageIdx * PAGE_SIZE >= totalRows.value) return
     pending.add(pageIdx)
     try {
@@ -323,8 +338,7 @@ export function useTableGrid(opts: TableGridOptions) {
       })
       const next = new Map(pages.value)
       next.set(pageIdx, res.rows)
-      // 页缓存封顶：先丢最早取的（当前窗口附近的页刚被 ensureVisiblePages 续上，
-      // 顺序里排在后面，不会立刻被丢）。
+      // 页缓存封顶：丢最久没用过的（LRU）。来回拖动时刚看过的页不会被误丢。
       pageOrder.push(pageIdx)
       while (pageOrder.length > MAX_CACHED_PAGES) {
         const old = pageOrder.shift()
@@ -365,13 +379,36 @@ export function useTableGrid(opts: TableGridOptions) {
 
   // ---- 滚动 ----
 
+  // rAF 合帧：滚轮与滚动条事件一帧之内只应用最新状态。
+  // 不合并的话触控板每秒几十次事件就是几十次全窗口 DOM patch，渲染跟不上拖动速度。
+  let scrollRaf = 0
+  let wheelRaf = 0
+  let wheelAcc = 0
+
+  function scheduleScroll(apply: () => void) {
+    if (scrollRaf) return
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0
+      apply()
+    })
+  }
+
   /** 滚轮：按行步进。压缩后像素步进不精确（3 格滚轮 = 几十行），所以自己算。 */
   function onWheel(e: WheelEvent) {
     if (!meta.value || displayRows.value <= 0) return
     e.preventDefault()
     const dir = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0
     if (dir === 0) return
-    scrollToLogical(logicalScroll.value + dir * 3 * ROW_H)
+    // 一帧内的多次滚轮先累积，帧边界一次应用：快速滚动不失真也不掉帧。
+    wheelAcc += dir * 3 * ROW_H
+    if (!wheelRaf) {
+      wheelRaf = requestAnimationFrame(() => {
+        wheelRaf = 0
+        const d = wheelAcc
+        wheelAcc = 0
+        if (d !== 0) scrollToLogical(logicalScroll.value + d)
+      })
+    }
   }
 
   /** 设到某个逻辑位置（并同步滚动条）。 */
@@ -415,12 +452,19 @@ export function useTableGrid(opts: TableGridOptions) {
     }
   }
 
-  /** 滚动条被拖动：按比例换算回逻辑位置。 */
+  /** 滚动条被拖动：按比例换算回逻辑位置（rAF 合帧）。 */
   function onScroll() {
-    const host = scrollHost.value
-    if (!host || !meta.value) return
-    scrollTop.value = host.scrollTop
+    scheduleScroll(() => {
+      const host = scrollHost.value
+      if (!host || !meta.value) return
+      scrollTop.value = host.scrollTop
+    })
   }
+
+  onBeforeUnmount(() => {
+    if (scrollRaf) cancelAnimationFrame(scrollRaf)
+    if (wheelRaf) cancelAnimationFrame(wheelRaf)
+  })
 
   watch([windowStart, windowEnd, version], () => {
     ensureVisiblePages()
@@ -435,10 +479,14 @@ export function useTableGrid(opts: TableGridOptions) {
     loading.value = true
     error.value = ''
     try {
+      // 编码：`'auto'` 或未指定时交后端探测——前端预设 'utf-8' 会让探测永远不生效，
+      // GB18030 的 CSV 会整表解成替换符。
+      const enc = opts.encoding?.value
       const m = await api.table.open({
         path,
-        encoding: opts.encoding?.value ?? null,
+        encoding: enc && enc !== 'auto' ? enc : null,
         delimiter: opts.delimiter?.value ?? null,
+        has_header: opts.hasHeader?.value ?? null,
       })
       meta.value = m
       pages.value = new Map()

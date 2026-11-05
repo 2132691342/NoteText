@@ -1,6 +1,5 @@
-// XLSX 工作表网格：分页取数 + 虚拟滚动（空间压缩）+ 单元格补丁。
-// 与大表格（CSV）同构，但单元格的值是领域对象（公式 / 数值 / 布尔），
-// 保存走后端的「原地改 XML」：只重写命中的单元格，其余部件字节级原样。
+// XLSX 工作表网格：分页取数 + 虚拟滚动（空间压缩）+ 单元格补丁；保存走后端「原地改 XML」。
+// 与大表格（CSV）同构，但单元格的值是领域对象（公式 / 数值 / 布尔）。
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { api, normalizeError } from '@/api'
 import { computeGridWindow, FALLBACK_VIEWPORT, MAX_SCROLL_PX, ROW_H } from '@/composables/gridScroll'
@@ -10,9 +9,9 @@ export { ROW_H }
 /** 一页多少行。 */
 const PAGE_SIZE = 500
 /** 预取页数。 */
-const PREFETCH_PAGES = 2
-/** 页缓存上限：丢最早取的页，开着大工作簿不无限吃内存。 */
-const MAX_CACHED_PAGES = 48
+const PREFETCH_PAGES = 3
+/** 页缓存上限：丢最久没用过的页（LRU），开着大工作簿不无限吃内存。 */
+const MAX_CACHED_PAGES = 80
 /** 列宽：默认、下限、上限（像素）。 */
 const COL_W_DEFAULT = 120
 const COL_W_MIN = 56
@@ -20,6 +19,8 @@ const COL_W_MAX = 640
 
 export interface SheetGridOptions {
   path: Ref<string>
+  /** 吸顶表头的高度（像素）：数据行从它下面开始，不算会把前几行盖住。 */
+  headerOffset?: Ref<number>
   onError?: (message: string) => void
   onMeta?: (info: WorkbookInfoVO) => void
 }
@@ -96,7 +97,12 @@ export function useSheetGrid(opts: SheetGridOptions) {
   const scrollHeight = computed(() => Math.min(logicalHeight.value, MAX_SCROLL_PX))
   /** 渲染窗口：一次算完，滚动坐标与窗口位置同源。 */
   const grid = computed(() =>
-    computeGridWindow(totalRows.value, viewport.value, scrollTop.value),
+    computeGridWindow(
+      totalRows.value,
+      viewport.value,
+      scrollTop.value,
+      opts.headerOffset?.value ?? 0,
+    ),
   )
   const scale = computed(() => grid.value.scale)
   const logicalScroll = computed(() => grid.value.logicalScroll)
@@ -112,7 +118,14 @@ export function useSheetGrid(opts: SheetGridOptions) {
 
   async function ensurePage(pageIdx: number) {
     if (!info.value || inflight.has(pageIdx)) return
-    if (pages.value.has(pageIdx)) return
+    if (pages.value.has(pageIdx)) {
+      const at = pageOrder.indexOf(pageIdx)
+      if (at >= 0 && at !== pageOrder.length - 1) {
+        pageOrder.splice(at, 1)
+        pageOrder.push(pageIdx)
+      }
+      return
+    }
     if (pageIdx < 0 || pageIdx * PAGE_SIZE >= totalRows.value) return
     inflight.add(pageIdx)
     try {
@@ -124,7 +137,7 @@ export function useSheetGrid(opts: SheetGridOptions) {
       })
       const next = new Map(pages.value)
       next.set(pageIdx, res.rows)
-      // 页缓存封顶：丢最早取的页。
+      // 页缓存封顶：丢最久没用过的页（LRU）。
       pageOrder.push(pageIdx)
       while (pageOrder.length > MAX_CACHED_PAGES) {
         const old = pageOrder.shift()
@@ -209,12 +222,25 @@ export function useSheetGrid(opts: SheetGridOptions) {
 
   // ---- 滚动 ----
 
+  // 滚轮与滚动条事件 rAF 合帧：一帧之内只应用最新状态（与大表格网格同一档）。
+  let scrollRaf = 0
+  let wheelRaf = 0
+  let wheelAcc = 0
+
   function onWheel(e: WheelEvent) {
     if (!info.value || totalRows.value <= 0) return
     e.preventDefault()
     const dir = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0
     if (dir === 0) return
-    scrollToLogical(logicalScroll.value + dir * 3 * ROW_H)
+    wheelAcc += dir * 3 * ROW_H
+    if (!wheelRaf) {
+      wheelRaf = requestAnimationFrame(() => {
+        wheelRaf = 0
+        const d = wheelAcc
+        wheelAcc = 0
+        if (d !== 0) scrollToLogical(logicalScroll.value + d)
+      })
+    }
   }
 
   function scrollToLogical(target: number) {
@@ -227,14 +253,21 @@ export function useSheetGrid(opts: SheetGridOptions) {
 
   /** 滚到某行并尽量居中。 */
   function scrollToRow(row: number) {
-    const center = row * ROW_H - effectiveViewport.value / 2 + ROW_H / 2
+    const header = opts.headerOffset?.value ?? 0
+    const vp = Math.max(ROW_H, effectiveViewport.value - header)
+    const center = row * ROW_H - vp / 2 + ROW_H / 2
     scrollToLogical(Math.max(0, center))
   }
 
+  /** 滚动条被拖动（rAF 合帧）。 */
   function onScroll() {
-    const host = scrollHost.value
-    if (!host || !info.value) return
-    scrollTop.value = host.scrollTop
+    if (scrollRaf) return
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0
+      const host = scrollHost.value
+      if (!host || !info.value) return
+      scrollTop.value = host.scrollTop
+    })
   }
 
   // ---- 打开 ----
@@ -301,7 +334,11 @@ export function useSheetGrid(opts: SheetGridOptions) {
     }
   })
 
-  onBeforeUnmount(() => observer?.disconnect())
+  onBeforeUnmount(() => {
+    observer?.disconnect()
+    if (scrollRaf) cancelAnimationFrame(scrollRaf)
+    if (wheelRaf) cancelAnimationFrame(wheelRaf)
+  })
 
   return {
     info,

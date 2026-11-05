@@ -1,11 +1,14 @@
 //! 表格服务：XLSX 的打开、分页读取、查找与写回。
 //! 分三块：容器（zip 部件定位）、流式解析（sheet XML 拉模式）、写回（原地改 XML）。
+//! 工作簿按路径缓存：文件字节、共享串表、行偏移采样与最近用的那张表的解压 XML——
+//! 分页不再每页重读文件重扫全表。
 
 pub mod stream;
 
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use crate::domain::sheet::{
     CellEdit, CellValue, SheetCell, SheetFindReq, SheetFindVO, SheetHit, SheetInfoVO, SheetPageReq,
@@ -19,8 +22,17 @@ const MAX_CELLS_PER_SHEET: usize = 200_000;
 const MAX_ROWS: u32 = 1_000_000;
 /// 查找结果的条数上限。
 const MAX_HITS: usize = 5000;
+/// 行偏移采样步长：每 100 行记一个 `<row` 的字节偏移，分页据此跳过目标窗口之前的字节。
+const ROW_SAMPLE_STEP: usize = 100;
+/// 缓存里保留解压 XML 的大小上限：超过就每页现解压（有字节缓存兜底，不至于重读磁盘）。
+const MAX_RETAINED_XML: usize = 256 * 1024 * 1024;
+/// 工作簿缓存的条目上限：超出时整个清空，桌面场景不会同时开着很多大工作簿。
+const MAX_CACHED_WORKBOOKS: usize = 8;
 
-pub struct SheetService;
+pub struct SheetService {
+    /// path → 工作簿缓存。
+    caches: Mutex<HashMap<String, Arc<CachedWorkbook>>>,
+}
 
 impl Default for SheetService {
     fn default() -> Self {
@@ -28,29 +40,41 @@ impl Default for SheetService {
     }
 }
 
+/// 一份工作簿的缓存。zip 条目是压缩流，没法在解压数据里 seek；
+/// 分页要快就得把「解压后的 sheet XML」留在内存里，再配行偏移采样跳过目标窗口之前的字节。
+struct CachedWorkbook {
+    /// 打开时的修改时间：每次访问比对，变了就整份重建。
+    mtime_ms: i64,
+    size: u64,
+    bytes: Arc<Vec<u8>>,
+    shared: Arc<Vec<String>>,
+    sheets_meta: Vec<SheetMeta>,
+    /// sheet 下标 → 行偏移索引。
+    indexes: Mutex<HashMap<usize, Arc<SheetIndex>>>,
+    /// 最近用的一张表的解压 XML：切换工作表时替换，不按表数累积。
+    retained: Mutex<Option<(usize, Arc<String>)>>,
+}
+
+/// 一张表的行偏移索引。
+struct SheetIndex {
+    /// 第 `k` 项是解压 XML 里第 `k * ROW_SAMPLE_STEP` 个 `<row` 的字节偏移。
+    samples: Vec<u64>,
+    /// 总行数：最大 `r=` 属性值（与流式解析「最大行号 + 1」同口径）。
+    row_count: u32,
+}
+
 impl SheetService {
     pub fn new() -> Self {
-        SheetService
+        Self {
+            caches: Mutex::new(HashMap::new()),
+        }
     }
 
     /// 打开工作簿：读全部工作表的单元格值。
     pub fn open(&self, req: &WorkbookOpenReq) -> AppResult<WorkbookVO> {
-        let p = Path::new(&req.path);
-        if !p.is_file() {
-            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
-                .with_detail(format!("路径：{}", req.path)));
-        }
-        let bytes = std::fs::read(p)
-            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
-        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes))
-            .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))?;
-
-        // 共享串表：`<c t="s"><v>12</v></c>` 的 12 是这里的下标。
-        let shared = read_shared_strings(&mut zip)?;
-        let sheets_meta = read_workbook_sheets(&mut zip)?;
-        if sheets_meta.is_empty() {
-            return Err(AppError::new(codes::DATA_INVALID, "这个工作簿里没有工作表"));
-        }
+        let wb = self.cache_of(&req.path)?;
+        let mut zip = wb.zip()?;
+        let shared = wb.shared.clone();
 
         let mut extra_parts = false;
         for i in 0..zip.len() {
@@ -68,8 +92,8 @@ impl SheetService {
             }
         }
 
-        let mut sheets = Vec::with_capacity(sheets_meta.len());
-        for (i, meta) in sheets_meta.iter().enumerate() {
+        let mut sheets = Vec::with_capacity(wb.sheets_meta.len());
+        for (i, meta) in wb.sheets_meta.iter().enumerate() {
             let xml = read_zip_entry(&mut zip, &meta.part)?;
             let parsed = parse_sheet(&xml, &shared)?;
             sheets.push(SheetVO {
@@ -94,20 +118,9 @@ impl SheetService {
     /// 打开工作簿（分页版）：只给工作表摘要，不读单元格。
     /// 整块读工作簿在百万行的工作表上会吃掉几百 MB 内存，而用户开机只要看到「有哪些表、多少行」就够了。
     pub fn info(&self, req: &WorkbookOpenReq) -> AppResult<WorkbookInfoVO> {
-        let p = Path::new(&req.path);
-        if !p.is_file() {
-            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
-                .with_detail(format!("路径：{}", req.path)));
-        }
-        let bytes = std::fs::read(p)
-            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
-        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes))
-            .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))?;
-        let shared = read_shared_strings(&mut zip)?;
-        let sheets_meta = read_workbook_sheets(&mut zip)?;
-        if sheets_meta.is_empty() {
-            return Err(AppError::new(codes::DATA_INVALID, "这个工作簿里没有工作表"));
-        }
+        let wb = self.cache_of(&req.path)?;
+        let mut zip = wb.zip()?;
+        let shared = wb.shared.clone();
 
         let mut extra_parts = false;
         for i in 0..zip.len() {
@@ -125,8 +138,8 @@ impl SheetService {
             }
         }
 
-        let mut sheets = Vec::with_capacity(sheets_meta.len());
-        for (i, meta) in sheets_meta.iter().enumerate() {
+        let mut sheets = Vec::with_capacity(wb.sheets_meta.len());
+        for (i, meta) in wb.sheets_meta.iter().enumerate() {
             let xml = read_zip_entry_bytes(&mut zip, &meta.part)?;
             let mut total_rows = 0usize;
             let mut total_cols = 0usize;
@@ -166,46 +179,49 @@ impl SheetService {
     }
 
     /// 分页读取一张工作表：只解析需要的那些行。
-    /// 整块解析（`xml.split("<row")`）在百万行的工作表上要吃掉几百 MB 内存；拉模式解析一次只持有一行，内存占用与表大小无关。
+    /// 行偏移采样让分页跳过目标窗口之前的字节；最近用的 XML 常驻缓存，翻页不再解压全表。
     pub fn page(&self, req: &SheetPageReq) -> AppResult<SheetPageVO> {
-        let p = Path::new(&req.path);
-        if !p.is_file() {
-            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
-                .with_detail(format!("路径：{}", req.path)));
-        }
-        let bytes = std::fs::read(p)
-            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
-        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes))
-            .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))?;
-        let shared = read_shared_strings(&mut zip)?;
-        let sheets_meta = read_workbook_sheets(&mut zip)?;
-        let meta = sheets_meta.get(req.sheet_index).ok_or_else(|| {
+        let wb = self.cache_of(&req.path)?;
+        let meta = wb.sheets_meta.get(req.sheet_index).ok_or_else(|| {
             AppError::new(
                 codes::DATA_INVALID,
                 format!(
                     "工作表下标超出范围（0..={}）",
-                    sheets_meta.len().saturating_sub(1)
+                    wb.sheets_meta.len().saturating_sub(1)
                 ),
             )
         })?;
-        let xml = read_zip_entry_bytes(&mut zip, &meta.part)?;
+        let (xml, index) = self.sheet_xml(&wb, req.sheet_index)?;
+        let shared = wb.shared.clone();
 
         let want = req.rows.max(1);
         let start = req.start_row.min(u32::MAX as usize) as u32;
         let end_row = start.saturating_add(want as u32);
+        let total_rows = index.row_count as usize;
+
+        // 采样快进：从窗口之前最近的采样行开始解析，行号来自 r= 属性，窗口过滤不受影响。
+        // 切出的片段缺 `<worksheet><sheetData>` 打开标签，补一层壳让解析器看到平衡的 XML。
+        let sample_idx =
+            (start as usize / ROW_SAMPLE_STEP).min(index.samples.len().saturating_sub(1));
+        let body: std::borrow::Cow<'_, str> = match index.samples.get(sample_idx) {
+            Some(&off) if off > 0 => {
+                let mut s = String::with_capacity(xml.len() - off as usize + 48);
+                s.push_str("<worksheet><sheetData>");
+                s.push_str(&xml[off as usize..]);
+                std::borrow::Cow::Owned(s)
+            }
+            _ => std::borrow::Cow::Borrowed(xml.as_str()),
+        };
+
         let mut rows: Vec<Vec<SheetCell>> = Vec::new();
-        let mut total_rows = 0usize;
         let mut total_cols = 0usize;
         let mut truncated = false;
 
-        // 扫全表拿总行数，但只构造窗口内的单元格：
-        // 内存占用是 O(一行)，不是 O(表)。
         crate::service::sheet::stream::parse_sheet_streaming(
-            &xml,
+            body.as_bytes(),
             &shared,
             Some((start, end_row)),
             |row| {
-                total_rows = total_rows.max(row.row as usize + 1);
                 if row.row >= start && row.row < end_row {
                     for c in &row.cells {
                         total_cols = total_cols.max(c.col as usize + 1);
@@ -401,6 +417,168 @@ impl SheetService {
             hits,
             total,
         })
+    }
+
+    /// 取工作簿缓存：没有就建，文件变了就整份重建。
+    fn cache_of(&self, path: &str) -> AppResult<Arc<CachedWorkbook>> {
+        let p = Path::new(path);
+        if !p.is_file() {
+            return Err(AppError::new(codes::FILE_NOT_FOUND, "找不到文件")
+                .with_detail(format!("路径：{path}")));
+        }
+        let m = std::fs::metadata(p)
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
+        let mtime_ms = mtime_ms_of(m.modified().ok());
+        let size = m.len();
+
+        if let Ok(map) = self.caches.lock() {
+            if let Some(c) = map.get(path) {
+                if c.mtime_ms == mtime_ms && c.size == size {
+                    return Ok(c.clone());
+                }
+            }
+        }
+
+        let entry = Arc::new(build_cache(path, mtime_ms, size)?);
+        if let Ok(mut map) = self.caches.lock() {
+            if map.len() >= MAX_CACHED_WORKBOOKS {
+                map.clear();
+            }
+            map.insert(path.to_string(), entry.clone());
+        }
+        Ok(entry)
+    }
+
+    /// 取一张表的解压 XML 与行偏移索引，都按需建。
+    fn sheet_xml(
+        &self,
+        wb: &CachedWorkbook,
+        sheet_index: usize,
+    ) -> AppResult<(Arc<String>, Arc<SheetIndex>)> {
+        let index = {
+            let map = lock(&wb.indexes);
+            map.get(&sheet_index).cloned()
+        };
+        let index = match index {
+            Some(i) => i,
+            None => {
+                let xml = decompress_sheet(wb, sheet_index)?;
+                let idx = Arc::new(build_row_index(&xml));
+                if let Ok(mut map) = wb.indexes.lock() {
+                    map.insert(sheet_index, idx.clone());
+                }
+                if xml.len() <= MAX_RETAINED_XML {
+                    let mut r = lock(&wb.retained);
+                    *r = Some((sheet_index, Arc::new(xml)));
+                }
+                idx
+            }
+        };
+        // 命中缓存的 XML 直接用；被换出或超尺寸就现解压。
+        let xml = {
+            let r = lock(&wb.retained);
+            match &*r {
+                Some((i, x)) if *i == sheet_index => Some(x.clone()),
+                _ => None,
+            }
+        };
+        let xml = match xml {
+            Some(x) => x,
+            None => {
+                let xml = decompress_sheet(wb, sheet_index)?;
+                if xml.len() <= MAX_RETAINED_XML {
+                    let mut r = lock(&wb.retained);
+                    *r = Some((sheet_index, Arc::new(xml.clone())));
+                }
+                Arc::new(xml)
+            }
+        };
+        Ok((xml, index))
+    }
+}
+
+/// 锁帮助：poison 时取回内部数据（缓存类锁不值得为 poison 丢弃）。
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// 从缓存字节里解压一张表的 XML。
+fn decompress_sheet(wb: &CachedWorkbook, sheet_index: usize) -> AppResult<String> {
+    let meta = wb
+        .sheets_meta
+        .get(sheet_index)
+        .ok_or_else(|| AppError::new(codes::DATA_INVALID, "工作表下标超出范围"))?;
+    let mut zip = wb.zip()?;
+    read_zip_entry(&mut zip, &meta.part)
+}
+
+/// 建一份工作簿缓存。
+fn build_cache(path: &str, mtime_ms: i64, size: u64) -> AppResult<CachedWorkbook> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))?;
+    let mut zip = zip::ZipArchive::new(Cursor::new(&bytes))
+        .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))?;
+    let shared = read_shared_strings(&mut zip)?;
+    let sheets_meta = read_workbook_sheets(&mut zip)?;
+    if sheets_meta.is_empty() {
+        return Err(AppError::new(codes::DATA_INVALID, "这个工作簿里没有工作表"));
+    }
+    Ok(CachedWorkbook {
+        mtime_ms,
+        size,
+        bytes: Arc::new(bytes),
+        shared: Arc::new(shared),
+        sheets_meta,
+        indexes: Mutex::new(HashMap::new()),
+        retained: Mutex::new(None),
+    })
+}
+
+/// 扫解压 XML 建行偏移采样：memmem 找 `<row`，每 100 行记一个字节偏移，顺带拿总行数。
+/// 行号口径与流式解析一致：最大 `r=` 属性值就是总行数。
+fn build_row_index(xml: &str) -> SheetIndex {
+    let bytes = xml.as_bytes();
+    let mut samples = Vec::new();
+    let mut row_count = 0u32;
+    let mut count = 0usize;
+    let mut pos = 0usize;
+    while let Some(rel) = memchr::memmem::find(&bytes[pos..], b"<row") {
+        let at = pos + rel;
+        pos = at + 4;
+        // `<row` 是 `<rowBreaks>` 的前缀：下一个字符必须是标签边界。
+        match bytes.get(at + 4) {
+            Some(b' ') | Some(b'>') | Some(b'/') | Some(b'\t') | Some(b'\n') | Some(b'\r') => {}
+            _ => continue,
+        }
+        let tag_end = bytes[at..]
+            .iter()
+            .position(|&b| b == b'>')
+            .map(|i| at + i)
+            .unwrap_or(xml.len());
+        let tag = &xml[at..tag_end.min(xml.len())];
+        if let Some(r) = attr(tag, "r").and_then(|v| v.parse::<u32>().ok()) {
+            row_count = row_count.max(r);
+        }
+        if count % ROW_SAMPLE_STEP == 0 {
+            samples.push(at as u64);
+        }
+        count += 1;
+    }
+    SheetIndex { samples, row_count }
+}
+
+/// 修改时间 → 毫秒整数（取不到时 0）。
+fn mtime_ms_of(t: Option<std::time::SystemTime>) -> i64 {
+    t.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+impl CachedWorkbook {
+    /// 从缓存字节重建 zip 视图：只读中央目录，代价可忽略。
+    fn zip(&self) -> AppResult<zip::ZipArchive<Cursor<&Vec<u8>>>> {
+        zip::ZipArchive::new(Cursor::new(self.bytes.as_ref()))
+            .map_err(|e| AppError::wrap(codes::DATA_INVALID, "不是有效的 XLSX 文件", e))
     }
 }
 

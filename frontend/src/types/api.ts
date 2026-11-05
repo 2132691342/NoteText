@@ -140,6 +140,8 @@ export interface TableOpenReq {
   path: string
   encoding?: string | null
   delimiter?: string | null
+  /** 覆盖表头判定；null = 后端启发式。 */
+  has_header?: boolean | null
 }
 
 /** 表格元信息：形状与规模，不含任何一行正文。 */

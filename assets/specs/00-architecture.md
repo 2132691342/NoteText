@@ -108,7 +108,7 @@ main.rs
        ├─ app::bootstrap::build(&paths)
        │    ├─ Db::open(&paths.db_path)  WAL + busy_timeout + migrate
        │    ├─ SettingsRepo::load        没有则写默认配置
-       │    └─ Services::new(db)         file / big_file / file_ops / session / tools / userdata / batch / archive / sheet
+       │    └─ Services::new(db)         file / big_file / file_ops / table / session / tools / userdata / batch / archive / sheet
        ├─ tauri::Builder
        │    ├─ plugin(single_instance)   二次启动转交
        │    ├─ plugin(dialog)            原生打开 / 保存对话框
@@ -235,7 +235,7 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-长链路测试按域拆成 `src-tauri/tests/chain_*.rs` 八个文件
+长链路测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件
 （组织方式见 [12](12-testing.md)）。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。
