@@ -93,10 +93,7 @@ fn probe_tar_stream(path: &Path, codec: ArchiveFormat) -> bool {
     n >= 262 && &head[257..262] == b"ustar"
 }
 
-/// 探测不出格式时的统一错误。
-///
-/// RAR 是「认得但没实现」的格式：不给单独一句话，用户看到的是
-/// 「文件可能损坏」，然后拿别的工具一开发现好好的——这类提示比报错更糟。
+/// 探测不出格式时的统一错误；认得但未实现的格式要说清是「不支持」而非「损坏」。
 pub fn err_undetectable(path: &Path) -> AppError {
     if has_rar_magic(path) {
         return AppError::new(
@@ -217,7 +214,8 @@ pub fn collect_sources(
             .into_iter()
             .filter_entry(|e| !is_excluded(e.path(), exclude))
         {
-            let entry = entry.map_err(|e| AppError::wrap("1001", "扫描待压缩目录失败", e))?;
+            let entry =
+                entry.map_err(|e| AppError::wrap(codes::IO_FAILED, "扫描待压缩目录失败", e))?;
             let rel = entry.path().strip_prefix(&path).map_err(|e| {
                 AppError::wrap(codes::ARCHIVE_BAD_REQUEST, "目录结构无法映射进压缩包", e)
             })?;

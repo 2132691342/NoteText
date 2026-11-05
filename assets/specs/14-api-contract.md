@@ -2,7 +2,7 @@
 
 ## 定位
 
-前端 `api/index.ts` 与后端 `commands/` 的对照表：105 个 invoke 命令的入参出参。
+前端 `api/index.ts` 与后端 `commands/` 的对照表：115 个 invoke 命令的入参出参。
 **改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定
@@ -14,15 +14,21 @@
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
 | 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
-| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `empty_lists_serialize_to_array_not_null`） |
+| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays`） |
 
 ## 文件
 
 | 命令 | 入参 | 出参 |
 |---|---|---|
-| `read_file` | `path`, `mode?`, `encoding?` | `FileContentVO` |
+| `read_file` | `path`, `mode?`, `encoding?`, `allow_big?` | `FileContentVO` |
 | `read_binary` | `path` | `string`（base64，上限 20MB） |
 | `read_table_preview` | `path`, `encoding?` | `TablePreviewVO`（CSV / TSV，不受 20MB 上限） |
+| `big_file_open` | `path` | `BigFileMetaVO`（建块索引，进度走 `bigfile:progress` 事件） |
+| `big_file_block` | `path`, `block_index` | `BigFileBlockVO`（含全局起始行与 stale 标记） |
+| `big_file_goto_line` | `path`, `line` | `usize`（块下标，二分定位） |
+| `big_file_cancel` | `path` | `()` |
+| `big_file_close` | `path` | `()`（释放缓存索引） |
+| `big_file_write_block` | `req: BigFileBlockWriteReq` | `BigFileBlockWriteVO`（单块写回，乐观锁过期报 1008） |
 | `write_file` | `path`, `text`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO` |
 | `save_file_as` | `text`, `suggested_name?`, `encoding?`, `line_ending?`, `bom?` | `WriteResultVO \| null` |
 | `read_dir` | `dir` | `DirEntry[]` |
@@ -37,7 +43,8 @@
 | `get_recent_files` | — | `RecentFileVO[]` |
 
 `ReadMode` 是 tagged enum：`{ mode: "full" }` / `{ mode: "head" }` /
-`{ mode: "range", start_line, lines }`。
+`{ mode: "range", start_line, lines }`。`allow_big` 是用户在大文件弹窗里
+显式选了「普通打开」：全量读上限放宽到 512MB（specs/19）。
 
 `FileContentVO` 的 `truncated` 是「或」语义：被截断**或**编码置信度低都为 true。
 前端据此提示用户，不自己分辨是哪一种。
@@ -186,6 +193,18 @@
 `save_draft` 返回 bool 而不是错误：存不上备份不该阻断关闭流程。
 `clear_bookmarks(path: null)` 清空全部，带 path 清该文件的。
 
+## 表格编辑（XLSX / ODS）
+
+| 命令 | 入参 | 出参 |
+|---|---|---|
+| `open_workbook` | `WorkbookOpenReq`（`path`） | `WorkbookVO`（全部工作表 + 单元格 + 列宽 + 合并区） |
+| `save_workbook` | `SheetSaveReq`（`path` / `sheet_index` / `edits` / `backup?`） | `SheetSaveVO` |
+| `find_in_workbook` | `SheetFindReq`（`find` / `sheet_index?` / 区分大小写 / 整格匹配） | `SheetFindVO` |
+
+`save_workbook` 只提交**改动的单元格**，不是整张表：后端解压 → 只替换目标表里
+那几个 `<c>` → 其余部件字节级搬回去。所以样式表、主题、图表、条件格式全部保住
+（见 specs/19）。`backup: true` 会先把原文件复制成 `.bak`。
+
 ## 会话
 
 | 命令 | 入参 | 出参 |
@@ -194,6 +213,7 @@
 | `save_session` | `SessionSaveReq` | `()` |
 | `patch_session` | `active_index?`, `sidebar_open?`, `sidebar_tab?`, `split_ratio?` | `()` |
 | `remember_window` | —（Tauri 注入 `WebviewWindow`） | `()` |
+| `mark_clean_exit` | — | `()`（崩溃恢复标记置 true，specs/19） |
 
 `save_session` 是**整块替换**：一个事务里换掉 `sessions` 与 `tabs`。
 标签数量在个位数到几十之间，一次 DELETE + 批量 INSERT 比算差集简单，

@@ -1,4 +1,4 @@
-//! 压缩子系统：纯算法引擎（create/extract/list/...）+ 任务队列（specs/18）。
+//! 压缩子系统：纯算法引擎（create/extract/list/...）+ 任务队列（assets/specs/18）。
 //! commands → 本模块 → 领域模型；引擎不碰 Tauri，事件经注入的 sink 发出，测试不拉起 WebView。
 
 pub mod convert;

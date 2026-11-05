@@ -27,7 +27,7 @@ impl Db {
             .map_err(|e| AppError::wrap(codes::MIGRATION_FAILED, "设置 WAL 失败", e))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(|e| AppError::wrap(codes::MIGRATION_FAILED, "设置同步模式失败", e))?;
-        // 外键：bookmarks 等表将来若加关联，默认就要生效。
+        // 开启外键约束，关联表建好即生效。
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(|e| AppError::wrap(codes::MIGRATION_FAILED, "设置外键失败", e))?;
         // 5 秒忙等：两个窗口同时写时的兜底（正常不会发生，单实例已挡掉）。
@@ -172,5 +172,5 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 "#;
 
-/// V1 迁移：初始版本只有 schema，留作后续加字段的锚点。下一个迁移写成 `MIGRATION_V2` 并在 `migrate()` 里加一段 `if v < 2`： 建表 + 索引。
+/// V1 迁移锚点；下一个迁移写成 `MIGRATION_V2` 并在 `migrate()` 里加一段 `if v < 2`。
 const MIGRATION_V1: &str = "";

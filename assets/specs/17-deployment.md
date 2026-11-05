@@ -19,12 +19,12 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 
 ## 流水线
 
-两条 GitHub Actions，分工是「日常门禁」与「出包」，两条都直接执行同一组检查：
+两条 GitHub Actions，分工是「日常门禁」与「出包」：
 
 | 工作流 | 触发 | 做什么 |
 |---|---|---|
 | `.github/workflows/ci.yml` | push main / PR / 手动（**tag 不触发**） | 装 Rust + Node → 前端构建 → rustfmt / check / clippy / 链路测试 |
-| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 执行同一组门禁 → `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
+| `.github/workflows/release.yml` | tag `v<major>.<minor>.<patch>` / 手动 | 装工具链 → 前端构建 → `tauri build --bundles nsis` → 校验产物体积 → 建 GitHub Release 并上传安装器 |
 
 前端构建必须在 Rust 编译型检查之前完成：`tauri::generate_context!()` 会在编译期读取
 `frontend/dist`，新 checkout 中该目录尚不存在。
@@ -41,9 +41,8 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 
 其余约定，改动流水线前要知道：
 
-- **门禁与出包分层**：日常质量门禁集中在 `ci.yml`；`release.yml` 出包前
-  重跑前端构建、rustfmt、check、clippy 与链路测试——发版是低频动作，
-  多花几分钟换「tag 上的产物一定是全绿代码构建的」
+- **门禁与出包分层**：质量门禁只在 `ci.yml` 跑一次；`release.yml` 不重复验证，
+  出包少一轮编译，代价是发版依赖 main 分支的 CI 结果
 - **两个 job 都跑 `windows-latest`**：目标平台只有 Windows amd64，
   门禁与出包必须在同一套系统调用上验
 - **tauri-cli 用 npm 版**：`frontend/package.json` 的 devDependencies 已锁
@@ -51,7 +50,7 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
   多一份全局工具链，版本还可能与 crate 对不上
 - **必须从仓库根跑 CLI**：CLI 要向上找到 `src-tauri/tauri.conf.json`，
   从 `frontend/` 里跑会报「Couldn't recognize the current folder as a Tauri project」
-- **参数是 `--bundles`（复数）**：`--bundler` 是 1.x 的写法，2.x 已移除
+- **参数是 `--bundles`（复数）**：Tauri CLI 2 只认这个形式
 - **NSIS 工具链要缓存**：Tauri CLI 首次打包会从 GitHub 下载 NSIS（~10MB），
   不缓存则每次发版都要重下，网络抖动就会让发版失败
 
@@ -79,8 +78,9 @@ target/release/                        # workspace 根的 target/（根 Cargo.to
 | `--release` exe | ~5MB（strip symbols） |
 | NSIS 安装包 | ~2.5MB（LZMA 压缩） |
 
-release profile 设了 `strip = "symbols"` 与 `panic = "abort"`，
-但**没开 `lto = true`**：全量 LTO 让每次 build 多等 30s+，
+release profile 设了 `strip = "symbols"` 与 `panic = "unwind"`：
+命令线程上的 panic 被 Tauri 接成错误返回，窗口与未保存内容都还在。
+**没开 `lto = true`**：全量 LTO 让每次 build 多等 30s+，
 而编辑器启动已 < 1s，不值得。
 
 ## 安装器

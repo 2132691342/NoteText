@@ -59,8 +59,7 @@ restore_session() -> SessionRestoreVO { session, tabs, missing }
 
 **注意 `patch_session` 内部会 `load` 一次再全量 `save`**：
 这是「整块替换」策略的代价——补一个字段也要重写 tabs。
-标签几十条时这不是问题，但**如果将来标签上百，
-该改成单字段 UPDATE**。
+标签几十条时无感，标签上百时这条链路会成为写入热点。
 
 ### 窗口状态记忆
 
@@ -75,8 +74,7 @@ restore_session() -> SessionRestoreVO { session, tabs, missing }
 - 保存失败（磁盘满 / DB 锁）时记 warn 后继续——
   拦着用户不让关比丢一次会话更糟；
 - 标签的 `dirty` 存进库但**恢复时一律置 false**（见上）；
-- 会话行的 `id` 固定为 1，`CHECK (id = 1)` 约束兜底
-  （防将来误插第二行）。
+- 会话行的 `id` 固定为 1，`CHECK (id = 1)` 约束兜底（避免误插第二行）。
 
 ## 取舍
 

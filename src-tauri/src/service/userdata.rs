@@ -37,6 +37,20 @@ impl UserDataService {
         self.db.with(|conn| SettingsRepo::save(conn, cfg, now))
     }
 
+    /// 崩溃恢复标记置 true：正常退出前调。
+    pub fn mark_clean_exit(&self) -> AppResult<()> {
+        let mut cfg = self.load_config()?;
+        cfg.last_exit_clean = true;
+        self.save_config(&cfg)
+    }
+
+    /// 崩溃恢复标记置 false：启动即调。此后异常终止，下次启动就能识别。
+    pub fn mark_dirty_start(&self) -> AppResult<()> {
+        let mut cfg = self.load_config()?;
+        cfg.last_exit_clean = false;
+        self.save_config(&cfg)
+    }
+
     // ---- 书签 ----
 
     /// 全部书签（附带该行正文预览）。

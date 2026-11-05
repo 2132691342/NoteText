@@ -24,8 +24,7 @@ impl SettingsRepo {
 
         match raw {
             Some(json) => {
-                // 反序列化失败（旧版本字段类型变了）时回退默认值而不是报错：
-                // 配置坏掉不该让编辑器起不来。
+                // 字段类型不匹配时回退默认值，配置坏掉不让编辑器起不来。
                 match serde_json::from_str::<AppConfig>(&json) {
                     Ok(cfg) => Ok(cfg),
                     Err(e) => {

@@ -1,7 +1,7 @@
 //! 日志：tracing + 双文件落盘（全量 + 告警）。
 //! 只记 info / warn / error 三档；写日志失败不能影响编辑可用性。
 
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -45,6 +45,28 @@ pub fn init(paths: &AppPaths) {
         .with(warn_layer)
         .with(console)
         .try_init();
+
+    install_panic_hook();
+}
+
+/// 安装 panic 钩子：把位置与消息写进 warn.log（GUI 进程没有控制台）。
+/// 只记录不拦截，真实行为仍由 unwind 接管。
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown>".into());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<non-string panic payload>".into());
+        tracing::error!(location = %location, payload = %payload, "未捕获的 panic");
+        default_hook(info);
+    }));
 }
 
 /// 简易滚动 appender：超限时改名 `.1`/`.2`/`.3`。不引 rolling-file 依赖：编辑器只需要「不会无限长」，三份轮换足够。
@@ -52,17 +74,20 @@ fn rolling_appender(path: &std::path::Path) -> BoxMakeWriter {
     let path = path.to_path_buf();
     BoxMakeWriter::new(move || -> Box<dyn std::io::Write + Send> {
         rotate_if_needed(&path, 20 * 1024 * 1024);
-        match OpenOptions::new().create(true).append(true).open(&path) {
-            Ok(f) => Box::new(f),
-            Err(_) => Box::new(
-                File::create(std::env::temp_dir().join("notetext-fallback.log")).unwrap_or_else(
-                    |_| {
-                        // 连临时目录都写不了：日志降级为 /dev/null，绝不 panic。
-                        File::open("NUL").unwrap_or_else(|_| unreachable!())
-                    },
-                ),
-            ),
+        if let Ok(f) = OpenOptions::new().create(true).append(true).open(&path) {
+            return Box::new(f);
         }
+        // 连临时目录都写不了：日志降级为丢弃。
+        // 这里绝对不能 panic：本函数本身就是 panic 钩子的写出路径，
+        // 在里面再 panic 会把「记录一个崩溃」变成「在记录时又崩一次」。
+        if let Ok(f) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(std::env::temp_dir().join("notetext-fallback.log"))
+        {
+            return Box::new(f);
+        }
+        Box::new(std::io::sink())
     })
 }
 

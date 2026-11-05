@@ -20,7 +20,7 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 use std::sync::Arc;
 use tauri::Manager;
 
-/// 失败模式（见 specs/04）：数据与日志目录不可用时 fail-fast，
+/// 失败模式（见 assets/specs/04）：数据与日志目录不可用时 fail-fast，
 /// 半残启动会让用户在第一次打开面板时才看到报错，反而误导。
 pub fn run() {
     let paths = match app::paths::resolve() {
@@ -116,7 +116,8 @@ pub fn run() {
     });
 }
 
-/// 原生错误对话框：WebView 还没起来时唯一的用户可见出口。用 Tauri 的 dialog 插件不行——插件随 app 一起装，装不上时同样不可用， 所以这里直接走 Win32 MessageBoxW（platform 层按平台分文件实现）。
+/// 原生错误对话框：WebView 未启动时唯一的用户可见出口。
+/// dialog 插件此时尚未装载，由 platform 层按平台分文件实现。
 fn native_error(title: &str, message: &str) {
     platform::message_box(title, message);
 }

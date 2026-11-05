@@ -10,6 +10,12 @@ pub fn on_ready(app: &AppHandle) {
     let state = app.state::<AppState>();
     tracing::info!("窗口就绪，广播 app:ready");
 
+    // 崩溃恢复标记：进入运行态即置 false。这次运行若异常终止，
+    // 下次启动凭「false + 草稿快照」识别出来并提示恢复。
+    if let Err(e) = state.services.userdata.mark_dirty_start() {
+        tracing::warn!(error = %e, "崩溃恢复标记写入失败");
+    }
+
     // 窗口状态回写：把当前窗口大小存进会话，下次启动恢复原尺寸。
     // 尺寸读取在 app 层做完：service 只收纯数值。
     if let Some(window) = app.get_webview_window("main") {

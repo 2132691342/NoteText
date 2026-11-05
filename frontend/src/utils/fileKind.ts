@@ -2,13 +2,7 @@
 // 一处说了算——store 用它决定「读文本还是只建标签」，EditorArea 用它选组件。
 import { extName } from '@/utils'
 
-/**
- * 文件的渲染形态。
- *
- * `legacyDoc` 是「确实是文档、但内置渲染器读不了」（.doc / .ppt / .odt）：
- * 它给的是「用外部程序打开」的卡片，而不是一屏十六进制。
- * `binary` 则是可执行文件 / 压缩包这类根本不该当文档看的东西。
- */
+/** 文件的渲染形态：legacyDoc 给外部程序卡片，binary 进十六进制视图。 */
 export type FileKind =
   | 'text'
   | 'markdown'
@@ -42,21 +36,10 @@ const LEGACY_DOC = new Set([
   'pages', 'key', 'numbers', 'epub', 'mobi',
 ])
 
-/**
- * 没有内置解压能力的归档格式。
- *
- * 这些格式的压缩算法是专有的（rar / lzh），或容器结构完全不同（cab / iso），
- * 进十六进制视图等于什么都没告诉用户——改成「给一条明确出路」的卡片。
- */
+/** 没有内置解压能力的归档格式：预览器给「明确出路」卡片而非十六进制。 */
 const ARCHIVE_LEGACY = new Set(['rar', 'lzh', 'lha', 'cab', 'iso', 'img'])
 
-/**
- * 扩展名即可断定的二进制外壳。
- *
- * 为什么要列出来而不是全靠内容嗅探：嗅探只读前 8KB，
- * 一个以纯文本开头的压缩包 / 可执行文件嗅不出 NUL，会被当成文本打开，
- * 编辑器里就是一屏乱码，保存还会写坏原文件。
- */
+/** 扩展名即可断定的二进制外壳：头部嗅探认不出以纯文本开头的压缩包。 */
 const BINARY = new Set([
   'zip', '7z', 'gz', 'tgz', 'bz2', 'xz', 'tar',
   'exe', 'dll', 'sys', 'msi', 'com', 'scr', 'app', 'apk', 'jar', 'war', 'class',
@@ -91,6 +74,21 @@ export function kindOf(path: string, isBinary = false): FileKind {
 /** 是否专有归档（预览器要针对它给出「先用别的工具解压」的指引）。 */
 export function isArchiveLegacy(path: string): boolean {
   return ARCHIVE_LEGACY.has(extName(path))
+}
+
+/** CSV / TSV：文本性质的表格，走可编辑网格（xlsx/ods 走另一条链路）。 */
+export function isDelimitedSheet(path: string): boolean {
+  const ext = extName(path)
+  return ext === 'csv' || ext === 'tsv'
+}
+
+/**
+ * XLSX / ODS：二进制容器表格，走「读单元格 → 改 XML 写回」的可编辑网格。
+ * 样式、图表、条件格式在写回时原地保留，所以这类文件可以真正编辑。
+ */
+export function isWorkbookSheet(path: string): boolean {
+  const ext = extName(path)
+  return ext === 'xlsx' || ext === 'xlsm' || ext === 'ods'
 }
 
 /** 该形态能不能按文本读进 CodeMirror。 */

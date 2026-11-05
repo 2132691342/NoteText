@@ -75,6 +75,134 @@ export interface TablePreviewVO {
   size: number
 }
 
+/** 大文件元信息：块索引建好后的概览。 */
+export interface BigFileMetaVO {
+  path: string
+  size: number
+  /** 头部采样探测出的编码 id：整个文件按它逐块解码。 */
+  encoding: string
+  /** 块的目标字节数。 */
+  block_size: number
+  block_count: number
+  /** 编辑器意义上的总行数（末行无换行也计一行）。 */
+  total_lines: number
+}
+
+/** 大文件的一个块：解码后的文本 + 它在整份文件里的行号范围。 */
+export interface BigFileBlockVO {
+  path: string
+  block_index: number
+  block_count: number
+  /** 本块第一行的全局行号（1-based）。 */
+  start_line: number
+  text: string
+  /** 读取时发现文件已被外部修改。 */
+  stale: boolean
+}
+
+/** 单块写回请求：`old_text` 是乐观锁基线，磁盘上的块与它不一致就拒。 */
+export interface BigFileBlockWriteReq {
+  path: string
+  block_index: number
+  old_text: string
+  new_text: string
+}
+
+/** 单块写回结果。 */
+export interface BigFileBlockWriteVO {
+  path: string
+  size: number
+  block_count: number
+  total_lines: number
+  modified_at: number
+}
+
+// ---- 表格编辑域（XLSX 原地改 XML，样式与图表保住） ----
+
+/** 单元格值：与后端 `domain::sheet::CellValue` 一一对应。 */
+export type CellValue =
+  | { kind: 'text'; text: string }
+  | { kind: 'number'; raw: string }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'formula'; formula: string; cached: string }
+  | { kind: 'error'; text: string }
+
+/** 一个非空单元格（行列 0 基）。 */
+export interface SheetCell {
+  row: number
+  col: number
+  value: CellValue
+}
+
+/** 一张工作表。 */
+export interface SheetVO {
+  name: string
+  index: number
+  /** `[min_row, max_row, min_col, max_col]`；全空表为 null。 */
+  extent: [number, number, number, number] | null
+  cells: SheetCell[]
+  /** `[first_row, last_row, first_col, last_col]`。 */
+  merges: [number, number, number, number][]
+  col_widths: (number | null)[]
+  has_formula: boolean
+}
+
+/** 打开的工作簿。 */
+export interface WorkbookVO {
+  path: string
+  format: string
+  sheets: SheetVO[]
+  /** 含图表 / 透视 / 宏：写回时原样搬运。 */
+  has_extra_parts: boolean
+}
+
+/** 单元格改动；`value: null` = 清空。 */
+export interface CellEdit {
+  row: number
+  col: number
+  value: CellValue | null
+}
+
+/** 写回工作簿。 */
+export interface SheetSaveReq {
+  path: string
+  sheet_index: number
+  edits: CellEdit[]
+  backup?: boolean | null
+}
+
+/** 写回结果。 */
+export interface SheetSaveVO {
+  path: string
+  changed: number
+  size: number
+  modified_at: number
+  backup_path: string | null
+}
+
+/** 表内查找请求 / 结果。 */
+export interface SheetFindReq {
+  path: string
+  sheet_index?: number | null
+  find: string
+  match_case?: boolean | null
+  whole_cell?: boolean | null
+}
+
+export interface SheetHit {
+  sheet_index: number
+  sheet_name: string
+  row: number
+  col: number
+  text: string
+}
+
+export interface SheetFindVO {
+  hits: SheetHit[]
+  total: number
+  truncated: boolean
+}
+
 // ---- 编码域 ----
 
 export interface EncodingInfo {
@@ -326,6 +454,8 @@ export interface AppConfig {
   file: FileConfig
   ui: UIConfig
   keybindings: Record<string, string>
+  /** 崩溃恢复标记：false = 上次没走干净退出。 */
+  last_exit_clean: boolean
 }
 
 // ---- 工具箱域 ----
@@ -608,7 +738,7 @@ export interface FileOpVO {
   failed: number
 }
 
-// ---- 归档域（2.0 压缩子系统，specs/18）----
+// ---- 归档域（assets/specs/18）----
 // 与 domain/archive*.rs 对应；长任务提交队列只回任务 id，进度走事件。
 
 export interface ArchiveEntryVO {
@@ -829,7 +959,7 @@ export interface AppInfoVO {
   debug_build: boolean
 }
 
-// ---- 系统文件关联（specs/17）----
+// ---- 系统文件关联（assets/specs/17）----
 
 export interface FileAssocExtVO {
   /** 扩展名，不带点。 */

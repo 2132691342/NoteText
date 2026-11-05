@@ -8,7 +8,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# 同一分支上的新推送取消旧运行：全量门禁要几分钟，排对比跑完有用。
+# 同一分支的新推送取消旧运行。
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -29,12 +29,11 @@ jobs:
       - name: 装 Node
         uses: actions/setup-node@v4
         with:
-          # 锁文件由 npm 11（Node 24）生成，CI 必须同版本，否则 npm ci 读锁文件会崩。
+          # Node 24 与锁文件版本一致。
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # 缓存 cargo 产物：编译是 CI 里最慢的一段。
       - name: 缓存 cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -43,7 +42,7 @@ jobs:
       - name: 装前端依赖
         run: npm --prefix frontend ci
 
-      # Tauri 的 generate_context! 会在 Rust 编译期读取 frontend/dist。
+      # generate_context! 在 Rust 编译期读取 frontend/dist，前端构建必须先行。
       - name: 构建前端
         run: npm --prefix frontend run build
 

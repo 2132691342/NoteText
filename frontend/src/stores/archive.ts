@@ -1,5 +1,5 @@
 // 压缩任务队列 store：任务面板与状态栏指示器的唯一数据源。
-// 后端 250ms 心跳 + 终态事件已把快照推来（specs/18），前端不再轮询，免得两条时间线打架。
+// 后端 250ms 心跳 + 终态事件已把快照推来（assets/specs/18），前端不再轮询，免得两条时间线打架。
 
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'

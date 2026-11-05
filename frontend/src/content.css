@@ -305,6 +305,11 @@
     color var(--nt-dur-fast) var(--nt-ease);
 }
 
+/* 大目录增量渲染的哨兵：不可见的占位行，只为触发滚动加载 */
+.nt-tree-more {
+  height: 1px;
+}
+
 .nt-tree-row:hover {
   background: var(--nt-surface-hover);
 }
@@ -366,7 +371,7 @@
   border-radius: 2px;
 }
 
-/* 选中即高亮（notepad-- 的「鼠标选择文本后高亮」） */
+/* 选中即高亮：选区内的相同词 */
 .cm-selectionMatch {
   background: var(--nt-primary-soft);
   border-radius: 2px;
@@ -383,16 +388,8 @@
   color: var(--nt-warning);
 }
 
-/*
-  5 色标记（notepad-- 的 mark-1..5）。
-  颜色取语义色五档而不是五个新色相：视觉纪律是「同一个强调色相」，
-  标记靠「底色深浅 + 左侧竖条」区分，不引入第二个色相。
-  写在 content.css（全局）而不是组件 scoped：装饰由 ViewPlugin 生成，
-  元素挂在编辑器内部，scoped 选择器加不到 data 属性上去。
-*/
-/* 5 色标记：用下划色做色板主色，底色只做淡色衬底。
-   --nt-mark-line-* 给「标记全部」弹窗的色板取色用：那里的色点要跟
-   编辑器里实际看到的标记色一致，所以主色取描边那一档。 */
+/* 5 色标记：颜色取语义色五档，靠底色深浅 + 左侧竖条区分；装饰由 ViewPlugin 生成，样式必须全局。
+   --nt-mark-line-* 供「标记全部」弹窗色板取色，主色取描边那一档。 */
 .nt-mark {
   border-radius: 2px;
   padding: 0 1px;

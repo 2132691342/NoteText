@@ -10,6 +10,7 @@ pub mod file;
 pub mod file_assoc;
 pub mod file_ops;
 pub mod session;
+pub mod sheet;
 pub mod system;
 pub mod tools;
 pub mod userdata;
@@ -28,6 +29,13 @@ macro_rules! command_handlers {
             commands::file::read_dir,
             commands::file::read_table_preview,
             commands::file::stat_file,
+            // 大文件分块只读
+            commands::file::big_file_open,
+            commands::file::big_file_block,
+            commands::file::big_file_goto_line,
+            commands::file::big_file_cancel,
+            commands::file::big_file_close,
+            commands::file::big_file_write_block,
             commands::file::open_file_dialog,
             commands::file::open_files_dialog,
             commands::file::open_folder_dialog,
@@ -66,7 +74,7 @@ macro_rules! command_handlers {
             commands::batch::batch_apply_replace,
             commands::batch::batch_plan_rename,
             commands::batch::batch_apply_rename,
-            // 压缩 / 归档（specs/18）
+            // 压缩 / 归档（assets/specs/18）
             commands::archive::open_archive,
             commands::archive::preview_archive_entry,
             commands::archive::get_archive_formats,
@@ -114,6 +122,11 @@ macro_rules! command_handlers {
             commands::session::save_session,
             commands::session::patch_session,
             commands::session::remember_window,
+            commands::session::mark_clean_exit,
+            // 表格（XLSX 原地改 XML，样式与图表保住）
+            commands::sheet::open_workbook,
+            commands::sheet::save_workbook,
+            commands::sheet::find_in_workbook,
             // 窗口与系统
             commands::window::window_minimize,
             commands::window::window_toggle_maximize,
@@ -126,7 +139,7 @@ macro_rules! command_handlers {
             commands::window::start_drag,
             commands::system::get_app_info,
             commands::system::take_launch_intent,
-            // 系统文件关联（specs/17）
+            // 系统文件关联（assets/specs/17）
             commands::file_assoc::get_file_assoc_status,
             commands::file_assoc::set_file_assoc_group,
             commands::file_assoc::open_default_apps_settings,

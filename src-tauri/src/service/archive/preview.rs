@@ -242,7 +242,7 @@ fn read_7z_entry(
             found = true;
             let mut limited = Read::take(src_reader, max_bytes);
             if let Err(e) = limited.read_to_end(out) {
-                failure = Some(AppError::wrap("1001", "读压缩包内条目失败", e));
+                failure = Some(AppError::wrap(codes::IO_FAILED, "读压缩包内条目失败", e));
             }
             Ok(true)
         })

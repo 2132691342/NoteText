@@ -27,7 +27,7 @@ pub struct AppState {
 pub fn build(paths: &AppPaths) -> AppResult<AppState> {
     app_paths::init(paths.clone());
     paths.ensure_dirs().map_err(|e| {
-        AppError::wrap("1000", "创建数据目录失败", e)
+        AppError::wrap(codes::PATH_EMPTY, "创建数据目录失败", e)
             .with_detail(format!("目录：{}", paths.data_dir.display()))
     })?;
 
@@ -85,7 +85,7 @@ pub fn export_backup(db: &Db) -> AppResult<serde_json::Value> {
         out.insert(
             "recent_files".into(),
             serde_json::to_value(RecentRepo::list(conn)?)
-                .map_err(|e| AppError::wrap("1001", "导出最近文件失败", e))?,
+                .map_err(|e| AppError::wrap(codes::IO_FAILED, "导出最近文件失败", e))?,
         );
         out.insert(
             "session".into(),

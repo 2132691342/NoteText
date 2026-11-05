@@ -1,5 +1,5 @@
 //! 工具箱命令：JSON / Diff / 哈希 / 正则 / 编码清单。
-//! 出入参结构体一律引用 domain 定义，不在 handler 里内联。
+//! 出入参引用 domain 定义；输入是整篇文档，除常量表外全部标 async。
 
 use tauri::State;
 
@@ -14,49 +14,49 @@ use crate::domain::json::{
 use crate::domain::regex::{RegexTestReq, RegexTestVO};
 
 /// JSON 格式化 / 压缩 / 校验。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn json_format(state: State<'_, AppState>, req: JsonFormatReq) -> JsonFormatVO {
     state.services.tools.json_format(&req)
 }
 
 /// JSONPath 查询。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn json_query(state: State<'_, AppState>, req: JsonQueryReq) -> JsonQueryVO {
     state.services.tools.json_query(&req)
 }
 
 /// JSON 转结构体。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn json_to_struct(state: State<'_, AppState>, req: JsonToStructReq) -> JsonToStructVO {
     state.services.tools.json_to_struct(&req)
 }
 
 /// JSON 结构化对比。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn json_diff(state: State<'_, AppState>, req: JsonDiffReq) -> JsonDiffVO {
     state.services.tools.json_diff(&req)
 }
 
 /// 文本 Diff。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn text_diff(state: State<'_, AppState>, req: TextDiffReq) -> TextDiffVO {
     state.services.tools.text_diff(&req)
 }
 
-/// 目录对比。
-#[tauri::command]
+/// 目录对比：整棵目录树读盘，必须离开主线程。
+#[tauri::command(async)]
 pub fn dir_diff(state: State<'_, AppState>, left: String, right: String) -> AppResult<DirDiffVO> {
     state.services.tools.dir_diff(&left, &right)
 }
 
 /// 哈希（文本或文件）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hash_text(state: State<'_, AppState>, req: HashReq) -> HashVO {
     state.services.tools.hash(&req)
 }
 
 /// 正则测试。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn regex_test(state: State<'_, AppState>, req: RegexTestReq) -> RegexTestVO {
     state.services.tools.regex_test(&req)
 }

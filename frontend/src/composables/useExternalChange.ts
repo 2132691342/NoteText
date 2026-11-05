@@ -21,13 +21,7 @@ export function useExternalChange() {
 
   let unlisten: (() => void) | null = null
 
-  /**
-   * 每个路径的处理去抖 + 加锁。
-   *
-   * 一次保存会从文件系统送来 3~5 个事件（临时文件创建、内容写、rename、
-   * 属性变更）。逐个处理的结果是同一个文件被读 4 次、弹 4 条提示——
-   * 用户会以为出了什么大事。600ms 窗口内的同一路径只处理一次。
-   */
+  /** 每个路径 600ms 去抖 + 加锁：一次保存送来的多个文件事件只处理一次。 */
   const pendingTimers = new Map<string, number>()
   const inFlight = new Set<string>()
 
@@ -43,11 +37,75 @@ export function useExternalChange() {
     pendingTimers.set(path, timer)
   }
 
+  /**
+   * 文件树刷新：800ms 去抖 + 单飞 + 40 目录上限，只刷变更路径所在目录。
+   * 超过上限降级为只刷根目录。
+   */
+  const pendingDirs = new Set<string>()
+  let treeTimer: number | undefined
+  let refreshing = false
+  /** 待刷目录上限：超过就降级为只刷根。 */
+  const MAX_PENDING_DIRS = 40
+
+  function scheduleTreeRefresh(paths: string[]) {
+    for (const p of paths) {
+      const dir = parentDirOf(p)
+      if (dir) pendingDirs.add(dir)
+    }
+    if (treeTimer !== undefined) window.clearTimeout(treeTimer)
+    treeTimer = window.setTimeout(() => {
+      treeTimer = undefined
+      void flushTreeRefresh()
+    }, 800)
+  }
+
+  async function flushTreeRefresh() {
+    const root = tree.root
+    if (!root) {
+      pendingDirs.clear()
+      return
+    }
+    // 上一轮还没回来：这一轮的路径留在集合里，等下一轮一并处理。
+    if (refreshing) return
+    refreshing = true
+    try {
+      let dirs = [...pendingDirs]
+      pendingDirs.clear()
+      const inRoot = (d: string) =>
+        d === root || d.startsWith(`${root}\\`) || d.startsWith(`${root}/`)
+      let targets = dirs.filter(inRoot)
+      if (targets.length > MAX_PENDING_DIRS) {
+        // 事件洪水：只刷根目录，叶子交给它自己的事件（树是懒展开的）。
+        targets = [root]
+      }
+      for (const d of targets) {
+        if (!tree.root) break
+        await tree.refresh(d)
+      }
+      dirs = []
+    } finally {
+      refreshing = false
+      // 刷完还有新路径积压：再排一轮，但不立即递归（避免自锁）。
+      if (pendingDirs.size > 0) {
+        if (treeTimer !== undefined) window.clearTimeout(treeTimer)
+        treeTimer = window.setTimeout(() => {
+          treeTimer = undefined
+          void flushTreeRefresh()
+        }, 800)
+      }
+    }
+  }
+
+  function parentDirOf(p: string): string | null {
+    const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'))
+    return i > 0 ? p.slice(0, i) : null
+  }
+
   onMounted(async () => {
     unlisten = await listen<string[]>('fs:changed', (ev) => {
       for (const path of ev.payload) schedule(path)
       // 文件树刷新：外部新建 / 删除文件要反映出来。
-      if (tree.root) void tree.refresh(tree.root)
+      scheduleTreeRefresh(ev.payload)
     })
   })
 
@@ -55,11 +113,14 @@ export function useExternalChange() {
     unlisten?.()
     for (const timer of pendingTimers.values()) window.clearTimeout(timer)
     pendingTimers.clear()
+    if (treeTimer !== undefined) window.clearTimeout(treeTimer)
   })
 
   async function handlePath(path: string) {
     const tab = editor.findByPath(path)
     if (!tab) return
+    // 分块只读标签不重读全文：读块时后端按修改时间报 stale。
+    if (tab.chunked) return
     if (tab.dirty) {
       // 脏标签不覆盖：用户手里有未保存的修改，替用户做决定就是丢内容。
       toast.warn(t('toast.fileChangedDirty', { name: baseName(path) }))

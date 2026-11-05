@@ -87,16 +87,13 @@
   --nt-tile: calc(40px * var(--nt-vw-scale));
   --nt-tile-lg: calc(52px * var(--nt-vw-scale));
 
-  /* 图标三档：**固定尺寸，不跟随 font-size**。
-     图标曾经写成 width:1em，于是容器字号一变（11px 的提示行 vs 28px 的标题）
-     图标跟着胀缩，全站没有统一观感。三档按载体选，不由字号决定。 */
+  /* 图标三档：固定尺寸，按载体选档，不由字号决定。 */
   --nt-icon-sm: calc(14px * var(--nt-vw-scale));
   --nt-icon-md: calc(16px * var(--nt-vw-scale));
   --nt-icon-lg: calc(18px * var(--nt-vw-scale));
 
   --nt-fs-ctl: calc(13.5px * var(--nt-fs-scale));
-  /* 与 --nt-fs-sm 同值：label 是「字段名」语义，sm 是「次要正文」语义。
-     两者目前同档，但分开命名，将来调一档不会牵动另一档。 */
+  /* --nt-fs-label 与 --nt-fs-sm 同值但语义不同，分开命名便于独立调整。 */
   --nt-fs-label: calc(13px * var(--nt-fs-scale));
   --nt-fs-hint: calc(12.5px * var(--nt-fs-scale));
 

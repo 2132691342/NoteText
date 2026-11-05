@@ -124,6 +124,7 @@ function update(patch: Partial<AppConfig>) {
 | `file` | FileConfig | — | 见上 |
 | `ui` | UIConfig | — | 见上 |
 | `keybindings` | BTreeMap | 空 | 快捷键覆盖 |
+| `last_exit_clean` | bool | true | 崩溃恢复标记：启动置 false，干净退出置 true（specs/19） |
 
 `last_folder` 与 `sidebar_tab` 由用户操作写入：前者跟着「打开文件」，
 后者跟着「切页签」。它们落在配置里是因为重启后要回到原处。
@@ -132,7 +133,7 @@ function update(patch: Partial<AppConfig>) {
 
 - 读配置失败（首次启动 / 浏览器预览）时用默认值，**不当错误弹窗**：
   用户看到的是「设置是默认的」，而不是「应用坏了」；
-- 反序列化失败（旧版本字段类型变了）时回退默认值并记 warn；
+- 反序列化失败（字段类型不匹配）时回退默认值并记 warn；
 - 「恢复默认」只重置配置，不动 `keybindings` 里用户自己改的部分——
   那一份是用户显式改的，恢复默认时该保留。
 

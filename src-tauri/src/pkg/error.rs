@@ -1,5 +1,5 @@
 //! 统一错误类型：所有跨 invoke 边界的错误都由它承载。
-//! 码值是数字字符串而非 int，段位见 specs/15。
+//! 码值是数字字符串而非 int，段位见 assets/specs/15。
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -68,39 +68,44 @@ impl std::error::Error for AppError {}
 /// 转换时补一句人话 message，避免底层的原始英文串直接给用户看。
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
-        Self::wrap("1001", "文件读写失败", e)
+        Self::wrap(codes::IO_FAILED, "文件读写失败", e)
     }
 }
 
 impl From<rusqlite::Error> for AppError {
     fn from(e: rusqlite::Error) -> Self {
-        Self::wrap("2001", "本地数据库出错", e)
+        Self::wrap(codes::DB_FAILED, "本地数据库出错", e)
     }
 }
 
 impl From<tauri::Error> for AppError {
     fn from(e: tauri::Error) -> Self {
-        Self::wrap("7001", "系统能力调用失败", e)
+        Self::wrap(codes::SHELL_FAILED, "系统能力调用失败", e)
     }
 }
 
 impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
-        Self::wrap("1002", "数据格式解析失败", e)
+        Self::wrap(codes::DATA_INVALID, "数据格式解析失败", e)
     }
 }
 
 /// 快捷构造：`AppResult<T>` = `Result<T, AppError>`。
 pub type AppResult<T> = Result<T, AppError>;
 
-/// 错误码常量：调用点只引用常量，具体文案与处置在 specs/15 与前端 `errCode`。
+/// 错误码常量：调用点只引用常量，具体文案与处置在 assets/specs/15 与前端 `errCode`。
 pub mod codes {
     // 1xxx 文件 / 路径 / 剪贴板（系统通用）
     pub const PATH_EMPTY: &str = "1000";
+    pub const IO_FAILED: &str = "1001";
+    pub const DATA_INVALID: &str = "1002";
     pub const PATH_ESCAPE: &str = "1003";
     pub const FILE_TOO_LARGE: &str = "1004";
     pub const FILE_NOT_FOUND: &str = "1005";
     pub const CLIPBOARD_FAILED: &str = "1006";
+    pub const BIG_INDEX_CANCELLED: &str = "1007";
+    /// 块 / 文件在编辑期间被外部程序改过：乐观锁失败，需重新加载。
+    pub const FILE_STALE: &str = "1008";
 
     // 2xxx 配置 / DB
     pub const DB_FAILED: &str = "2001";

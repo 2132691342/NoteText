@@ -19,6 +19,9 @@ pub struct AppConfig {
     pub ui: UIConfig,
     /// 快捷键覆盖：command_id → 组合键。空表示用默认键位表。
     pub keybindings: std::collections::BTreeMap<String, String>,
+    /// 崩溃恢复标记：退出前置 true；启动时置 false。启动后看到 false 且
+    /// 存在草稿快照 = 上次没走干净退出，提示用户恢复。
+    pub last_exit_clean: bool,
 }
 
 impl Default for AppConfig {
@@ -30,6 +33,8 @@ impl Default for AppConfig {
             file: FileConfig::default(),
             ui: UIConfig::default(),
             keybindings: std::collections::BTreeMap::new(),
+            // 缺字段时按「上次正常退出」理解：不凭空弹恢复提示。
+            last_exit_clean: true,
         }
     }
 }

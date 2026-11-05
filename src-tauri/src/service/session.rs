@@ -32,6 +32,7 @@ impl SessionService {
             })
             .map(|t| t.path.clone())
             .collect();
+        tracing::info!(tabs = vo.tabs.len(), missing = vo.missing.len(), "会话恢复");
         Ok(vo)
     }
 

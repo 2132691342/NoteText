@@ -5,6 +5,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton } from 'element-plus'
 import CodeEditor from '@/components/editor/CodeEditor.vue'
+import ChunkedViewer from '@/components/editor/ChunkedViewer.vue'
+import SheetEditor from '@/components/editor/SheetEditor.vue'
+import WorkbookEditor from '@/components/editor/WorkbookEditor.vue'
 import Minimap from '@/components/editor/Minimap.vue'
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
 import DocPreview from '@/components/editor/DocPreview.vue'
@@ -17,7 +20,7 @@ import { get, docVersionOf } from '@/composables/useEditorRegistry'
 import { doGotoLine } from '@/composables/useEditorActions'
 import { api } from '@/api'
 import { ellipsisMiddle } from '@/utils'
-import { hasRichPreview, isTextKind, kindOf } from '@/utils/fileKind'
+import { hasRichPreview, isDelimitedSheet, isTextKind, kindOf } from '@/utils/fileKind'
 import type { RecentFileVO } from '@/types/api'
 import type { Tab } from '@/stores/editor'
 
@@ -44,17 +47,19 @@ async function onOpenRecent(path: string) {
 }
 
 /**
- * 标签该用哪个视图组件。
- *
- * 「这个文件是什么形态」由 `utils/fileKind` 判定，组件只按形态选渲染器：
- * 二进制 → Hex；有专属预览器 → DocPreview；Markdown 默认进三态编辑器，
- * 用户按了「预览」才落到只读预览；其余进 CodeMirror。
+ * 按 `utils/fileKind` 判出的形态选渲染器：二进制→Hex、分隔文本→网格、
+ * 工作簿→单元格网格、Markdown→三态、其余有专属预览器→DocPreview 或 CodeMirror。
  */
-function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'code' {
+function viewOfTab(tab: Tab): 'hex' | 'markdown' | 'doc' | 'sheet' | 'workbook' | 'code' {
   const kind = kindOf(tab.path, tab.view_type === 'hex')
   if (tab.view_type === 'hex' || kind === 'binary') return 'hex'
   // 分屏时一律回到三态编辑器：只读预览器没有第二栏，分屏按钮会变成假动作。
   if (kind === 'markdown') return tab.showing_preview && !tab.split ? 'doc' : 'markdown'
+  if (kind === 'sheet') {
+    // CSV / TSV 是可编辑文本网格；XLSX / ODS 是二进制容器，走单元格补丁编辑。
+    if (isDelimitedSheet(tab.path)) return tab.showing_preview ? 'doc' : 'sheet'
+    return tab.showing_preview ? 'doc' : 'workbook'
+  }
   if (hasRichPreview(kind)) return 'doc'
   return tab.showing_preview ? 'doc' : 'code'
 }
@@ -71,13 +76,7 @@ function toEditor(tab: Tab) {
   tab.showing_preview = false
 }
 
-/**
- * 已经挂载过的标签 id。
- *
- * 为什么要记：v-for 全量挂载会让启动时把恢复出来的十几个文件全部读进内存
- * （每个都是完整 CodeMirror 实例）。改成「首次激活才挂载，之后常驻」：
- * 既不为没看过的文件付代价，也保证看过的不被销毁。
- */
+/** 已挂载过的标签 id：首次激活才挂载，之后常驻。 */
 const mounted = ref<Set<number>>(new Set())
 
 watch(
@@ -240,7 +239,10 @@ onBeforeUnmount(() => {
         :style="slotStyle(tab)"
       >
         <template v-if="mounted.has(tab.id)">
-          <div v-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">
+          <!-- 分块只读优先：超大文件不进 CodeEditor 链路（没有注册表条目，
+               小地图与统计读不到视图时会自动降级，不会误报） -->
+          <ChunkedViewer v-if="tab.chunked" :tab="tab" />
+          <div v-else-if="viewOfTab(tab) === 'hex'" class="nt-inline-view">
             <HexView
               :path="tab.path"
               :can-edit="isTextKind(kindOf(tab.path))"
@@ -259,6 +261,8 @@ onBeforeUnmount(() => {
             @toggle-edit="tab.showing_preview = false"
             @open-hex="toHex(tab)"
           />
+          <SheetEditor v-else-if="viewOfTab(tab) === 'sheet'" :tab="tab" />
+          <WorkbookEditor v-else-if="viewOfTab(tab) === 'workbook'" :tab="tab" />
           <CodeEditor v-else :tab="tab" :view-id="'main'" />
         </template>
         <div v-else class="nt-editor-loading">

@@ -14,13 +14,7 @@ interface Entry {
 
 const entries = new Map<number, Entry>()
 
-/**
- * 每个标签的正文版本号：正文每变一次 +1。
- *
- * `entries` 是普通 Map，computed 读它不会因正文变化而失效——Markdown 预览
- * 就这样永远停在空态（求值一次拿到 '' 后再不重算）。要跟着正文走的消费方
- * 先在 computed 里读这个版本号，把它变成真正的依赖。
- */
+/** 每个标签的正文版本号：computed 消费方先读它，才能跟着正文变化重算。 */
 const docVersions = ref(new Map<number, number>())
 
 /** 取某个标签的正文版本号。未挂载为 0。 */
@@ -28,19 +22,15 @@ export function docVersionOf(tabId: number): number {
   return docVersions.value.get(tabId) ?? 0
 }
 
-/** 标记某个标签的正文变了：注册、载入完成、每次文档变更都调。 */
+/** 标记某个标签的正文变了：注册、载入完成、每次文档变更都调。
+ *  原地 set：reactive Map 的写入本身就会触发依赖，整表拷贝是每键 O(n)。 */
 export function bumpDocVersion(tabId: number) {
-  const next = new Map(docVersions.value)
-  next.set(tabId, (next.get(tabId) ?? 0) + 1)
-  docVersions.value = next
+  docVersions.value.set(tabId, (docVersions.value.get(tabId) ?? 0) + 1)
 }
 
 /** 卸载时清掉版本记录：集合不该跟着关闭的标签无限增长。 */
 export function dropDocVersion(tabId: number) {
-  if (!docVersions.value.has(tabId)) return
-  const next = new Map(docVersions.value)
-  next.delete(tabId)
-  docVersions.value = next
+  docVersions.value.delete(tabId)
 }
 
 /** 挂载一个 tab 的编辑器视图。baseline 由组件按载入内容给出。 */
@@ -53,6 +43,33 @@ export function register(tabId: number, view: EditorView, baseline: Text) {
 export function unregister(tabId: number) {
   entries.delete(tabId)
   dropDocVersion(tabId)
+}
+
+// ---- 纯文本适配器（表格网格这类非 CodeMirror 的可编辑视图） ----
+// 保存链路（saveTabById）只认 getText / 脏标记 / 基线：给它一个 provider，
+// 表格编辑器的保存、另存为、退出确认就能原样复用，不必塞进一条假 CM 实例。
+
+/** 非编辑器正文的读写适配：表格编辑器持有自己的缓冲，这里只暴露两端。 */
+export interface TextProvider {
+  getText(): string
+  /** 把正文整体替换成 text（保存前的行尾整理会调）。 */
+  replaceText(text: string): void
+}
+
+const textProviders = new Map<number, TextProvider>()
+const providerBaselines = new Map<number, string>()
+
+/** 注册一个 tab 的文本适配器，initialText 即保存基线。 */
+export function registerTextProvider(tabId: number, provider: TextProvider, initialText: string) {
+  textProviders.set(tabId, provider)
+  providerBaselines.set(tabId, initialText)
+  bumpDocVersion(tabId)
+}
+
+/** 卸载适配器。 */
+export function unregisterTextProvider(tabId: number) {
+  textProviders.delete(tabId)
+  providerBaselines.delete(tabId)
 }
 
 /**
@@ -73,14 +90,31 @@ export function takeStashedDoc(tabId: number): string | null {
   return stashedDocs.get(tabId) ?? null
 }
 
+/** openPath 已读到的正文暂存：挂载时直接消费，截断标签也不会被全量重读拒绝。 */
+const pendingContents = new Map<number, string>()
+
+/** 存一份挂载时要用的正文（openPath 读到内容后调）。 */
+export function stagePendingContent(tabId: number, text: string) {
+  pendingContents.set(tabId, text)
+}
+
+/** 取走暂存的正文（一次性）：有暂存时挂载不再读文件。 */
+export function consumePendingContent(tabId: number): string | null {
+  const text = pendingContents.get(tabId)
+  if (text != null) pendingContents.delete(tabId)
+  return text ?? null
+}
+
 /** 取某个 tab 的视图。 */
 export function get(tabId: number): EditorView | undefined {
   return entries.get(tabId)?.view
 }
 
-/** 取某个 tab 的全文。 */
+/** 取某个 tab 的全文（编辑器视图或文本适配器）。 */
 export function getText(tabId: number): string {
-  return entries.get(tabId)?.view.state.doc.toString() ?? ''
+  const e = entries.get(tabId)
+  if (e) return e.view.state.doc.toString()
+  return textProviders.get(tabId)?.getText() ?? ''
 }
 
 /** 取某个 tab 的选中文本。 */
@@ -125,14 +159,36 @@ export function focusedTabId(): number | null {
  */
 export function commitBaseline(tabId: number) {
   const e = entries.get(tabId)
-  if (e) e.baseline = e.view.state.doc
+  if (e) {
+    e.baseline = e.view.state.doc
+    return
+  }
+  const p = textProviders.get(tabId)
+  if (p) providerBaselines.set(tabId, p.getText())
 }
 
 /** 正文是否与基线不同。挂载前（无视图）一律视为干净。 */
 export function isDirty(tabId: number): boolean {
   const e = entries.get(tabId)
-  if (!e) return false
-  return !sameDoc(e.view.state.doc, e.baseline)
+  if (e) return !sameDoc(e.view.state.doc, e.baseline)
+  const p = textProviders.get(tabId)
+  if (p) return p.getText() !== (providerBaselines.get(tabId) ?? '')
+  return false
+}
+
+/**
+ * 统一的「把正文整体替换成 text」：编辑器视图走 dispatch，
+ * 文本适配器走自己的缓冲。保存前的行尾整理（textForSave）用它，
+ * 不关心正文住在哪种视图里。
+ */
+export function replaceDocText(tabId: number, text: string): void {
+  const e = entries.get(tabId)
+  if (e) {
+    const v = e.view
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text } })
+    return
+  }
+  textProviders.get(tabId)?.replaceText(text)
 }
 
 /**

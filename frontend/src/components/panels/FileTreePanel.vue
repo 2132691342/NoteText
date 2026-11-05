@@ -266,7 +266,7 @@ const treeMenuItems = computed<MenuItem[]>(() => {
     {
       label: t('common.refresh'),
       run: () => {
-        if (tree.root) void tree.refresh(tree.root)
+        if (tree.root) void tree.refreshAll()
       },
     },
     {
@@ -328,6 +328,8 @@ function expandDir(path: string) {
 async function paste(destDir: string, autoSuffix = false) {
   const cb = tree.clipboard
   if (!cb || !destDir) return
+  // 源目录也被改变（剪切）时才需要刷两处。
+  const srcDirs = [...new Set(cb.paths.map((p) => dirName(p)))]
   try {
     const res = cb.cut
       ? await api.fileOps.move(cb.paths, destDir, autoSuffix)
@@ -339,7 +341,7 @@ async function paste(destDir: string, autoSuffix = false) {
   } catch (e) {
     toast.bad(normalizeError(e).message)
   }
-  if (tree.root) await tree.refresh(tree.root)
+  await Promise.all([destDir, ...(cb.cut ? srcDirs : [])].map((d) => tree.refresh(d)))
 }
 
 /** 删除：目录递归删，删前问一次。 */
@@ -361,7 +363,8 @@ async function removeEntry() {
   } catch (e) {
     toast.bad(normalizeError(e).message)
   }
-  if (tree.root) await tree.refresh(tree.root)
+  // 只刷被删节点所在的目录（节点本身可能是一个目录，那也是它的父层）。
+  await tree.refresh(dirName(entry.path))
 }
 
 /** 拖拽时的落点提示：跟随目标目录行。 */

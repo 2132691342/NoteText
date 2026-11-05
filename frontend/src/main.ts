@@ -24,7 +24,7 @@ app.config.errorHandler = (err, _inst, info) => {
   try {
     useToastStore().bad(tr('toast.uiError', { reason: (err as Error)?.message || tr('toast.restartHint') }))
   } catch {
-    /* toast 还没装好（pinia 之前）：只落 console */
+    /* pinia 挂载前的错误只落 console */
   }
 }
 

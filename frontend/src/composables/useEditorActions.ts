@@ -185,13 +185,7 @@ export function doGotoLine(tabId: number | null | undefined, line: number): bool
   return true
 }
 
-/**
- * 在光标处的括号与它的配对括号之间跳。
- *
- * 用语法树的 matchBrackets 而不是自己数字符：字符串里的 `"("` 与
- * 注释里的括号会被它自动排除，自己扫会把光标送到字符串中间去。
- * 光标不在括号上时返回 false，调用方给提示。
- */
+/** 在光标处括号与配对括号间跳：用语法树 matchBrackets，跳过字符串与注释。 */
 export function doGotoBracket(tabId?: number | null): boolean {
   const v = viewOf(tabId)
   if (!v) return false

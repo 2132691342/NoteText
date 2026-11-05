@@ -1,5 +1,5 @@
 //! 编辑器命令：语言、注释、大小写、统计、转到行。
-//! 全是同步计算，不涉及 IO。
+//! 入参是整篇文档，除常量表外全部标 async。
 
 use tauri::State;
 
@@ -17,31 +17,31 @@ pub fn get_languages() -> Vec<LanguageInfo> {
 }
 
 /// 切换行注释（Ctrl+/）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn toggle_line_comment(language: String, text: String) -> AppResult<String> {
     crate::service::editor::toggle_line_comment(&language, &text)
 }
 
 /// 行编辑操作。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn apply_line_op(op: LineOp, text: String) -> String {
     crate::service::editor::apply_line_op(op, &text)
 }
 
 /// 转到行：返回该行起始的字节偏移。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn goto_line(text: String, line: usize) -> AppResult<usize> {
     crate::service::editor::goto_line(&text, line)
 }
 
 /// 文本统计。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_text_stats(text: String) -> text::TextStats {
     text::stats(&text)
 }
 
 /// 大小写转换。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn convert_case(
     state: State<'_, AppState>,
     path: String,
@@ -55,7 +55,7 @@ pub fn convert_case(
 }
 
 /// 行尾转换。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn convert_line_ending(
     state: State<'_, AppState>,
     path: String,

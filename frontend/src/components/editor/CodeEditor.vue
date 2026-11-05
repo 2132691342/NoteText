@@ -82,7 +82,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useEditorStore } from '@/stores/editor'
 import { api } from '@/api'
 import { useToastStore } from '@/stores/toast'
-import { register, unregister, isDirty, getSelection, bumpDocVersion, stashDoc, takeStashedDoc } from '@/composables/useEditorRegistry'
+import { register, unregister, isDirty, getSelection, bumpDocVersion, stashDoc, takeStashedDoc, consumePendingContent } from '@/composables/useEditorRegistry'
 import ContextMenu from '@/components/common/ContextMenu.vue'
 import type { MenuItem } from '@/components/common/contextMenu'
 import {
@@ -132,14 +132,10 @@ import {
 
 const props = defineProps<{ tab: Tab; viewId?: 'main' | 'second'; readonly?: boolean }>()
 
-/**
- * 5 色标记的装饰插件。
- *
- * 词集合由动作层持有（`allMarkWords`），这里只负责把它画出来。
- * 分屏 / 多标签每个视图各挂一份：同一组标记在所有视图上都看得见，
- * 与「标记是这份文件的看法」一致。词 → 颜色档固定，
- * 用户不会因为点了两次就换个颜色。
- */
+/** 大文档阈值：超过它关闭补全与同词高亮（2MB）。 */
+const BIG_DOC_LIMIT = 2 * 1024 * 1024
+
+/** 5 色标记装饰：词 → 颜色档固定，分屏 / 多标签每个视图各挂一份。 */
 function markClassOf(word: string): number {
   let h = 0
   for (let i = 0; i < word.length; i += 1) h = (h * 31 + word.charCodeAt(i)) % 5
@@ -271,8 +267,10 @@ const selBarItems = computed(() => [
 
 const cfg = () => settings.config.editor
 
-/** 编辑器视图的扩展集合（不含语言与主题，那些是 compartment）。 */
-function baseExtensions(editable: boolean) {
+/** 编辑器视图的扩展集合（不含语言与主题，那些是 compartment）。
+ *  `big` 大文档降档：补全与同词高亮对几 MB 的文档是纯税，关掉它们
+ *  换来的输入流畅度远比那点便利值钱。 */
+function baseExtensions(editable: boolean, big = false) {
   return [
     // history 只注册一次：注册两次会让每一步操作进两个栈，
     // 撤销一次只退回半步，用户按两下才看到效果。
@@ -282,18 +280,17 @@ function baseExtensions(editable: boolean) {
     highlightSpecialChars(),
     indentOnInput(),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-    closeBrackets(),
-    autocompletion(),
+    ...big ? [] : [closeBrackets(), autocompletion()],
     rectangularSelection(),
     crosshairCursor(),
     scrollPastEnd(),
     keymap.of([
-      ...closeBracketsKeymap,
+      ...(big ? [] : closeBracketsKeymap),
       ...defaultKeymap,
       ...searchKeymap,
       ...historyKeymap,
       ...foldKeymap,
-      ...completionKeymap,
+      ...(big ? [] : completionKeymap),
       indentWithTab,
     ]),
     editable ? EditorState.readOnly.of(false) : EditorState.readOnly.of(true),
@@ -319,11 +316,15 @@ function baseExtensions(editable: boolean) {
 onMounted(async () => {
   if (!host.value) return
 
-  // 读正文：路由往返的暂存优先（未保存的修改在这里），其次草稿，最后读文件。
+  // 读正文：路由往返的暂存优先（未保存的修改在这里），其次 openPath 已读到
+  // 的暂存（避免二次全量读），再次草稿，最后读文件。
   let text = ''
   const stashed = takeStashedDoc(props.tab.id)
+  const pending = stashed != null ? null : consumePendingContent(props.tab.id)
   if (stashed != null) {
     text = stashed
+  } else if (pending != null) {
+    text = pending
   } else if (props.tab.path.startsWith('draft:')) {
     try {
       const drafts = await api.listDrafts()
@@ -342,17 +343,27 @@ onMounted(async () => {
       props.tab.has_bom = c.has_bom
       props.tab.encoding_uncertain = c.truncated && c.encoding !== 'utf-8'
     } catch (e) {
+      const err = normalizeErr(e)
+      // 超出全量读上限（会话恢复的大文件没经过打开弹窗）：转分块只读，
+      // 让用户至少能浏览，而不是对着错误面发呆。
+      if (err.code === '1004') {
+        props.tab.chunked = true
+        props.tab.read_only = true
+        return
+      }
       // 读不了（文件被删 / 被独占）：画出错误面，不建编辑器。
       // 静默留一张空白标签的后果是查找、保存全部「按了没反应」。
-      mountError.value = normalizeErr(e)
+      mountError.value = err.message
       return
     }
   }
 
+  // 大文档降档：>2MB 时关掉补全 / 同词高亮这类全文档扫描的扩展。
+  const big = text.length > BIG_DOC_LIMIT
   const state = EditorState.create({
     doc: text,
     extensions: [
-      ...baseExtensions(!props.readonly),
+      ...baseExtensions(!props.readonly, big),
       // compartments（初值来自当前配置）
       themeComp.of(themeExtensions()),
       langComp.of(syncExtensions()),
@@ -371,7 +382,7 @@ onMounted(async () => {
       ),
       // 选中即高亮同词：日志 / 代码里找「这个词还出现在哪」非常高频。
       selectionMatchComp.of(
-        cfg().highlight_selection ? highlightSelectionMatches() : [],
+        !big && cfg().highlight_selection ? highlightSelectionMatches() : [],
       ),
     ],
   })
@@ -479,10 +490,10 @@ function emitCursor(state: EditorState) {
 }
 
 function emitStats(state: EditorState) {
-  const text = state.doc.toString()
+  // 行数从 EditorState 直接取（O(1)）：每次按键全文 toString+split 会卡输入。
   document.dispatchEvent(
     new CustomEvent('nt-stats', {
-      detail: { tabId: props.tab.id, lines: text === '' ? 0 : text.split('\n').length },
+      detail: { tabId: props.tab.id, lines: state.doc.length === 0 ? 0 : state.doc.lines },
     }),
   )
 }
@@ -660,10 +671,10 @@ function onGutterClick(e: MouseEvent) {
 
 defineExpose({ gutterClick: onGutterClick })
 
-function normalizeErr(e: unknown): string {
-  if (typeof e === 'string') return e
-  const o = e as { message?: string }
-  return o?.message ?? tr('error.unknown', { reason: '' })
+function normalizeErr(e: unknown): { code: string; message: string } {
+  if (typeof e === 'string') return { code: 'unknown', message: e }
+  const o = e as { code?: string; message?: string }
+  return { code: o?.code ?? 'unknown', message: o?.message ?? tr('error.unknown', { reason: '' }) }
 }
 
 /**
@@ -688,13 +699,7 @@ function onKeyFallback(e: KeyboardEvent) {
   }
 }
 
-/**
- * 编辑器右键菜单。
- *
- * 为什么不复用 WebView 的原生菜单：它给的是「撤销 / 剪切 / 复制 / 粘贴」，
- * 与编辑器的实际能力对不上（我们有行操作、注释、书签、工具），
- * 而且样式与全站两套语言。
- */
+/** 编辑器右键菜单：条目来自命令表，覆盖行操作 / 注释 / 书签 / 工具。 */
 function onContextMenu(e: MouseEvent) {
   e.preventDefault()
   menuItems.value = buildMenuItems()

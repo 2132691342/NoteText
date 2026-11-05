@@ -58,13 +58,7 @@ const md = useMarkdown()
 
 type Mode = 'edit' | 'split' | 'preview'
 
-/**
- * 默认编辑态。
- *
- * `.md` 与其他文本文件一样，打开就是左上角的源码视图；要看渲染结果按
- * 分屏 / 预览。不做「记住上次模式」：切过一次就永远不再给源码，
- * 下次打开的人会以为文件坏了。
- */
+/** 默认编辑态：`.md` 打开即源码视图，分屏 / 预览是按需切换的视图状态。 */
 /** 分屏状态与标签上的 `split` 同一份真相：工具栏的「分屏」按钮、Ctrl+\ 也能开合。 */
 const mode = ref<Mode>(props.tab.split ? 'split' : 'edit')
 
@@ -101,12 +95,7 @@ const source = computed(() => {
 md.setDark(settings.resolvedTheme === 'dark')
 
 // ---- 分屏比例：拖中缝，比例记在本次会话里 ----
-/**
- * 编辑栏占比（0.25–0.75）。
- *
- * 与代码分屏共用 `editor.splitRatio`（存的是副栏占比）：两个视图的中缝
- * 位置一致，会话恢复也只需存一个数。太窄的两栏都读不了。
- */
+/** 编辑栏占比（0.25–0.75）：与代码分屏共用 `editor.splitRatio`，会话只存一个数。 */
 const ratio = computed({
   get: () => 1 - editor.splitRatio,
   set: (v: number) => {
@@ -225,13 +214,7 @@ onBeforeUnmount(() => {
   if (timer !== null) window.clearTimeout(timer)
 })
 
-/**
- * 预览里的链接点击。
- *
- * 三种目标三种走法：`#anchor` 在本文内跳转（markdown-it 给标题生成 id），
- * `http(s)` 交给系统浏览器，其余当相对路径打开同目录的另一个文件——
- * 文档集里最常见的就是「点进下一篇」。
- */
+/** 预览里的链接：`#anchor` 文内跳转、http(s) 交系统浏览器、其余按同目录相对路径打开。 */
 async function onDocClick(e: MouseEvent) {
   const target = e.target as HTMLElement
 

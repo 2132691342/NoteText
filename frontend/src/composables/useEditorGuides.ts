@@ -8,13 +8,7 @@ import { syntaxTree } from '@codemirror/language'
 /** 缩进参考线的栅格：每 8 列一条，5 档颜色循环。 */
 const GUIDE_COL = 8
 
-/**
- * 缩进参考线。
- *
- * 只画「有内容行」的缩进宽度：空行画线会让一片空白里横着几条线，
- * 读起来像表格而不是代码。深度上限 5 档，再深用第 5 档循环——
- * 档位太多颜色就分不出来了。
- */
+/** 缩进参考线：只画有内容行的缩进宽度，深度上限 5 档后循环。 */
 function indentGuides(): Extension {
   return ViewPlugin.fromClass(
     class implements PluginValue {
@@ -81,13 +75,7 @@ class GuideLine extends WidgetType {
 }
 
 /**
- * 括号配对着色（rainbow brackets）。
- *
- * 用「可见区栈扫描」而不是逐个问语法树：一次 O(视口) 的线性扫描就能
- * 给每一对括号定出嵌套深度，比「对每个括号都去找另一半」快一个量级。
- *
- * 字符串与注释里的括号不计入：栈扫描分不清 `"("` 与 `(`，
- * 所以先用语法树把这些区间挖掉，扫描时跳过。
+ * 括号配对着色：可见区栈扫描定嵌套深度，字符串与注释区间由语法树先剔除。
  */
 function bracketPairColors(): Extension {
   return ViewPlugin.fromClass(

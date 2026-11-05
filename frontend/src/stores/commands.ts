@@ -87,12 +87,8 @@ export const useCommandStore = defineStore('commands', () => {
 })
 
 /**
- * 默认键位表：命令表里声明的 `key` 的副本，供「设置 → 快捷键」展示与冲突检测。
- *
- * **真相源是命令自己声明的 `key`**（useCommands 注册时写的那一份）。
- * 这里保留一份是为了：① 设置页列出全部默认键位；② 用户改键后仍能显示
- * 「默认是什么」。两者必须一致——分发优先看命令的 key，所以这张表落后
- * 只会让设置页显示旧的默认值，不会让按键失灵。
+ * 默认键位表：命令声明的 `key` 的副本，供设置页展示与冲突检测。
+ * 真相源是命令自己的 `key`，分发优先看它；本表只影响设置页显示。
  */
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'file.new': 'Control+N',

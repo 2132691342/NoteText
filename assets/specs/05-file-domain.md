@@ -25,19 +25,24 @@ read(path, mode)
 而归一后的文本才交给编辑器算行列（混用行尾会让列号随行尾漂移）。
 
 **大文件分模式**：`MAX_FULL_READ = 32MB`。超了不静默全量读入
-（会把 WebView 卡死），前端在 `open_path` 时先 `stat_file` 看大小，
-超限自动改用 `ReadMode::Head`（只读前 32MB），**不弹选择框**。
+（会把 WebView 卡死）。32–512MB 弹窗让用户选「普通打开（整篇编辑）/ 分块打开」，
+512MB 以上自动分块；分块模式的块索引、逐块解码与单块写回见 **specs/19**。
+Head 模式保留给截断重载等内部场景。
 
 降级后的标签有三重保护：
 
 | 保护 | 落点 |
 |---|---|
-| 标记截断 | `tab.truncated = true`，状态栏显示「已截断」并带 hover 提示 |
+| 标记截断 | `tab.truncated`，视图给出明确的只读标识 |
 | 强制只读 | `tab.read_only = true`，编辑器不接收输入 |
 | 拦截写回 | `save_tab` 见到 `truncated` 直接拒绝并提示，不让半个文件覆盖原文件 |
 
-**为什么不让用户选**：超限时用户想要的是「打开看内容」，不是理解三种读取模式的差别。
-自动降级一步到位，而截断状态在状态栏可见——真想完整编辑会用外部程序。
+分块（`tab.chunked`）是另一回事：它**允许逐块编辑**，每个写回都带字节级乐观锁
+（`big_file_write_block`），不经过整篇写盘链路。
+
+**为什么 32–512MB 还给选择**：这个区间的文件「整篇编辑」仍有价值（配置导出、
+数据清洗），代价只是打开慢几秒；512MB 以上整篇进 CodeMirror 已经不可接受，
+替用户决定转分块。
 
 ### 写入
 
@@ -114,9 +119,9 @@ read_table_preview(path, encoding?) -> TablePreviewVO
   └─ total_rows：尾部按换行统计（最多再扫 128MB，超了记 0 = 未知）
 ```
 
-**为什么不让前端用 XLSX 读 CSV**：那条路要先 `read_binary`（20MB 上限）、
-把 base64 解成 `Uint8Array` 再交给 SheetJS 按 UTF-8 猜编码。
-大表被上限挡掉、GBK 表整列 mojibake——用户看到「文件太大打不开」与
+**为什么表格预览走后端切行**：交给前端的表格库要先 `read_binary`（20MB 上限）、
+把 base64 解成字节再按 UTF-8 猜编码。
+大表被上限挡掉、GBK 表整列乱码——用户看到「文件太大打不开」与
 「中文全是乱码」两个症状，根因是同一条链路。
 
 `rows` 上限 5000 行、前端再按 2000 行渲染：再多也没人逐行看，
@@ -144,9 +149,15 @@ read_dir(dir)
 ```
 watch_dir(dir, on_change)
   ├─ 一个 RecommendedWatcher 复用（每次新建会让 inotify 句柄无限增长）
+  ├─ **非递归（NonRecursive）**：只监听这一层
   ├─ 只报 is_modify / is_create / is_remove（访问时间之类的噪音丢掉）
   └─ 变更经 commands 层注入的回调转发 → emit('fs:changed', paths)
 ```
+
+**为什么不递归**：递归监听一棵大树（`node_modules` / 构建缓存 / 几十万文件的
+数据目录）会让 notify 为每个子目录注册一个系统句柄，Windows 上就是逐个
+`OpenDirectory`。按需监听：根目录先监听，子目录在展开时逐个加监听，
+折叠时 `unwatch` 释放（前端 `fileTree.toggle` 负责）。
 
 **监控失败不阻断启动**：编辑器核心功能不依赖它，失败只让侧栏的监控面板不可用。
 

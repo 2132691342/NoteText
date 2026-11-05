@@ -15,7 +15,10 @@
     </div>
 
     <div v-else class="nt-panel-list">
-      <div class="nt-fr-summary">{{ t('tool.batchHitSummary', { files: groups.length, count: total }) }}</div>
+      <div class="nt-fr-summary">
+        {{ t('tool.batchHitSummary', { files: groups.length, count: total }) }}
+        <span v-if="store.truncated" class="nt-fr-truncated">{{ t('sidebar.findResultsTruncated') }}</span>
+      </div>
       <div v-for="g in groups" :key="g.path" class="nt-fr-group">
         <button class="nt-fr-file" @click="open(g.path)">
           <NtIcon name="file" />
@@ -83,6 +86,11 @@ function clear() {
   font-size: var(--nt-fs-hint);
   color: var(--nt-ink-2);
   flex: none;
+}
+
+.nt-fr-truncated {
+  margin-left: var(--nt-sp-2);
+  color: var(--nt-ink-muted);
 }
 
 .nt-fr-group {

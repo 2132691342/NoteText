@@ -31,8 +31,7 @@ impl Default for ToolsService {
 }
 
 impl ToolsService {
-    /// 工具箱不落库：所有操作都是纯计算。保留 `db` 字段只为构造签名
-    /// 与其他 service 一致（容器统一 new），将来加「历史记录」时不用改容器。
+    /// 工具箱不落库：所有操作都是纯计算；`db` 字段只为与其他 service 构造签名一致。
     pub fn new() -> Self {
         Self {
             db: Arc::new(Db::open_in_memory().expect("内存数据库建不起来")),

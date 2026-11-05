@@ -3,7 +3,7 @@
 ## 定位
 
 这一篇回答四个问题：**NoteText 是什么、由哪些模块组成、数据怎么流、每个决定换来了什么**。
-看完它再进各子系统规格（01–18），不需要先读代码。
+看完它再进各子系统规格（01–19），不需要先读代码。
 
 ## 一句话
 
@@ -17,6 +17,8 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。内核是 CodeMirror
 
 第四条是独立子系统：15 种格式、任务队列、增删 / 转换 / 分卷、路径穿越与密码三态
 （见 [18](18-archive.md)）；系统文件关联见 [17](17-deployment.md)。
+大文件分块浏览、表格可编辑网格与崩溃恢复是另一组互补能力
+（见 [19](19-large-files-and-sheet-edit.md)）：它们守的是「文件打不开、改不了、丢得掉」。
 
 **界面只做「用户每天都做的那一件事」**：不自研插件系统、不做多窗口、不做云同步。
 这条边界让功能面收得住，代价是高级需求要靠外部工具。
@@ -89,6 +91,8 @@ NoteText 是一款轻量级 Windows 桌面文本编辑器。内核是 CodeMirror
 | `tests/chain_tests.rs` + GitHub Actions | 测试组织与验证入口 | [12](12-testing.md) |
 | `service/batch.rs` | 目录级查找替换 / 批量重命名（两段式） | [13](13-batch-operations.md) |
 | `service/archive/` | 压缩 / 解压引擎、任务队列、格式能力表 | [18](18-archive.md) |
+| `service/big_file.rs` + `service/sheet.rs` + `domain/sheet.rs` + `commands/sheet.rs` | 大文件块索引与单块写回、XLSX 单元格补丁 | [19](19-large-files-and-sheet-edit.md) |
+| `ChunkedViewer.vue` / `SheetEditor.vue` / `WorkbookEditor.vue` + `useCrashGuard` | 分块视图、两类可编辑网格、30 秒脏标签快照 | [19](19-large-files-and-sheet-edit.md) |
 | `commands/` ↔ `api/index.ts` | invoke 命令契约 | [14](14-api-contract.md) |
 | `pkg/error.rs` | 错误码分段 | [15](15-error-codes.md) |
 | `tauri.conf.json` + workflows | 构建与分发 | [17](17-deployment.md) |
@@ -103,7 +107,7 @@ main.rs
        ├─ app::bootstrap::build(&paths)
        │    ├─ Db::open(&paths.db_path)  WAL + busy_timeout + migrate
        │    ├─ SettingsRepo::load        没有则写默认配置
-       │    └─ Services::new(db)         file / file_ops / session / tools / userdata / batch / archive
+       │    └─ Services::new(db)         file / big_file / file_ops / session / tools / userdata / batch / archive / sheet
        ├─ tauri::Builder
        │    ├─ plugin(single_instance)   二次启动转交
        │    ├─ plugin(dialog)            原生打开 / 保存对话框
@@ -187,6 +191,7 @@ const c = await invoke<FileContentVO>('read_file', { path, mode })
 | `fs:changed` | 路径数组 | `useExternalChange` + 文件树刷新 |
 | `archive:task-update` | 任务快照数组 | `stores/archive`：压缩任务队列的进度 |
 | `archive:task-finished` | 终态任务 | `stores/archive`：终态 toast 与结果负载 |
+| `bigfile:progress` | 已扫描字节数 | `ChunkedViewer.vue`：建块索引时的进度 |
 
 事件不缓冲给后注册的监听器（Tauri 的 `listen` 在注册后才收到），
 所以「启动时带来的文件」不走事件：后端定格在 OnceLock，前端挂载后经
@@ -229,7 +234,7 @@ src-tauri/src/main.rs  三行：调 notetext_lib::run()
 ```
 
 分开是为了让集成测试（`cargo test`）能链接同一份装配而不必拉起 WebView。
-全部 8 条长链路测试在 `src-tauri/tests/chain_tests.rs` 一个文件里
+全部 10 条长链路测试在 `src-tauri/tests/chain_tests.rs` 一个文件里
 （组织方式见 [12](12-testing.md)）。
 **注意 `main.rs` 里不能写 `mod lib;`**——那会把 lib.rs 变成 main 的子模块
 `lib`，它的 `pub mod app;` 就会去找 `src/lib/app.rs`，报一堆「file not found」。

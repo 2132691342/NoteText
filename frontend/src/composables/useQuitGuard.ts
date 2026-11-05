@@ -1,5 +1,5 @@
 // 退出守卫：关窗时先检查未保存内容。
-// 链路（specs/04）：前端点 X → 后端发 `app:before-close` → 逐个问未保存标签
+// 链路（assets/specs/04）：前端点 X → 后端发 `app:before-close` → 逐个问未保存标签
 
 import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
@@ -136,6 +136,8 @@ export function useQuitGuard() {
 
     // 再存一次布局：刚才的保存可能改了路径 / 标题。
     await persistLayout()
+    // 标记干净退出：下一次启动不再弹崩溃恢复（要在 forceQuit 前落库）。
+    await api.markCleanExit()
     await api.confirmQuit()
     await api.forceQuit()
   }

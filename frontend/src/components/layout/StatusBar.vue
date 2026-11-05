@@ -17,7 +17,9 @@
     </template>
 
     <template v-if="visible('lines')">
-      <span class="nt-readout" :title="statsTitle">{{ t('status.lines') }} {{ lines }}</span>
+      <span class="nt-readout" :title="statsTitle" @mouseenter="onLinesHover">
+        {{ t('status.lines') }} {{ lines }}
+      </span>
     </template>
 
     <div class="nt-statusbar-spacer" />
@@ -86,9 +88,9 @@ import { useArchiveStore } from '@/stores/archive'
 import { useDialogStore } from '@/stores/dialogs'
 import NtIcon from '@/components/common/NtIcon.vue'
 import { getPosition } from '@/composables/useEditorRegistry'
-import { getText } from '@/composables/useEditorRegistry'
+import { get, docVersionOf } from '@/composables/useEditorRegistry'
 import { api } from '@/api'
-import { debounce, formatSize } from '@/utils'
+import { formatSize } from '@/utils'
 import { encodingShort } from '@/utils/encoding'
 
 const { t } = useI18n()
@@ -109,8 +111,13 @@ const ui = computed(() => settings.config.ui)
 const pos = ref({ line: 1, col: 1, selection_len: 0 })
 const lines = ref(0)
 const showMenu = ref(false)
-/** 详细统计（字符 / 词 / 非空行）：走后端 `get_text_stats`，悬停行数时给。 */
+/** 详细统计（字符 / 词 / 非空行）：按需向后端要，悬停或点击行数时才拉。 */
 const detail = ref<{ chars: number; words: number; non_blank_lines: number } | null>(null)
+/** 统计对应的正文版本号：正文变了旧统计就作废。 */
+let detailVersion = -1
+
+/** 详细统计的文档上限：超过它不再给字符 / 词数（4MB）。 */
+const DETAIL_STATS_LIMIT = 4 * 1024 * 1024
 
 /** 只读读数不套胶囊，但要给得出细节——悬停就够，不额外占一层 UI。 */
 const statsTitle = computed(() => {
@@ -121,18 +128,23 @@ const statsTitle = computed(() => {
   )} ${d.non_blank_lines}`
 })
 
-/**
- * 统计走后端且防抖：每次按键都算一遍全文，大文件上会把输入卡住。
- * 400ms 与配置回写同一档，用户停手才拉。
- */
-const fetchStats = debounce(async () => {
+/** 详细统计按需拉取（悬停 / 点击行数读数），不随每次按键重算全文。 */
+async function fetchStats() {
   const id = editor.activeId
   if (id == null) {
     detail.value = null
     return
   }
+  const doc = get(id)?.state.doc
+  if (!doc || doc.length > DETAIL_STATS_LIMIT) {
+    detail.value = null
+    return
+  }
+  const version = docVersionOf(id)
+  if (version === detailVersion) return
   try {
-    const s = await api.textStats(getText(id))
+    const s = await api.textStats(doc.toString())
+    detailVersion = version
     detail.value = {
       chars: s.chars,
       words: s.words,
@@ -142,7 +154,12 @@ const fetchStats = debounce(async () => {
     // 统计失败不影响编辑：静默降级为不显示细节。
     detail.value = null
   }
-}, 400)
+}
+
+/** 悬停行数读数：这时候才真的需要字数 / 词数。 */
+function onLinesHover() {
+  if (!detail.value) void fetchStats()
+}
 
 /** 状态栏显示项：缺省全显示，用户在右键菜单里关。 */
 const ITEMS = [
@@ -190,7 +207,6 @@ function onStats(e: Event) {
   const d = (e as CustomEvent).detail as { tabId?: number; lines: number }
   if (!d || d.tabId !== editor.activeId) return
   lines.value = d.lines
-  void fetchStats()
 }
 
 /** 活跃标签变了主动拉一次：切换标签时编辑器不会重发光标事件。 */
@@ -202,17 +218,14 @@ function syncFromEditor() {
     return
   }
   pos.value = getPosition(id)
-  lines.value = getText(id) === '' ? 0 : getText(id).split('\n').length
-  void fetchStats()
+  const doc = get(id)?.state.doc
+  lines.value = doc ? (doc.length === 0 ? 0 : doc.lines) : 0
+  // 统计不进这里：切标签不该触发一次全文过 IPC，旧数据直接作废即可。
+  detail.value = null
+  detailVersion = -1
 }
 
-/**
- * 编辑器挂载完成时同步一次。
- *
- * 首屏必须靠这个事件：状态栏比编辑器先挂载，此时注册表还是空的，
- * 只在 onMounted 里同步一次会停在「行 1, 列 1 / 总行数 0」，
- * 直到用户敲第一个字才对得上。
- */
+/** 编辑器挂载完成时同步一次读数，覆盖状态栏先于编辑器挂载的首屏。 */
 function onEditorReady(e: Event) {
   const d = (e as CustomEvent).detail as { tabId?: number }
   if (!d || d.tabId !== editor.activeId) return

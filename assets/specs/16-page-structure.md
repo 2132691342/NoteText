@@ -31,10 +31,13 @@ App.vue
 ├── SideBar.vue           侧栏：七个面板的容器，宽度可拖
 ├── TabBar.vue            标签栏 32px：标签 + 脏标记 + 关闭钮
 ├── EditorArea.vue        编辑区：按形态分发 + 分屏 + 拖放提示
-│   ├── CodeEditor.vue    CodeMirror 容器（compartments）
+│   ├── CodeEditor.vue      CodeMirror 容器（compartments）
 │   ├── MarkdownEditor.vue  Markdown 三态：编辑 / 分屏 / 预览
-│   ├── DocPreview.vue    只读预览：xlsx / csv / docx / pdf / 图片 / 文本，含「读不了」的出路卡片
-│   └── Minimap.vue       小地图（canvas 轮廓，虚拟滚动跟随）
+│   ├── DocPreview.vue      只读预览：xlsx / csv / docx / pdf / 图片 / 文本，含「读不了」的出路卡片
+│   ├── ChunkedViewer.vue   大文件分块视图：块导航 + 单块解锁编辑
+│   ├── SheetEditor.vue     CSV / TSV 可编辑文本网格（虚拟滚动）
+│   ├── WorkbookEditor.vue  XLSX / ODS 单元格网格（值与公式可改）
+│   └── Minimap.vue         小地图（canvas 轮廓，虚拟滚动跟随）
 └── StatusBar.vue         状态栏 26px：修改指示 / 光标 / 语言 / 编码 / 行尾 / 缩放
 ```
 
@@ -220,7 +223,8 @@ CodeEditor.vue
 | `composables/useQuickActions.ts` | 一键快操作：选中即用、结果原地替换（格式化 / 压缩 / 转义 / 格式互转） |
 | `composables/useShellIntent.ts` | 托盘新建 / 外部打开文件（含冷启动拉取与压缩包分流），挂 App 根 |
 | `composables/useClipboardHistory.ts` | 编辑器内复制文本的本地历史 |
-| `composables/useVirtualList.ts` | 大列表的定高虚拟滚动（归档条目表 / 日志 / 目录差异） |
+| `composables/useVirtualList.ts` | 大列表的定高虚拟滚动（归档条目表 / 日志 / 目录差异 / 表格网格） |
+| `composables/useCrashGuard.ts` | 每 30 秒把脏标签正文静默快照进草稿库；异常退出后由草稿箱恢复 |
 
 ## 取舍
 

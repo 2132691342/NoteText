@@ -1,5 +1,4 @@
-// 文件树节点：递归渲染的一行。
-// 之前这里是一个「setup 返回带 render 字段的对象」的内联组件，那种写法在 Vue 3
+// 文件树节点：递归渲染的一行，展开与右键操作由本组件自管。
 
 <template>
   <div>
@@ -40,21 +39,23 @@
     </div>
 
     <!-- 子目录：懒加载，children 到位后才渲染。contextmenu 必须向上转发：
-         菜单在面板层，不转发的话子节点右键就是死的。 -->
+         菜单在面板层，不转发的话子节点右键就是死的。
+         子项超过一批时增量渲染：一次铺上万条 DOM 是大目录卡顿的直接原因。 -->
     <template v-if="expanded && entry.is_dir">
       <FileTreeNode
-        v-for="child in tree.children.get(entry.path) ?? []"
+        v-for="child in shownChildren"
         :key="child.path"
         :entry="child"
         :depth="depth + 1"
         @contextmenu="onChildMenu"
       />
+      <div v-if="shownChildren.length < childrenList.length" ref="sentinel" class="nt-tree-more" />
     </template>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
@@ -85,13 +86,37 @@ const loading = ref(false)
 const editing = ref<null | { mode: 'rename' | 'new-file' | 'new-dir'; draft: string }>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
 
+// ---- 大目录增量渲染 ----
+// 哨兵元素进入视口就多渲染一批：不用把递归树拍平成虚拟列表，
+// 也不依赖面板的滚动容器（任意深度的目录都一样工作）。
+const RENDER_CHUNK = 200
+const renderLimit = ref(RENDER_CHUNK)
+const childrenList = computed(() => tree.children.get(props.entry.path) ?? [])
+const shownChildren = computed(() => childrenList.value.slice(0, renderLimit.value))
+const sentinel = ref<HTMLElement | null>(null)
+let observer: IntersectionObserver | null = null
+
+watch(sentinel, (el) => {
+  if (!observer) return
+  if (el) observer.observe(el)
+  else observer.disconnect()
+})
+
 onMounted(() => {
   window.addEventListener('nt-tree-edit', onTreeEdit)
   window.addEventListener('nt-tree-expand', onTreeExpand)
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) renderLimit.value += RENDER_CHUNK
+    },
+    { rootMargin: '300px' },
+  )
 })
 onBeforeUnmount(() => {
   window.removeEventListener('nt-tree-edit', onTreeEdit)
   window.removeEventListener('nt-tree-expand', onTreeExpand)
+  observer?.disconnect()
+  observer = null
 })
 
 async function toggle() {
@@ -168,21 +193,21 @@ async function commitEdit() {
     toast.bad(t('toast.badFileName'))
     return
   }
+  // 只在受影响的目录上刷一次，不发多余的 readDir。
+  const parent = props.entry.is_dir ? props.entry.path : dirName(props.entry.path)
   try {
     if (ed.mode === 'rename') {
       await renameTo(name)
     } else {
-      const parent = props.entry.is_dir ? props.entry.path : dirName(props.entry.path)
       const target = joinPath(parent, name)
       if (ed.mode === 'new-dir') await api.fileOps.createDir(target)
       else await api.fileOps.createFile(target)
-      await tree.refresh(tree.root)
       if (ed.mode === 'new-file') await editor.openPath(target)
     }
   } catch (e) {
     toast.bad(normalizeError(e).message)
   }
-  if (tree.root) await tree.refresh(tree.root)
+  await tree.refresh(parent)
 }
 
 /** 重命名：同目录下落新名字，同步已打开标签的路径。 */
@@ -236,6 +261,8 @@ async function onDrop(e: DragEvent) {
   tree.setDragPath(null)
   tree.setDropTarget(null)
   if (!src) return
+  // 源目录与目标目录各刷一次：移动会同时改变两边的内容。
+  const srcParent = dirName(src)
   try {
     const res = await api.fileOps.move([src], props.entry.path)
     report(res, () => {
@@ -244,7 +271,7 @@ async function onDrop(e: DragEvent) {
   } catch (err) {
     toast.bad(normalizeError(err).message)
   }
-  if (tree.root) await tree.refresh(tree.root)
+  await Promise.all([tree.refresh(props.entry.path), tree.refresh(srcParent)])
 }
 
 /** 一组文件操作的结果统一报一次：失败项逐条说，成功项只说条数。 */

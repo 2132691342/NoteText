@@ -39,6 +39,7 @@ import { useViewportScale } from '@/composables/useViewportScale'
 import { useExternalChange } from '@/composables/useExternalChange'
 import { useFileDrop } from '@/composables/useFileDrop'
 import { useAutoSave } from '@/composables/useAutoSave'
+import { useCrashGuard } from '@/composables/useCrashGuard'
 import { tr } from '@/i18n'
 
 const settings = useSettingsStore()
@@ -49,7 +50,7 @@ const archive = useArchiveStore()
 const ui = computed(() => settings.config.ui)
 
 useViewportScale()
-// 压缩任务事件接线（specs/18）：挂根视图，设置页路由来回切也只 init 一次。
+// 压缩任务事件接线（assets/specs/18）：挂根视图，设置页路由来回切也只 init 一次。
 void archive.init()
 // 退出守卫与全局键在 App 根层注册：路由切到设置页时编辑器视图已卸载，
 // 挂在这里会随视图一起销毁（设置页点 X 没反应就是这么来的）。
@@ -57,6 +58,7 @@ registerCommands()
 useExternalChange()
 useFileDrop()
 useAutoSave()
+useCrashGuard()
 
 onMounted(async () => {
   // 会话恢复：失败不阻塞启动（用户看到的是欢迎页）。只恢复一次——
@@ -77,6 +79,31 @@ onMounted(async () => {
       }
     } catch {
       /* 恢复失败：欢迎页即可 */
+    }
+  }
+
+  // 崩溃恢复提示：上次没走干净退出（崩溃 / 断电 / 强杀）且留有草稿快照，
+  // 就问一句要不要打开草稿箱。快照本身不动文件，用户自己决定怎么处理。
+  if (settings.config.last_exit_clean === false) {
+    try {
+      const { api } = await import('@/api')
+      const drafts = (await api.listDrafts()) ?? []
+      if (drafts.length > 0) {
+        const { askPick } = await import('@/components/common/askPick')
+        const choice = await askPick({
+          title: tr('dialog.crash.title', { n: drafts.length }),
+          items: [
+            { value: 'open', label: tr('dialog.crash.open'), hint: tr('dialog.crash.openHint') },
+            { value: 'ignore', label: tr('dialog.crash.ignore') },
+          ],
+        })
+        if (choice === 'open') {
+          const { useDialogStore } = await import('@/stores/dialogs')
+          useDialogStore().open('drafts')
+        }
+      }
+    } catch {
+      /* 草稿读不出来就算了：不阻塞启动 */
     }
   }
 

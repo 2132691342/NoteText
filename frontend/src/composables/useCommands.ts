@@ -111,13 +111,7 @@ export function registerCommands() {
   /** 命令的作用对象：用户正在编辑的那个标签，退化为活跃标签。 */
   const targetId = () => focusedTabId() ?? editor.activeId
 
-  /**
-   * 浮窗的选区种子：预填「用户选中的文本」。
-   *
-   * 从注册表视图直接读选区而不是看 DOM 焦点——右键菜单的点击会把焦点
-   * 抢到菜单按钮上，focusedTabId() 随即变 null，选中词就丢了
-   * （表现为「选中→右键→查找」预填为空）。
-   */
+  /** 浮窗的选区种子：从注册表视图直接读选区，不依赖 DOM 焦点。 */
   const selectionSeed = () => getSelection(targetId() ?? -1)
 
   /** 命令层用的薄封装：真正的实现在 useCloseTab（标签栏共用同一条链路）。 */
@@ -341,7 +335,7 @@ export function registerCommands() {
           // 用户看到的是「另存了一份，原文件还在旧名字下面」。
           editor.renamePath(tab.path, target)
           tree.markDirty(tab.path, false)
-          if (tree.root) await tree.refresh(tree.root)
+          await tree.refresh(dirName(target))
           toast.ok(t('toast.renamed', { name }))
         } catch (e) {
           toast.bad(t('toast.renameFailed', { reason: normalizeError(e).message }))
@@ -1226,7 +1220,7 @@ export function registerCommands() {
       run: () => dialogs.open('batchRename'),
     },
 
-    // ---- 压缩 / 归档（specs/18）：独立顶级菜单的全部入口 ----
+    // ---- 压缩 / 归档（assets/specs/18）：独立顶级菜单的全部入口 ----
     {
       id: 'archive.create',
       group: 'archive',

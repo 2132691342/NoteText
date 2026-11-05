@@ -1,5 +1,5 @@
 // 内联 SVG 图标：24 网格线性图标。
-// 尺寸走三档（sm 14 / md 16 / lg 18），**不跟随 font-size**：图标曾经是 1em，
+// 尺寸走三档（sm 14 / md 16 / lg 18），固定尺寸，不跟随 font-size。
 
 <template>
   <svg

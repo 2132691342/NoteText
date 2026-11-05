@@ -82,8 +82,7 @@ export function useMarkdown(): MarkdownRender {
         '</div>'
       )
     }
-    // 标题锚点：markdown-it 默认不生成 id，文档自带的目录点了没有任何反应。
-    // id 规则与 GitHub 的 slug 对齐，别人生成的目录才能直接命中。
+    // 标题锚点：按通用 slug 规则生成 id，手写目录才能直接命中。
     instance.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
       const inline = tokens[idx + 1]
       const text = inline && inline.type === 'inline' ? inline.content : ''
@@ -225,11 +224,8 @@ function unescapeAttr(s: string): string {
 }
 
 /**
- * 标题 → 锚点 id。
- *
- * 规则与 GitHub 的 slug 对齐：小写、去掉标点（`1. 快速开始` 的句点）、
- * 空格转连字符、保留中日韩字符。文档里手写的目录用的是同一套，
- * 换了规则那些 `#1-快速开始` 就全都点不动。
+ * 标题 → 锚点 id：小写、去标点、空格转连字符、保留中日韩字符。
+ * 文档里手写的目录沿用同一套规则。
  */
 function slugify(text: string): string {
   return text
@@ -262,5 +258,5 @@ export function __markdownState(): { isDark: boolean } {
   return { isDark }
 }
 
-/** 占位：让 Ref 的类型被引用（将来若要把 textRef 传进来）。 */
+/** Markdown 正文 Ref 的类型别名。 */
 export type MarkdownTextRef = Ref<string>

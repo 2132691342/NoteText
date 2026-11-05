@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::pkg::error::{AppError, AppResult};
+use crate::pkg::error::{codes, AppError, AppResult};
 
 /// 应用的全部落盘位置。装配期解析一次，之后全进程只读这份。
 #[derive(Debug, Clone)]
@@ -26,8 +26,12 @@ impl AppPaths {
         let root = if let Ok(override_home) = std::env::var("NOTETEXT_HOME") {
             PathBuf::from(override_home)
         } else {
-            let base = dirs::data_dir()
-                .ok_or_else(|| AppError::new("1000", "无法定位应用数据目录（%APPDATA% 不可用）"))?;
+            let base = dirs::data_dir().ok_or_else(|| {
+                AppError::new(
+                    codes::PATH_EMPTY,
+                    "无法定位应用数据目录（%APPDATA% 不可用）",
+                )
+            })?;
             base.join(crate::APP_ID)
         };
 

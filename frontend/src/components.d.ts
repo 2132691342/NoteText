@@ -17,6 +17,7 @@ declare module 'vue' {
     BatchFindReplaceDialog: typeof import('./components/dialogs/BatchFindReplaceDialog.vue')['default']
     BatchRenameDialog: typeof import('./components/dialogs/BatchRenameDialog.vue')['default']
     BookmarkPanel: typeof import('./components/panels/BookmarkPanel.vue')['default']
+    ChunkedViewer: typeof import('./components/editor/ChunkedViewer.vue')['default']
     ClipboardDialog: typeof import('./components/dialogs/ClipboardDialog.vue')['default']
     CodeEditor: typeof import('./components/editor/CodeEditor.vue')['default']
     ColorPickerDialog: typeof import('./components/dialogs/ColorPickerDialog.vue')['default']
@@ -60,6 +61,7 @@ declare module 'vue' {
     ReplaceDialog: typeof import('./components/dialogs/ReplaceDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SheetEditor: typeof import('./components/editor/SheetEditor.vue')['default']
     SideBar: typeof import('./components/layout/SideBar.vue')['default']
     SnippetPanel: typeof import('./components/panels/SnippetPanel.vue')['default']
     SplitJoinDialog: typeof import('./components/dialogs/SplitJoinDialog.vue')['default']
@@ -70,5 +72,6 @@ declare module 'vue' {
     ToastHost: typeof import('./components/common/ToastHost.vue')['default']
     ToolBar: typeof import('./components/layout/ToolBar.vue')['default']
     UnsavedDialog: typeof import('./components/dialogs/UnsavedDialog.vue')['default']
+    WorkbookEditor: typeof import('./components/editor/WorkbookEditor.vue')['default']
   }
 }

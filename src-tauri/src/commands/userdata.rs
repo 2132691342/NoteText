@@ -1,5 +1,5 @@
 //! 用户数据命令：书签 / 片段 / 宏 / 草稿 / 最近文件 / 备份。
-//! 列表型出参的切片与 map 构造时一律初始化，避免序列化成 null。
+//! 列表出参构造时初始化为 []；落库读写一律 async。
 
 use tauri::State;
 
@@ -107,17 +107,17 @@ pub fn remove_macro(state: State<'_, AppState>, id: String) -> AppResult<()> {
 
 // ---- 草稿 ----
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_drafts(state: State<'_, AppState>) -> AppResult<Vec<DraftVO>> {
     state.services.userdata.list_drafts()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_draft(state: State<'_, AppState>, req: DraftSaveReq) -> AppResult<bool> {
     state.services.userdata.save_draft(req)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_draft(state: State<'_, AppState>, id: String) -> AppResult<()> {
     state.services.userdata.remove_draft(id)
 }
@@ -146,12 +146,12 @@ pub fn clear_recent(state: State<'_, AppState>) -> AppResult<usize> {
 
 // ---- 备份 ----
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_backup(state: State<'_, AppState>) -> AppResult<serde_json::Value> {
     state.services.userdata.export_backup()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_backup(state: State<'_, AppState>, json: serde_json::Value) -> AppResult<usize> {
     state.services.userdata.import_backup(&json)
 }

@@ -176,7 +176,10 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 | `binary` | 可执行 / 压缩包 / 媒体，或未知扩展名且 `stat.is_binary` | `HexView.vue`（虚拟滚动，只渲染可视区） |
 | `legacyDoc` | `.doc` `.ppt(x)` `.odt` `.rtf` `.epub` 等无内嵌渲染器的文档 | `DocPreview.vue` → 「没有内置预览」卡片 |
 | `archiveLegacy` | `.rar` `.lzh` `.cab` `.iso` 等无内置解压的归档 | `DocPreview.vue` → 「用 7-Zip 解压后再打开」卡片 + 外部程序入口 |
-| `image` `sheet` `docx` `pdf` | 扩展名表（`sheet` 内再分：CSV / TSV 走后端切行，xlsx 走 SheetJS） | `DocPreview.vue`（动态 import 对应预览器） |
+| `chunked` | 标签带 `chunked` 标记（>512MB 自动分块，或会话恢复时按 `1004` 降级） | `ChunkedViewer.vue`（1MB 块导航，只读 + 单块解锁编辑） |
+| `sheet` 可编辑 | CSV / TSV ≤ 32MB；XLSX / XLSM / ODS | `SheetEditor.vue`（文本网格）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
+| `sheet` 只读 | CSV / TSV > 32MB、XLS 旧格式 | `DocPreview.vue`（后端切行 / xlsx 只读预览） |
+| `image` `docx` `pdf` | 扩展名表 | `DocPreview.vue`（动态 import 对应预览器） |
 | `markdown` | `.md` `.markdown` `.mdown` `.mkd` `.mdx` | `MarkdownEditor.vue`（三态）或 `DocPreview.vue`（`showing_preview`） |
 | `html` | `.html` `.htm` `.xhtml` | `CodeEditor.vue`（可编辑）+ `DocPreview.vue` 沙箱 iframe 静态预览（`showing_preview`，不执行脚本） |
 | `text` | 其余 | `CodeEditor.vue` / `DocPreview.vue`（`showing_preview`） |
@@ -236,7 +239,7 @@ PDF / 表格 / 图片走它只会得到乱码或解码错误。非文本形态�
 
 - **CodeMirror 的主题必须引用 CSS 变量**：引 `@codemirror/theme-one-dark`
   会写死色值，而我们的纪律是「色值只在 `themes.css` 定义」；
-- 编辑器里只允许四处高亮（见 [DESIGN.md](../DESIGN.md)）：
+- 编辑器里只允许四处高亮（见 [DESIGN.md](../../DESIGN.md)）：
   选中、当前匹配、其余匹配、选中即高亮。书签行是第五处（警告色竖条）；
 - 查找高亮用 `.cm-searchMatch` 系列类名，不用 `Decoration` 自己画——
   那会让 CodeMirror 的搜索面板与我们的高亮不一致。

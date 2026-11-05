@@ -27,10 +27,12 @@ impl FileOpsService {
         validate_target(&req.from, &req.to)?;
         match fs::rename(&req.from, &req.to) {
             Ok(()) => Ok(FileOpVO::done(req.from.clone(), req.to.clone())),
-            Err(e) => Err(
-                AppError::wrap("1001", "重命名失败：目标可能被占用或无权限", e)
-                    .with_detail(format!("{} → {}", req.from, req.to)),
-            ),
+            Err(e) => {
+                Err(
+                    AppError::wrap(codes::IO_FAILED, "重命名失败：目标可能被占用或无权限", e)
+                        .with_detail(format!("{} → {}", req.from, req.to)),
+                )
+            }
         }
     }
 
@@ -59,7 +61,7 @@ impl FileOpsService {
                 Ok(()) => out.push_ok(p.clone(), String::new()),
                 Err(e) => out.push_err(
                     p.clone(),
-                    AppError::wrap("1001", "删除失败：文件可能被占用或无权限", e).message,
+                    AppError::wrap(codes::IO_FAILED, "删除失败：文件可能被占用或无权限", e).message,
                 ),
             }
         }
@@ -75,10 +77,12 @@ impl FileOpsService {
         }
         match fs::create_dir_all(path) {
             Ok(()) => Ok(FileOpVO::done(req.path.clone(), req.path.clone())),
-            Err(e) => Err(
-                AppError::wrap("1001", "创建文件夹失败：检查上级目录是否可写", e)
-                    .with_detail(format!("路径：{}", req.path)),
-            ),
+            Err(e) => {
+                Err(
+                    AppError::wrap(codes::IO_FAILED, "创建文件夹失败：检查上级目录是否可写", e)
+                        .with_detail(format!("路径：{}", req.path)),
+                )
+            }
         }
     }
 
@@ -91,10 +95,12 @@ impl FileOpsService {
         }
         match fs::write(path, b"") {
             Ok(()) => Ok(FileOpVO::done(req.path.clone(), req.path.clone())),
-            Err(e) => Err(
-                AppError::wrap("1001", "创建文件失败：检查上级目录是否可写", e)
-                    .with_detail(format!("路径：{}", req.path)),
-            ),
+            Err(e) => {
+                Err(
+                    AppError::wrap(codes::IO_FAILED, "创建文件失败：检查上级目录是否可写", e)
+                        .with_detail(format!("路径：{}", req.path)),
+                )
+            }
         }
     }
 
@@ -149,7 +155,7 @@ impl FileOpsService {
                 Ok(()) => out.push_ok(p.clone(), to.to_string_lossy().to_string()),
                 Err(e) => out.push_err(
                     p.clone(),
-                    AppError::wrap("1001", "操作失败：文件可能被占用或无权限", e).message,
+                    AppError::wrap(codes::IO_FAILED, "操作失败：文件可能被占用或无权限", e).message,
                 ),
             }
         }
@@ -178,6 +184,7 @@ impl FileOpVO {
 
     /// 记一条失败。
     pub fn push_err(&mut self, from: String, message: String) {
+        tracing::warn!(from = %from, message = %message, "文件操作单项失败");
         self.results.push(FileOpResultVO {
             from,
             to: String::new(),

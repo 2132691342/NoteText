@@ -8,8 +8,7 @@ use crate::domain::editor::TabStateVO;
 /// 会话：一次应用运行的完整窗口布局。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionDO {
-    /// 固定为 1：单窗口应用只有一份「当前会话」。
-    /// 仍用表而不是单例配置，是为了将来多窗口时不用迁移。
+    /// 固定为 1：单窗口应用只有一份「当前会话」，用表而非单例配置保持结构统一。
     pub id: i64,
     /// 活跃标签索引。
     pub active_index: i32,

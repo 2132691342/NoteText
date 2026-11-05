@@ -65,13 +65,7 @@ function isInEditor(target: EventTarget | null): boolean {
   return !!el?.closest?.('.cm-editor')
 }
 
-/**
- * 焦点是否在只读文本面上（Markdown 预览 / 文档预览 / 十六进制）。
- *
- * 这些地方没有编辑器实例，用户选中的是页面里的真实文本。复制必须走浏览器
- * 原生路径：否则命令会去操作「当前激活的编辑器视图」，把用户选中的预览文本
- * 换成编辑器里的选区（通常是空的），Ctrl+C 就等于什么都没复制。
- */
+/** 焦点是否在只读文本面上：这类选区的复制必须走浏览器原生路径。 */
 function isReadonlySurface(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   return !!el?.closest?.('.nt-md-preview, .nt-md-doc, .nt-doc-host, .nt-hex-body')
@@ -118,7 +112,7 @@ export function useGlobalKeys() {
       if (c.key && c.key === accel) return c.id
     }
 
-    // 3) 默认键位表（历史兼容：有些命令没在自己身上写 key）。
+    // 3) 默认键位表：兜住没在自己身上写 key 的命令。
     return Object.entries(DEFAULT_KEYBINDINGS).find(([, v]) => v === accel)?.[0]
   }
 

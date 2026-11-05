@@ -36,13 +36,7 @@ export function lastQueryState(): {
   return { ...last.value }
 }
 
-/**
- * 按方向跳一个命中。
- *
- * 从当前光标之后（或之前）找第一个匹配：不维护一份命中表，
- * 因为正文随时在变，缓存的偏移会失效；一次线性扫描足够快。
- * 到头没找到就循环到另一端——用户按 F3 时不会想去记「这是第几圈」。
- */
+/** 按方向跳一个命中：从光标后（或前）线性扫描，到头循环到另一端。 */
 export function stepLastQuery(dir: 1 | -1) {
   const q = last.value.query
   if (!q) {

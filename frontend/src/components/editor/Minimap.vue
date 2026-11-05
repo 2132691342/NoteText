@@ -10,6 +10,7 @@
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EditorView } from '@codemirror/view'
+import { debounce } from '@/utils'
 
 const props = defineProps<{ view: EditorView; lineCount: number; visible: boolean }>()
 
@@ -48,22 +49,25 @@ function draw() {
   const css = getComputedStyle(document.documentElement)
   const ink = css.getPropertyValue('--nt-ink-3').trim()
 
-  const text = view.state.doc.toString()
-  const lines = text.split('\n')
+  // 按行迭代而不是 toString+split：几 MB 的文档每键全文拷一遍必卡输入。
+  const doc = view.state.doc
   const step = ROW
   // 行数超过画布能画的下限时抽样：每 N 行画一根，形状仍然可信。
-  const stride = Math.max(1, Math.ceil(lines.length / Math.floor(h / step)))
+  const stride = Math.max(1, Math.ceil(doc.lines / Math.floor(h / step)))
   ctx.fillStyle = ink
-  for (let i = 0; i < lines.length; i += stride) {
-    const line = lines[i]
-    if (!line.trim()) continue
-    const indent = line.length - line.trimStart().length
-    const len = Math.min(line.trimEnd().length, w)
-    const y = (i / lines.length) * h
+  for (let i = 1; i <= doc.lines; i += stride) {
+    const line = doc.line(i)
+    if (!line.text.trim()) continue
+    const indent = line.text.length - line.text.trimStart().length
+    const len = Math.min(line.text.trimEnd().length, w)
+    const y = ((i - 1) / doc.lines) * h
     ctx.fillRect(indent * 0.5, y, Math.max(len * 0.5, 1), Math.max(step - 1, 1))
   }
   syncViewport()
 }
+
+/** 打字期间的重绘防抖：轮廓不需要逐键刷新，停手 200ms 后画一次。 */
+const drawSoon = debounce(draw, 200)
 
 /** 视口矩形：跟编辑器的滚动位置走。 */
 function syncViewport() {
@@ -97,7 +101,7 @@ onBeforeUnmount(() => {
   if (raf) cancelAnimationFrame(raf)
 })
 
-watch(() => props.lineCount, () => draw())
+watch(() => props.lineCount, () => drawSoon())
 watch(() => props.visible, (v) => v && draw())
 
 /** 点击跳转：按点击位置的比例换算成目标滚动位置。 */

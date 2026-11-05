@@ -27,7 +27,7 @@ pub struct MacroDO {
     pub updated_at: i64,
 }
 
-/// 宏出参：与 DO 同形，分开是为了将来加「最近回放时间」这类视图字段。
+/// 宏出参：与 DO 同形，单独留一层便于挂视图字段。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MacroVO {
     pub id: String,

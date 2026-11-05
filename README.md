@@ -1,8 +1,8 @@
 # NoteText
 
-**轻量级 Windows 桌面文本编辑器。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
-安装包 10MB 以内（CI 有体积门禁）。内置代码编辑、查找替换、12 种编码转换、
-JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
+**轻量级 Windows 桌面文本编辑器（2.0.0）。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
+主程序约 5MB，出包时校验体积。内置代码编辑、查找替换、12 种编码转换、
+JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格编辑、大文件分块、
 15 种格式的压缩解压、批量操作与系统文件关联。
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
@@ -18,6 +18,17 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
 把「关窗再开回到原样」这件事做扎实、把常用压缩格式的打包解包内置进来。
 不自研插件系统、不做多窗口、不做云同步——这条边界让功能面收得住，
 代价是高级需求要靠外部工具。
+
+### 为什么这么设计
+
+| 决定 | 优势 | 代价 |
+|---|---|---|
+| Tauri 2 + Rust 后端，前端只管渲染 | 不内置 Node 运行时，冷启动快、主程序小；文件 / 编码 / 压缩这些重活走原生 | 只发 Windows，平台能力按 `#[cfg(windows)]` 分文件实现桩 |
+| 正文留在 CodeMirror 实例，store 只存元数据 | 几百 KB 的日志按键不被响应式 diff 拖垮 | 需要正文的地方统一走 `getText(tabId)` |
+| 配置 / 会话 / 用户数据落在 SQLite | 一次装配贯穿全部功能，备份导出导入是一条链路 | 新增字段只能追加，旧字段留着靠零值兜底 |
+| 压缩全走 Rust 原生库 | 不拉外部进程，行为编译期锁定，长链路测试可跑 | rar / lzh 等专有格式没有内置解压，预览器给出路指引 |
+| 大文件按 1MB 分块、XLSX 原地改 XML | GB 级日志秒开，改表格不丢样式与图表 | 只解锁单块编辑；跨块改写要逐块来 |
+| 单窗口 + 多标签，不做插件 / 多窗口 / 云同步 | 功能面收得住，会话恢复兑现「关窗再开回到原样」 | 高级需求要靠外部工具 |
 
 ## 能力全景
 
@@ -43,9 +54,9 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
 | 文档预览 | 按扩展名分流 xlsx / csv / tsv / docx / pdf / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本；CSV 走后端切行，几十 MB 的导出表也能开 |
 | 批量查找替换 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
-| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换）/ 测试 / 分卷合并 / 任务面板；7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ gz / bz2 / zst / xz / lz4 / br 十五种格式，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗；rar / lzh / cab / iso 无内置解压，预览器直接指引用 7-Zip（specs/18） |
+| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换）/ 测试 / 分卷合并 / 任务面板；7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ gz / bz2 / zst / xz / lz4 / br 十五种格式，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗；rar / lzh / cab / iso 无内置解压，预览器直接指引用 7-Zip（assets/specs/18） |
 | 文件分卷 | 任意文件按大小切卷 / 合并还原；压缩包创建时可直接分卷 |
-| 系统关联 | 设置 → 系统与关联：把 NoteText 挂进文本 / 压缩包的「打开方式」与默认应用候选，双击即开（specs/17） |
+| 系统关联 | 设置 → 系统与关联：把 NoteText 挂进文本 / 压缩包的「打开方式」与默认应用候选，双击即开（assets/specs/17） |
 | 文件树 | 懒展开 + 右键全套（新建 / 重命名 / 删除 / 剪切 / 复制 / 粘贴 / 副本 / 资源管理器 / 压缩 / 解压到… / 一键解压）+ 树内拖拽移动 |
 | Markdown 三态 | `.md` 默认三态：编辑 / 分屏 / 预览；Mermaid 图表 + KaTeX 公式 + 代码高亮 + 导出 HTML |
 | 格式转换 | JSON / YAML / TOML / XML 互转，带选区进来即自动转换，「应用」写回选区 |
@@ -55,16 +66,19 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、文档与表格预览、
 | 会话恢复 | 启动恢复标签 / 光标 / 窗口大小；未保存草稿也恢复 |
 | 托盘与单实例 | 关闭到托盘；二次启动转交文件路径 |
 | 备份 | 导出 / 导入书签、片段、宏、草稿、最近文件 |
-| 大文件降级 | 超过 32MB 自动只读前段，状态栏标「已截断」，**拦截写回**；CSV / TSV 表格预览单独走切行链路，不受 20MB 二进制预览上限约束 |
+| 大文件分块 | 32MB 以上弹窗选打开方式（普通 / 分块），512MB 以上自动分块，最高 64GB；1MB 块索引 + 逐块解码 + 跳行定位；**只解锁当前块编辑**，写回带字节级乐观锁 + 原子替换（assets/specs/19） |
+| 表格编辑 | CSV / TSV 可编辑网格（虚拟滚动、增删行列、最小引号化写回）；XLSX / ODS 单元格网格**可改值与公式**，写回原地改 XML 所以样式 / 主题 / 图表全保留；两条链路都带表内查找替换 |
+| 崩溃恢复 | 脏标签每 30 秒静默快照进草稿库；异常退出后启动提示恢复（assets/specs/19） |
+| 大文件降级 | 超过 32MB 不再整篇塞进编辑器；截断标签一律**拦截写回**（分块标签按块写，各带乐观锁）；CSV / TSV 表格预览单独走切行链路，不受 20MB 二进制预览上限约束 |
 
 ## 快速开始
 
 ### 环境要求
 
 - **Rust** 1.80+（stable，MSVC 工具链）
-- **Node.js** 18+
+- **Node.js** 24（与 `.nvmrc`、CI 一致；锁文件由 npm 11 生成）
 - **Windows 10 1809+ / 11**（系统已内置 WebView2）
-- Tauri CLI：`cargo install tauri-cli --version "^2"`
+- Tauri CLI：`npm --prefix frontend install` 已装 `@tauri-apps/cli`，不需要全局工具链
 
 ### 开发
 
@@ -105,7 +119,7 @@ NoteText/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── commands/          # Tauri invoke 入口（薄）
-│   │   ├── service/           # 业务编排：file / editor / tools / userdata / batch / session / archive
+│   │   ├── service/           # 业务编排：file / encoding / file_ops / big_file / sheet / editor / tools / userdata / batch / session / archive
 │   │   ├── repo/              # 一张表一个 repo
 │   │   ├── domain/            # DO / REQ / VO（四层禁止内联结构体）
 │   │   ├── db/                # SQLite 打开 + 迁移（WAL）
@@ -115,18 +129,19 @@ NoteText/
 │   │   └── pkg/               # 叶子工具包：AppError / 路径 / 日志 / id / text
 │   ├── capabilities/          # Tauri 权限清单
 │   ├── icons/                 # 应用图标
-│   └── tests/chain_tests.rs   # 8 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
+│   └── tests/chain_tests.rs   # 10 条长链路集成测试（单文件，编译 lib 而不链接 WebView）
 ├── frontend/
 │   └── src/
 │       ├── api/               # invoke 封装（全站唯一出口）
 │       ├── components/        # layout / editor / panels / dialogs / common
-│       ├── composables/       # 命令 / 快操作 / 主题 / 语言 / 退出守卫 / 壳意图
+│       ├── composables/       # 命令 / 快操作 / 主题 / 语言 / 退出守卫 / 壳意图 / 崩溃快照
 │       ├── stores/            # Pinia：settings / editor / fileTree / commands / dialogs / toast
 │       ├── locales/           # zh-CN / en
 │       ├── utils/             # 纯函数（格式互转 / glob / 剪贴板 / 错误翻译）
 │       └── *.css              # themes / base / ep-theme / content / print 五个 CSS
-├── assets/docs/               # 内置用户手册（帮助页渲染）
-└── specs/                     # 架构与子系统规格（00–18，一篇一个主题）
+├── assets/
+│   ├── docs/               # 内置用户手册（帮助页渲染）
+│   └── specs/              # 架构与子系统规格（00–19，一篇一个主题）
 ```
 
 ## 技术栈
@@ -155,49 +170,49 @@ NoteText/
 
 ## 文档
 
-阅读顺序：先 README（本篇）→ [specs/00 总架构](specs/00-architecture.md) → 按需进各篇。
+阅读顺序：先 README（本篇）→ [assets/specs/00 总架构](assets/specs/00-architecture.md) → 按需进各篇。
 
 | 文档 | 内容 |
 |---|---|
 | [AGENTS.md](AGENTS.md) | **工程规范（唯一权威）**：分层 / 依赖方向 / 错误码 / 命名 / 注释 / 测试 |
 | [DESIGN.md](DESIGN.md) | 视觉语言：灰阶与强调色、表面阶梯、按钮五态、动效纪律 |
-| [specs/00](specs/00-architecture.md) | 总架构：分层、启动时序、通信、状态归属、排障速查 |
-| [specs/01](specs/01-runtime-and-paths.md) | 运行时与路径：数据目录、单实例、日志 |
-| [specs/02](specs/02-database.md) | 数据库：表结构、WAL、迁移 |
-| [specs/03](specs/03-config.md) | 配置：44 个配置项、派生量、回写时机 |
-| [specs/04](specs/04-desktop-shell.md) | 桌面壳：托盘、关闭策略、退出契约 |
-| [specs/05](specs/05-file-domain.md) | 文件域：读写、编码探测、表格预览、大文件降级 |
-| [specs/06](specs/06-editor-domain.md) | 编辑器域：CodeMirror 装配、语言加载、形态分流 |
-| [specs/07](specs/07-frontend-state.md) | 前端状态与命令表 |
-| [specs/08](specs/08-user-data.md) | 用户数据：书签 / 片段 / 宏 / 草稿 / 最近文件 |
-| [specs/09](specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
-| [specs/10](specs/10-session-restore.md) | 会话恢复 |
-| [specs/11](specs/11-visual-tokens.md) | 视觉令牌与主题 |
-| [specs/12](specs/12-testing.md) | 测试与验证：8 条长链路、本地与 CI 门禁 |
-| [specs/13](specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
-| [specs/14](specs/14-api-contract.md) | invoke 命令契约（107 个命令对照表） |
-| [specs/15](specs/15-error-codes.md) | 错误码分段与处置动作 |
-| [specs/16](specs/16-page-structure.md) | 页面与组件地图 |
-| [specs/17](specs/17-deployment.md) | 构建与分发 |
-| [specs/18](specs/18-archive.md) | 压缩子系统：15 种格式、任务队列、安全底线 |
-| [specs/faq](specs/faq.md) | 开发排障速查 |
+| [assets/specs/00](assets/specs/00-architecture.md) | 总架构：分层、启动时序、通信、状态归属、排障速查 |
+| [assets/specs/01](assets/specs/01-runtime-and-paths.md) | 运行时与路径：数据目录、单实例、日志 |
+| [assets/specs/02](assets/specs/02-database.md) | 数据库：表结构、WAL、迁移 |
+| [assets/specs/03](assets/specs/03-config.md) | 配置：45 个配置项、派生量、回写时机 |
+| [assets/specs/04](assets/specs/04-desktop-shell.md) | 桌面壳：托盘、关闭策略、退出契约 |
+| [assets/specs/05](assets/specs/05-file-domain.md) | 文件域：读写、编码探测、表格预览、大文件降级 |
+| [assets/specs/06](assets/specs/06-editor-domain.md) | 编辑器域：CodeMirror 装配、语言加载、形态分流 |
+| [assets/specs/07](assets/specs/07-frontend-state.md) | 前端状态与命令表 |
+| [assets/specs/08](assets/specs/08-user-data.md) | 用户数据：书签 / 片段 / 宏 / 草稿 / 最近文件 |
+| [assets/specs/09](assets/specs/09-tools.md) | 工具箱：JSON / Diff / 哈希 / 正则 / 格式转换 / 取色 |
+| [assets/specs/10](assets/specs/10-session-restore.md) | 会话恢复 |
+| [assets/specs/11](assets/specs/11-visual-tokens.md) | 视觉令牌与主题 |
+| [assets/specs/12](assets/specs/12-testing.md) | 测试与验证：10 条长链路、七组、本地与 CI 门禁 |
+| [assets/specs/13](assets/specs/13-batch-operations.md) | 批量查找替换与重命名（两阶段） |
+| [assets/specs/14](assets/specs/14-api-contract.md) | invoke 命令契约（115 个命令对照表） |
+| [assets/specs/15](assets/specs/15-error-codes.md) | 错误码分段与处置动作 |
+| [assets/specs/16](assets/specs/16-page-structure.md) | 页面与组件地图 |
+| [assets/specs/17](assets/specs/17-deployment.md) | 构建与分发 |
+| [assets/specs/18](assets/specs/18-archive.md) | 压缩子系统：15 种格式、任务队列、安全底线 |
+| [assets/specs/19](assets/specs/19-large-files-and-sheet-edit.md) | 大文件分块、表格编辑、崩溃恢复 |
 
 每篇规格只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。
-内置用户手册在 `assets/docs/`，面向用户；`specs/` 面向开发，两者不重复维护同一份话术。
+内置用户手册在 `assets/docs/`，面向用户；`assets/specs/` 面向开发，两者不重复维护同一份话术。
 
 ## 测试
 
-8 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按六组排列
-（文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联）。**每个测试函数名就是它守护的那件坏事**，
-失败时报文直接指出坏在哪。全量约 1 秒；同一域的相近故事合并成一条，
-一条测试就是一条完整的用户故事。
+10 个集成测试集中在 `src-tauri/tests/chain_tests.rs`，按七组排列
+（文件 / 会话 / 批量 / 备份 / 压缩 / 表格编辑 / 系统关联；系统关联一条仅 Windows）。
+**每个测试函数名就是它守护的那件坏事**，失败时报文直接指出坏在哪。
+全量约 1 秒；同一域的相近故事合并成一条，一条测试就是一条完整的用户故事。
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests
 cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- archive
 ```
 
-判据见 [AGENTS.md §3](AGENTS.md) 与 [specs/12](specs/12-testing.md)：
+判据见 [AGENTS.md §3](AGENTS.md) 与 [assets/specs/12](assets/specs/12-testing.md)：
 只留跨模块长链路、协议硬约束与安全护栏，单个纯函数的输入输出不入链。
 
 | 分组 | 守护的坏事（摘） |
@@ -207,6 +222,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests -- archive
 | 批量 | 扫描阶段不落盘、应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
 | 备份 | 五个用户数据表导出后导得回；不在备份里的本机数据不被抹掉 |
 | 压缩 | 十五种格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
+| 表格编辑 | 改单元格保住样式表与未编辑工作表；共享串解析、跨表查找、新增行都正确 |
 | 系统关联 | 关联注册写对注册表三件套；注销不留悬空默认、不误伤另一组 |
 
 ## 许可证

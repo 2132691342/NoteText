@@ -38,13 +38,7 @@ export function hasTextPrompt(): boolean {
   return current.value !== null
 }
 
-/**
- * 二选一确认：是 / 否。
- *
- * 走系统消息框而不是自绘浮窗：确认要的是「一个决定」，自绘浮窗会多一次
- * 渲染与焦点管理，而这里已经有一个跨平台的现成实现（platform 层）。
- * 返回 true = 用户选「是」。
- */
+/** 二选一确认：走 platform 层的系统消息框；返回 true = 用户选「是」。 */
 export async function confirmText(opts: {
   title: string
   message: string

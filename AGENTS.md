@@ -1,7 +1,7 @@
 # AGENTS.md · NoteText 工程规范
 
 > 本文件是代码风格 / 分包 / 依赖方向 / 工作流的**唯一权威**。
-> 设计说明见 `specs/`；冲突时以本文件为准。
+> 设计说明见 `assets/specs/`；冲突时以本文件为准。
 
 ---
 
@@ -20,6 +20,7 @@
 | Markdown | markdown-it · highlight.js · Mermaid · KaTeX · DOMPurify | 编辑 / 分屏 / 预览三态 |
 | 格式转换 | js-yaml · @iarna/toml · fast-xml-parser | JSON / YAML / TOML / XML 互转 |
 | 文档预览 | XLSX · docx-preview · WebView2 内置 PDF 阅读器 | 按扩展名分流 |
+| 大文件 / 表格 | 标准库 `File + Seek` · zip · 原生 XML 补丁 | 1MB 块索引逐块解码；XLSX 只重写命中单元格，其余部件字节级原样（assets/specs/19） |
 | 图表 | ECharts | ^5.5.x（按需引入，色值取 `--nt-ch-*`） |
 | 国际化 | Vue I18n | ^9.10.x（zh-CN 默认 + en；设置页可切换，EP 文案同步） |
 | 样式 | 原生 CSS 设计令牌 | `themes.css` + `ep-theme.css` + `base.css` + `content.css`；色值与尺寸只在 `themes.css` 定义 |
@@ -28,9 +29,9 @@
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
-| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 2.0 压缩子系统（specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
-| 测试 | 标准库 `#[test]` + tempfile | 单文件 8 条长链路（specs/12）；本地与 GitHub Actions 执行同一组命令 |
-| 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
+| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli | 压缩子系统（assets/specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程 |
+| 测试 | 标准库 `#[test]` + tempfile | 单文件 10 条长链路（assets/specs/12）；本地与 GitHub Actions 执行同一组命令 |
+| 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（assets/specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
 ### 1.1 依赖原则
@@ -74,6 +75,9 @@
 ```
 NoteText/
 ├── Cargo.toml                  # workspace：版本收敛在这里
+├── assets/
+│   ├── docs/                   # 用户手册（面向使用者）
+│   └── specs/                  # 架构与子系统规格 00-19（面向开发者）
 ├── src-tauri/
 │   ├── src/
 │   │   ├── commands/           # ① invoke 入口（薄）+ 系统能力绑定
@@ -89,6 +93,9 @@ NoteText/
 │   └── tests/chain_tests.rs    # 集成测试（编译 lib 而不链接 WebView）
 └── frontend/src/               # 前端唯一源码目录
 ```
+
+文档只分两层：`assets/specs/` 面向开发（现状与取舍），`assets/docs/` 面向用户
+（怎么用）。两者都不进源码目录，也不互相搬运同一份话术。
 
 **`app` 是能力域，不是胶水层**：它拥有「应用状态」这一个自洽概念
 （数据目录 + 数据库 + 服务容器），有独立的生命周期（build → on_ready → on_exit）。
@@ -222,7 +229,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 | 6000–6999 | 监控 / 文件监听 |
 | 7000–7999 | 壳层（单实例 / 托盘 / 窗口 / 文件关联） |
 | 8000–8999 | 用户数据（书签 / 片段 / 宏 / 草稿） |
-| 9000–9999 | 压缩 / 归档（specs/18） |
+| 9000–9999 | 压缩 / 归档（assets/specs/18） |
 
 每个码的完整含义与处置动作见后端 `pkg/error.rs` 的 `codes` 模块（码值常量集中处）。
 
@@ -264,7 +271,7 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 
 - **最低要求就这三样**：文件有头、导出方法有签名说明、字段有注释。够了就停
 - **连续注释块 ≤ 2 行**（编译指令前的分隔行除外）
-- 注释只写**结论与边界**，不写论证：「为什么这么设计、当初踩过什么坑」属于 `docs/` 与 `specs/`
+- 注释只写**结论与边界**，不写论证：「为什么这么设计、当初踩过什么坑」属于 `docs/` 与 `assets/specs/`
 - 禁止：过程性叙述、TODO 历史、实现细节叙事、外部项目名与「参考 / 借鉴」字样
 
 ### 2.6.1 文档规范
@@ -272,7 +279,8 @@ return Err(anyhow!("write failed"));   // 丢 code，前端无法分流
 文档只回答三件事：**这个项目是什么、每个模块怎么设计实现、为什么这么选型**。
 
 - 根级：`README.md`（入口与能力全景）/ `AGENTS.md`（工程规范，唯一权威）/ `DESIGN.md`（视觉语言）
-- `specs/`：架构与子系统规格，编号 00-18，一个主题一个文件
+- `assets/specs/`：架构与子系统规格，编号 00-19，一个主题一个文件
+- `assets/docs/`：内置用户手册，面向使用者，讲怎么用不讲实现
 - 每篇只写现状：定位 → 设计 → 契约 → 关键流程 → 约束 → 取舍。**优势与代价必须写出来**
 - 表格与短段落优先；能用表就不用列表
 - **不写改动过程**：不建 CHANGELOG，不记录「本次改了什么」「之前坏在哪」，
@@ -409,7 +417,7 @@ mod dialog_stub;
 
 ### 2.13 关闭与退出契约（强制）
 
-见 [specs/04](specs/04-desktop-shell.md)。核心不变量：
+见 [assets/specs/04](assets/specs/04-desktop-shell.md)。核心不变量：
 
 | 不变量 | 锁死原因 |
 |---|---|
@@ -445,8 +453,10 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），8 条测试按
-  「文件 / 会话 / 批量 / 备份 / 压缩 / 系统关联」六组排列，编译只链接一次 lib
+- **单个集成测试文件**（`src-tauri/tests/chain_tests.rs`），10 条测试按
+  「文件(3) / 会话 / 批量 / 备份 / 压缩(2) / 表格编辑 / 系统关联」七组排列，编译只链接一次 lib；
+  系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 9 条
+- **源码内不挂 `#[cfg(test)]` 单元测试**：简单断言分散在各文件会让验证入口失去焦点
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
 - 全量测试亚秒级；局部改动可以用 `cargo test --test chain_tests -- <关键字>` 只跑一条链路
@@ -461,7 +471,7 @@ mod dialog_stub;
 | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Rust 格式门禁 |
 | `cargo check --manifest-path src-tauri/Cargo.toml --all-targets` | 全目标编译检查 |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | 静态检查 |
-| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` | 8 条链路测试 |
+| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_tests` | 10 条链路测试 |
 
 `tauri::generate_context!()` 会在 Rust 编译期读取 `frontend/dist`；新 checkout 中该目录
 不存在，所以 `cargo check`、Clippy 与测试前都要先构建前端。
@@ -471,7 +481,9 @@ mod dialog_stub;
 | 分组 | 测试 | 坏法 |
 |---|---|---|
 | 文件 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 |
+| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale |
 | | `file_ops_refuse_overwrite_cycle_escape_and_partial_delete` | 无声覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
+| 表格编辑 | `sheet_edit_preserves_styles_and_finds_across_sheets` | 改单元格把字体 / 填充 / 图表全丢了 / 共享串解成乱码 / 改一张表动了另一张 / 行尾多出重复 `</row>` |
 | 会话 | `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays` | 空列表序列化成 null 白屏 / 标签顺序与活跃项丢失 / 关光标签丢会话行 |
 | 批量 | `batch_preview_then_apply_touches_only_confirmed_files` | 扫描就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |
 | 备份 | `backup_export_import_restores_tables_and_keeps_local_rows` | 备份导不回来（换机丢数据）/ 导入抹掉本机数据 |

@@ -1,5 +1,5 @@
-//! 集成测试：8 条长链路，覆盖文件 / 文件树护栏 / 会话 / 批量 / 备份 / 压缩 / 系统关联。
-//! 一条测试一个用户故事；失败消息点名坏在哪一步，坏法索引见 specs/12-testing.md。
+//! 集成测试：10 条长链路，按「文件(3) / 会话 / 批量 / 备份 / 压缩(2) / 表格编辑 / 系统关联」七组排列。
+//! 一条测试一个用户故事；失败消息点名坏在哪一步，坏法索引见 assets/specs/12-testing.md。
 
 #![allow(dead_code)]
 
@@ -16,10 +16,13 @@ use notetext_lib::domain::batch::{
 use notetext_lib::domain::bookmark::BookmarkAddReq;
 use notetext_lib::domain::config::AppConfig;
 use notetext_lib::domain::draft::DraftSaveReq;
-use notetext_lib::domain::file::{FileContentVO, ReadMode};
+use notetext_lib::domain::file::{BigFileBlockWriteReq, FileContentVO, ReadMode};
 use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
 use notetext_lib::domain::macro_def::{MacroSaveReq, MacroStep};
 use notetext_lib::domain::session::{SessionDO, TabDO};
+use notetext_lib::domain::sheet::{
+    CellEdit, CellValue, SheetFindReq, SheetSaveReq, WorkbookOpenReq,
+};
 use notetext_lib::domain::snippet::SnippetSaveReq;
 use notetext_lib::pkg::error::codes;
 use notetext_lib::pkg::paths::AppPaths;
@@ -178,12 +181,12 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     let p = gbk.to_string_lossy().to_string();
     roundtrip(&state, &gbk, &[0xD6, 0xD0, 0xCE, 0xC4]);
     let forced = file
-        .read_as(&p, ReadMode::Full, Some("gb18030"))
+        .read_as(&p, ReadMode::Full, Some("gb18030"), false)
         .expect("按 gb18030 读失败");
     assert_eq!(forced.text, "中文", "指定 gb18030 应解出汉字");
     assert_eq!(forced.encoding, "gb18030", "返回的编码应是强制值");
     let fallback = file
-        .read_as(&p, ReadMode::Full, Some("klingon"))
+        .read_as(&p, ReadMode::Full, Some("klingon"), false)
         .expect("选错编码也不该打不开");
     assert_eq!(fallback.text, "中文", "不支持的编码名应退回探测");
 
@@ -207,6 +210,119 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
         .filter(|n| n.contains("notetext-tmp"))
         .collect();
     assert!(leftovers.is_empty(), "不应留下临时文件：{leftovers:?}");
+}
+
+/// 大文件分块：逐块拼回原文、行号定位一致、外部修改报 stale、单块写回带乐观锁。
+#[test]
+fn big_file_block_index_reads_blocks_and_reports_lines() {
+    let (dir, state) = boot();
+    let bf = &state.services.big_file;
+    let file = dir.path().join("big.log");
+    // 30 万行 × ~50 字节 ≈ 15MB：足以切出十几块（块目标 1MB）。
+    let line_text = "行号内容,abcdefghijklmnopqrstuvwxyz0123456789\n";
+    let lines = 300_000usize;
+    let original = line_text.repeat(lines);
+    fs::write(&file, &original).expect("写大文件失败");
+    let path = file.to_string_lossy().to_string();
+
+    let meta = bf.open(&path, None).expect("建索引失败");
+    assert_eq!(meta.total_lines, lines, "末行有换行，总行数应等于行数");
+    assert!(
+        meta.block_count > 5,
+        "15MB 应切出多块（块目标 1MB），实际 {} 块",
+        meta.block_count
+    );
+
+    // 逐块拼回原文：任何一块的字节范围或行号计数漂移都会在这里现形。
+    let mut joined = String::new();
+    let mut prev_start = 0usize;
+    for i in 0..meta.block_count {
+        let b = bf.read_block(&path, i).expect("读块失败");
+        assert_eq!(b.block_index, i, "块下标应与请求一致");
+        assert!(b.start_line > prev_start, "块起始行号应严格递增");
+        prev_start = b.start_line;
+        assert!(!b.text.is_empty(), "块 {i} 不应为空");
+        joined.push_str(&b.text);
+    }
+    assert_eq!(joined, original, "逐块拼接必须还原原文");
+
+    // 行号定位：第 1 行在首块；末行落在最后一个块（块内行数受块大小约束）。
+    assert_eq!(bf.block_for_line(&path, 1).expect("定位失败"), 0);
+    let last_idx = bf.block_for_line(&path, lines).expect("定位失败");
+    assert_eq!(
+        last_idx,
+        meta.block_count - 1,
+        "末行应落在最后一个块，实际块 {last_idx}"
+    );
+    let tail = bf.read_block(&path, last_idx).expect("读尾块失败");
+    assert!(
+        tail.start_line <= lines,
+        "尾块起始行应不超过总行数，实际 {}",
+        tail.start_line
+    );
+
+    // 外部修改：整文件被换掉后读块要报 stale（mtime 精度有限，先隔一拍再改）。
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    fs::write(&file, line_text.repeat(lines + 10)).expect("改大文件失败");
+    let b = bf.read_block(&path, 0).expect("stale 读块失败");
+    assert!(b.stale, "文件已变化，读块应报 stale");
+
+    // ---- 同一故事的第二面：单块局部编辑 ----
+    // 重建索引后改中间一块，验证「只换那一块、前后字节一个不动」。
+    let meta = bf.open(&path, None).expect("重建索引失败");
+    assert!(meta.block_count > 2, "要改中间块，至少得有三块");
+    let total_before = fs::metadata(&file).expect("读长度失败").len();
+    let blk = bf.read_block(&path, 1).expect("读第 1 块失败");
+    let old_block_bytes = blk.text.len() as u64;
+    let block_lines = blk.text.lines().count();
+    let edited = "改过的第一行\n改过的第二行\n";
+
+    let w = bf
+        .write_block(&BigFileBlockWriteReq {
+            path: path.clone(),
+            block_index: 1,
+            old_text: blk.text.clone(),
+            new_text: edited.to_string(),
+        })
+        .expect("单块写回失败");
+
+    // 总字节数必然等于「原长 - 旧块长 + 新块长」：多一字节就是前后段被动了。
+    let new_len = fs::metadata(&file).expect("读新长度失败").len();
+    let expect_len = total_before - old_block_bytes + edited.len() as u64;
+    assert_eq!(new_len, expect_len, "只换目标块，前后字节应原样保留");
+    assert_eq!(w.size, new_len, "返回值里的字节数应与磁盘一致");
+
+    // 读回第 1 块即改过的内容；第 0 块还是原来的行。
+    let after = bf.read_block(&path, 1).expect("读回改后块失败");
+    assert!(after.text.contains("改过的第一行"), "改后块应包含新内容");
+    let head = bf.read_block(&path, 0).expect("读首块失败");
+    assert!(
+        head.text.starts_with("行号内容"),
+        "首块内容不该被动到，实际开头：{:?}",
+        head.text.chars().take(16).collect::<String>()
+    );
+    // 行数变化应等于「新块行数 - 旧块行数」。
+    let expected_lines = meta.total_lines - block_lines + edited.lines().count();
+    assert_eq!(w.total_lines, expected_lines, "总行数应随块内行数变化");
+
+    // 乐观锁：拿过期的 old_text 再写一次必须被拒（码 1008）。
+    let err = bf
+        .write_block(&BigFileBlockWriteReq {
+            path: path.clone(),
+            block_index: 1,
+            old_text: blk.text.clone(),
+            new_text: "不该落盘\n".to_string(),
+        })
+        .expect_err("过期基线必须被拒");
+    assert_eq!(
+        err.code,
+        codes::FILE_STALE,
+        "过期块应报 1008，实际 {}",
+        err.code
+    );
+
+    bf.close(&path);
+    assert!(bf.read_block(&path, 0).is_err(), "close 之后索引应已释放");
 }
 
 /// 文件树护栏：重命名不许覆盖 / 不许成环 / 不许逃逸，批量删除对陈旧路径只记账，
@@ -778,6 +894,176 @@ fn archive_rejects_escape_and_distinguishes_password_from_corruption() {
     assert!(!result.ok, "损坏的包必须测出失败");
     assert!(!result.failures.is_empty(), "失败清单要给出具体条目与原因");
 }
+
+// ---------- 表格编辑 ----------
+
+/// 表格链路：手搭带样式的 xlsx，改格加行后值变了、样式表与未编辑工作表仍字节级原样。
+#[test]
+fn sheet_edit_preserves_styles_and_finds_across_sheets() {
+    let (dir, state) = boot();
+    let svc = &state.services.sheet;
+    let file = dir.path().join("book.xlsx");
+    build_styled_xlsx(&file);
+    let path = file.to_string_lossy().to_string();
+
+    // 打开：两张表、共享串解析正确。
+    let wb = svc
+        .open(&WorkbookOpenReq { path: path.clone() })
+        .expect("打开工作簿失败");
+    assert_eq!(wb.sheets.len(), 2, "应有 2 张工作表");
+    assert_eq!(wb.sheets[0].name, "数据", "表名应来自 workbook.xml");
+    assert_eq!(wb.sheets[1].name, "备注");
+    let first = &wb.sheets[0];
+    let a1 = first
+        .cells
+        .iter()
+        .find(|c| c.row == 0 && c.col == 0)
+        .expect("A1 应存在");
+    assert_eq!(a1.value.display(), "标题", "A1 是共享串，应解析成标题");
+    let b2 = first
+        .cells
+        .iter()
+        .find(|c| c.row == 1 && c.col == 1)
+        .expect("B2 应存在");
+    assert_eq!(b2.value.display(), "42", "B2 是数值");
+
+    // 跨表查找。
+    let found = svc
+        .find(&SheetFindReq {
+            path: path.clone(),
+            sheet_index: None,
+            find: "标题".into(),
+            match_case: None,
+            whole_cell: None,
+        })
+        .expect("查找失败");
+    assert_eq!(found.total, 1, "「标题」应命中 1 处");
+    assert_eq!(found.hits[0].sheet_name, "数据");
+
+    // 改两格 + 加一整行原本不存在的新行。
+    let saved = svc
+        .save(&SheetSaveReq {
+            path: path.clone(),
+            sheet_index: 0,
+            edits: vec![
+                CellEdit {
+                    row: 0,
+                    col: 0,
+                    value: Some(CellValue::Text {
+                        text: "新标题".into(),
+                    }),
+                },
+                CellEdit {
+                    row: 1,
+                    col: 1,
+                    value: Some(CellValue::Number { raw: "99".into() }),
+                },
+                CellEdit {
+                    row: 5,
+                    col: 0,
+                    value: Some(CellValue::Text {
+                        text: "新增行".into(),
+                    }),
+                },
+            ],
+            backup: Some(false),
+        })
+        .expect("写回失败");
+    assert_eq!(saved.changed, 3);
+
+    // 写回后值确实变了。
+    let wb2 = svc
+        .open(&WorkbookOpenReq { path: path.clone() })
+        .expect("重新打开失败");
+    let s0 = &wb2.sheets[0];
+    let a1_new = s0
+        .cells
+        .iter()
+        .find(|c| c.row == 0 && c.col == 0)
+        .expect("写回后 A1 应还在");
+    assert_eq!(a1_new.value.display(), "新标题", "A1 应已更新");
+    let b2_new = s0
+        .cells
+        .iter()
+        .find(|c| c.row == 1 && c.col == 1)
+        .expect("写回后 B2 应还在");
+    assert_eq!(b2_new.value.display(), "99", "B2 应已更新");
+    let new_row = s0
+        .cells
+        .iter()
+        .find(|c| c.row == 5 && c.col == 0)
+        .expect("新增行应出现");
+    assert_eq!(new_row.value.display(), "新增行");
+
+    // 样式还在：style 索引保住，样式表与未编辑的工作表字节级原样。
+    let after_xml =
+        String::from_utf8_lossy(&read_zip_entry_bytes(&file, "xl/worksheets/sheet1.xml"))
+            .to_string();
+    assert!(
+        after_xml.contains("s=\"1\"") || after_xml.contains("s=\"2\""),
+        "带样式的单元格保住 style 索引，实际：{after_xml}"
+    );
+    assert_eq!(
+        read_zip_entry_bytes(&file, "xl/styles.xml"),
+        STYLES_XML.as_bytes(),
+        "样式表部件必须字节级原样搬回去"
+    );
+    assert_eq!(
+        read_zip_entry_bytes(&file, "xl/worksheets/sheet2.xml"),
+        SHEET2_XML.as_bytes(),
+        "未编辑的工作表应原样保留"
+    );
+}
+
+/// 一个带样式的极小 xlsx：两张表 + 共享串 + styles.xml。
+fn build_styled_xlsx(path: &Path) {
+    use std::io::Write;
+    let file = fs::File::create(path).expect("建 xlsx 失败");
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let parts: [(&str, &[u8]); 6] = [
+        ("[Content_Types].xml", CONTENT_TYPES.as_bytes()),
+        ("xl/workbook.xml", WORKBOOK_XML.as_bytes()),
+        ("xl/_rels/workbook.xml.rels", WORKBOOK_RELS.as_bytes()),
+        ("xl/sharedStrings.xml", SHARED_STRINGS.as_bytes()),
+        ("xl/styles.xml", STYLES_XML.as_bytes()),
+        ("xl/worksheets/sheet1.xml", SHEET1_XML.as_bytes()),
+    ];
+    for (name, body) in parts {
+        zip.start_file(name, opts).expect("写部件失败");
+        zip.write_all(body).expect("写部件内容失败");
+    }
+    zip.start_file("xl/worksheets/sheet2.xml", opts)
+        .expect("写 sheet2 失败");
+    zip.write_all(SHEET2_XML.as_bytes())
+        .expect("写 sheet2 内容失败");
+    zip.finish().expect("收尾失败");
+}
+
+fn read_zip_entry_bytes(path: &Path, name: &str) -> Vec<u8> {
+    use std::io::Read;
+    let bytes = fs::read(path).expect("读 xlsx 失败");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("解 zip 失败");
+    let mut f = zip.by_name(name).expect("部件不存在");
+    let mut out = Vec::new();
+    f.read_to_end(&mut out).expect("读部件失败");
+    out
+}
+
+const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>"#;
+
+const WORKBOOK_XML: &str = r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="数据" sheetId="1" r:id="rId1"/><sheet name="备注" sheetId="2" r:id="rId2"/></sheets></workbook>"#;
+
+const WORKBOOK_RELS: &str = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#;
+
+const SHARED_STRINGS: &str = r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>标题</t></si><si><t>备注内容</t></si></sst>"#;
+
+const STYLES_XML: &str = r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts><font><sz val="11"/></font><font><b/><sz val="16"/></font></fonts></styleSheet>"#;
+
+const SHEET1_XML: &str = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s" s="1"><v>0</v></c></row><row r="2"><c r="B2" s="2"><v>42</v></c></row></sheetData></worksheet>"#;
+
+const SHEET2_XML: &str = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>1</v></c></row></sheetData></worksheet>"#;
 
 // ---------- 系统关联 ----------
 

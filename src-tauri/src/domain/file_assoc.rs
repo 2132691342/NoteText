@@ -1,4 +1,4 @@
-//! 系统文件关联域：分组定义、状态 VO 与设置入参（specs/17）。
+//! 系统文件关联域：分组定义、状态 VO 与设置入参（assets/specs/17）。
 //! 注册指 HKCU 下的 ProgId + OpenWithProgids + RegisteredApplications 三件套。
 
 /// 关联分组静态定义：扩展清单是契约，前端徽标从这里读，不自己写死。
@@ -14,7 +14,7 @@ pub struct AssocGroupDef {
 }
 
 /// 文本组与安装器 `tauri.conf.json` 的 fileAssociations 清单保持一致，
-/// 两处改动必须同步（specs/17）。
+/// 两处改动必须同步（assets/specs/17）。
 pub const GROUPS: &[AssocGroupDef] = &[
     AssocGroupDef {
         id: "text",

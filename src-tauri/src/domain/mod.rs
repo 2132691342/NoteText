@@ -20,6 +20,7 @@ pub mod macro_def;
 pub mod recent;
 pub mod regex;
 pub mod session;
+pub mod sheet;
 pub mod snippet;
 
 pub use archive::{
@@ -56,4 +57,8 @@ pub use macro_def::{MacroDO, MacroPlayReq, MacroRecordState, MacroSaveReq, Macro
 pub use recent::{RecentFileDO, RecentFileVO};
 pub use regex::{RegexMatchVO, RegexTestReq, RegexTestVO};
 pub use session::{SessionDO, SessionRestoreVO, SessionSaveReq, TabDO};
+pub use sheet::{
+    CellEdit, CellValue, SheetCell, SheetFindReq, SheetFindVO, SheetHit, SheetSaveReq, SheetSaveVO,
+    SheetVO, WorkbookOpenReq, WorkbookVO,
+};
 pub use snippet::{LanguageInfo, SnippetDO, SnippetQueryReq, SnippetSaveReq, SnippetVO};

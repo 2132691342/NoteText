@@ -164,6 +164,19 @@ impl BatchService {
                 }),
             }
         }
+        if out.failures.is_empty() {
+            tracing::info!(
+                changed = out.changed,
+                replacements = out.replacements,
+                "批量替换完成"
+            );
+        } else {
+            tracing::warn!(
+                changed = out.changed,
+                failures = out.failures.len(),
+                "批量替换有失败项"
+            );
+        }
         Ok(out)
     }
 

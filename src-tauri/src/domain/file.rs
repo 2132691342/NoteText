@@ -86,3 +86,55 @@ pub struct TablePreviewVO {
     pub truncated: bool,
     pub size: u64,
 }
+
+/// 大文件元信息：块索引建好后返回给前端的概览。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileMetaVO {
+    pub path: String,
+    pub size: u64,
+    /// 头部采样探测出的编码 id：整个文件按它逐块解码。
+    pub encoding: String,
+    /// 块的目标字节数（前端导航条换算用）。
+    pub block_size: u64,
+    pub block_count: usize,
+    /// 编辑器意义上的总行数（末行无换行也计一行；空文件为 1）。
+    pub total_lines: usize,
+}
+
+/// 大文件的一个块：解码后的文本 + 它在整份文件里的行号范围。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileBlockVO {
+    pub path: String,
+    pub block_index: usize,
+    pub block_count: usize,
+    /// 本块第一行的全局行号（1-based）。
+    pub start_line: usize,
+    /// 本块文本（已按块内编码解码、行尾已归一为 LF）。
+    pub text: String,
+    /// 读取时探测到文件已被外部修改：前端提示重新打开。
+    pub stale: bool,
+}
+
+/// 大文件单块写回请求：只替换一个块的字节区间，`old_text` 用作乐观锁基线。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileBlockWriteReq {
+    pub path: String,
+    pub block_index: usize,
+    /// 读块时得到的正文（乐观锁基线）。
+    pub old_text: String,
+    /// 用户改完的新正文（LF 行尾，块内不带首尾多余额外换行）。
+    pub new_text: String,
+}
+
+/// 单块写回结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileBlockWriteVO {
+    pub path: String,
+    /// 写入后文件的总字节数。
+    pub size: u64,
+    /// 写入后的块数（块大小可能因正文变长而变）。
+    pub block_count: usize,
+    /// 写入后的总行数。
+    pub total_lines: usize,
+    pub modified_at: i64,
+}

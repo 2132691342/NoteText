@@ -1,5 +1,4 @@
-// 编辑器主题：CodeMirror 的扩展跟随 --nt-* 令牌。
-// 为什么手写而不是引 @codemirror/theme-one-dark：EP 的主题包写死色值，
+// 编辑器主题：CodeMirror 扩展跟随 --nt-* 令牌，色值不写死。
 
 import { EditorView } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'
@@ -99,13 +98,7 @@ export function useEditorTheme(host: Ref<HTMLElement | null>) {
     ]
   }
 
-  /**
-   * 字号 / 字体落到宿主元素的两个变量上。
-   *
-   * 为什么用变量而不是直接写 font-size：编辑器里除了 `.cm-editor` 还有 gutter、
-   * 搜索面板等子层，写死在宿主上的字号被子层自己的字号覆盖；
-   * 变量由主题扩展与组件 CSS 共同引用，改一处全链生效。
-   */
+  /** 字号 / 字体写进宿主元素变量，供主题扩展与 gutter / 搜索面板等子层共同引用。 */
   function applyFont() {
     const el = host.value
     if (!el) return

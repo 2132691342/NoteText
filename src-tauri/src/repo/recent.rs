@@ -4,7 +4,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::domain::recent::RecentFileDO;
-use crate::pkg::error::{AppError, AppResult};
+use crate::pkg::error::{codes, AppError, AppResult};
 
 pub struct RecentRepo;
 
@@ -16,7 +16,7 @@ impl RecentRepo {
              ON CONFLICT(path) DO UPDATE SET opened_at = excluded.opened_at",
             params![path, now],
         )
-        .map_err(|e| AppError::wrap("1001", "记录最近文件失败", e))?;
+        .map_err(|e| AppError::wrap(codes::IO_FAILED, "记录最近文件失败", e))?;
         Self::trim(conn, limit)
     }
 
@@ -25,7 +25,7 @@ impl RecentRepo {
         if limit == 0 {
             // limit = 0 表示「不记最近文件」：清空但不删置顶项。
             conn.execute("DELETE FROM recent_files WHERE pinned = 0", [])
-                .map_err(|e| AppError::wrap("1001", "清理最近文件失败", e))?;
+                .map_err(|e| AppError::wrap(codes::IO_FAILED, "清理最近文件失败", e))?;
             return Ok(());
         }
         conn.execute(
@@ -35,7 +35,7 @@ impl RecentRepo {
              )",
             params![limit as i64],
         )
-        .map_err(|e| AppError::wrap("1001", "清理最近文件失败", e))?;
+        .map_err(|e| AppError::wrap(codes::IO_FAILED, "清理最近文件失败", e))?;
         Ok(())
     }
 
@@ -43,7 +43,7 @@ impl RecentRepo {
     pub fn list(conn: &Connection) -> AppResult<Vec<RecentFileDO>> {
         let mut stmt = conn
             .prepare("SELECT id, path, pinned, opened_at FROM recent_files ORDER BY pinned DESC, opened_at DESC")
-            .map_err(|e| AppError::wrap("1001", "读取最近文件失败", e))?;
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读取最近文件失败", e))?;
         let rows = stmt
             .query_map([], |r| {
                 Ok(RecentFileDO {
@@ -53,9 +53,9 @@ impl RecentRepo {
                     opened_at: r.get(3)?,
                 })
             })
-            .map_err(|e| AppError::wrap("1001", "读取最近文件失败", e))?
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读取最近文件失败", e))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::wrap("1001", "读取最近文件失败", e))?;
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读取最近文件失败", e))?;
         Ok(rows)
     }
 
@@ -65,14 +65,14 @@ impl RecentRepo {
             "UPDATE recent_files SET pinned = ?2 WHERE path = ?1",
             params![path, pinned as i64],
         )
-        .map_err(|e| AppError::wrap("1001", "更新最近文件失败", e))?;
+        .map_err(|e| AppError::wrap(codes::IO_FAILED, "更新最近文件失败", e))?;
         Ok(())
     }
 
     /// 移除一条。
     pub fn remove(conn: &Connection, path: &str) -> AppResult<()> {
         conn.execute("DELETE FROM recent_files WHERE path = ?1", params![path])
-            .map_err(|e| AppError::wrap("1001", "删除最近文件失败", e))?;
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "删除最近文件失败", e))?;
         Ok(())
     }
 
@@ -80,7 +80,7 @@ impl RecentRepo {
     pub fn clear(conn: &Connection) -> AppResult<usize> {
         let n = conn
             .execute("DELETE FROM recent_files WHERE pinned = 0", [])
-            .map_err(|e| AppError::wrap("1001", "清空最近文件失败", e))?;
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "清空最近文件失败", e))?;
         Ok(n)
     }
 
@@ -99,6 +99,6 @@ impl RecentRepo {
             },
         )
         .optional()
-        .map_err(|e| AppError::wrap("1001", "读取最近文件失败", e))
+        .map_err(|e| AppError::wrap(codes::IO_FAILED, "读取最近文件失败", e))
     }
 }

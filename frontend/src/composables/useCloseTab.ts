@@ -5,20 +5,12 @@ import { useEditorStore, languageOf } from '@/stores/editor'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useToastStore } from '@/stores/toast'
 import { api, normalizeError } from '@/api'
-import { getText, commitBaseline } from '@/composables/useEditorRegistry'
-import { doReplaceDoc } from '@/composables/useEditorActions'
+import { getText, commitBaseline, replaceDocText } from '@/composables/useEditorRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { askUnsaved } from '@/components/dialogs/UnsavedDialog.vue'
 import { baseName } from '@/utils'
 
-/**
- * 取文案函数。
- *
- * **不能用 `useI18n()`**：它依赖当前组件实例，而这些函数是由命令表
- * （菜单 / 快捷键 / 标签栏点击）调用的，调用栈里没有组件 setup——
- * 那样会抛 SyntaxError（内部去读组件实例的 i18n 元数据）。
- * 全局实例在 i18n.ts 里，这里直接用它。
- */
+/** 取文案函数：调用方是命令表，没有组件实例，直接用全局 i18n 实例。 */
 function tr(key: string, named: Record<string, unknown> = {}): string {
   return i18n.global.t(key, named)
 }
@@ -40,7 +32,7 @@ function textForSave(id: number): string {
       .join('\n')
   }
   if (file.ensure_final_newline && !text.endsWith('\n')) text += '\n'
-  if (text !== getText(id)) doReplaceDoc(id, text)
+  if (text !== getText(id)) replaceDocText(id, text)
   return text
 }
 

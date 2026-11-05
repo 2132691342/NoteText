@@ -81,13 +81,7 @@ async function load() {
   }
 }
 
-/**
- * 解析 tracing 文本格式。
- *
- * 形如 `2026-10-22T14:30:01.123Z ERROR notetext::file: 写文件失败`。
- * 解析不出来的行按 info 收进去：丢掉一整行比把它标错级别更糟
- * （用户要找的就是那一行）。
- */
+/** 解析 tracing 文本格式；解析不出的行按 info 收进去，不丢整行。 */
 function parseLog(text: string): LogLine[] {
   const out: LogLine[] = []
   for (const raw of text.split('\n')) {

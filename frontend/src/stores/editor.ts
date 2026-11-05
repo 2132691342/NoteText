@@ -15,8 +15,10 @@ import type {
 import { useToastStore } from './toast'
 import { useSettingsStore } from './settings'
 import { tr } from '@/i18n'
-import { baseName } from '@/utils'
-import { isTextKind, kindOf } from '@/utils/fileKind'
+import { baseName, formatSize } from '@/utils'
+import { isTextKind, isDelimitedSheet, isWorkbookSheet, kindOf } from '@/utils/fileKind'
+import { askPick } from '@/components/common/askPick'
+import { stagePendingContent } from '@/composables/useEditorRegistry'
 
 /** 一个标签页。`path` 为空 = 新建未保存的草稿标签。 */
 export interface Tab {
@@ -32,13 +34,7 @@ export interface Tab {
   position: EditorPosition
   scroll_ratio: number
   view_type: ViewType
-  /**
-   * 预览开关：与 view_type 正交。
-   *
-   * 为什么不给 ViewType 加一档 `preview`：view_type 是**后端持久化的契约**
-   * （`domain::editor::ViewType`，按扩展名推断、写进会话表）。预览只是
-   * 「同一个文件换个看法」，不改变它的类型，也不必存进会话。
-   */
+  /** 预览开关：与后端持久化的 view_type 正交，不进会话契约。 */
   showing_preview: boolean
   /** 内容被截断（大文件只读了前段）：此时只读，禁止保存。 */
   truncated: boolean
@@ -48,16 +44,27 @@ export interface Tab {
   split: boolean
   /** 载入时的探测结果：low_confidence 时状态栏要提示「不确定」。 */
   encoding_uncertain: boolean
+  /**
+   * 分块只读模式（超大文件）：正文按块从后端取，不整篇进内存。
+   * 运行时标记，不进会话契约——恢复的标签在挂载时按文件大小重新判定。
+   */
+  chunked: boolean
 }
 
 let nextId = 1
 
 /**
  * 全量读入的大小上限，与后端 `service::file::MAX_FULL_READ` 对齐（32MB）。
- * 超过它改读前段并只读——把几百 MB 的日志整篇塞进 CodeMirror 会直接卡死界面。
- * 两边必须同值：只改一边会出现「前端以为能全读、后端拒绕」。
+ * 超过它弹窗让用户选打开方式——把几百 MB 的日志整篇塞进 CodeMirror 会
+ * 直接卡死界面。两边必须同值：只改一边会出现「前端以为能全读、后端拒绝」。
  */
 const FULL_READ_LIMIT = 32 * 1024 * 1024
+
+/**
+ * 显式放行后的全量可编辑上限，与后端 `service::file::MAX_FORCE_FULL_READ`
+ * 对齐（512MB）。再大只能分块（可逐块编辑）。
+ */
+const BIG_EDIT_LIMIT = 512 * 1024 * 1024
 
 export const useEditorStore = defineStore('editor', () => {
   const tabs = ref<Tab[]>([])
@@ -102,6 +109,7 @@ export const useEditorStore = defineStore('editor', () => {
       truncated_bytes: 0,
       split: false,
       encoding_uncertain: false,
+      chunked: false,
     }
     tabs.value.push(tab)
     activeId.value = tab.id
@@ -159,11 +167,8 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * 节点在磁盘上换了路径（重命名 / 移动 / 删除）。
-   *
-   * `path` 与 `title` 必须一起换：只换 path 的后果是标签还显示旧名字，
-   * 用户以为改的是另一个文件。`newPath` 为空串表示节点被删除：关掉标签。
-   * 文件树的脏标记由调用方（树面板）自己同步，store 之间不互相引用。
+   * 节点在磁盘上换了路径；`path` 与 `title` 必须一起换。
+   * `newPath` 为空串表示节点被删除，关掉标签。
    */
   function renamePath(oldPath: string, newPath: string) {
     if (!oldPath) return
@@ -178,17 +183,8 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * 打开一个文件。
-   *
-   * 已打开则聚焦；否则读文件 → 建标签。读失败只报错不建标签——
-   * 建一个空标签会让用户以为「打开了但内容是空的」。
-   *
-   * 大文件自动降级：先 stat 拿大小，超过后端全量读上限就改读前段，
-   * 并标记只读。之前没有任何调用方传 mode，超 32MB 的文件直接报错打不开。
-   *
-   * 非文本（PDF / 表格 / 图片 / 二进制）**不走 read_file**：把 PDF 的字节
-   * 按文本解码只会得到乱码或解码错误，用户看到的是「打不开」。
-   * 这类文件只建标签，正文由预览器 / Hex 视图自己去读字节。
+   * 打开一个文件：已打开则聚焦；否则 stat → 按形态读内容或只建标签 → 建标签。
+   * 大文件降级读前段并标记只读；非文本形态只建标签，正文由预览器按字节读。
    */
   async function openPath(path: string, mode?: ReadMode): Promise<Tab | null> {
     const existing = findByPath(path)
@@ -207,34 +203,67 @@ export const useEditorStore = defineStore('editor', () => {
       }
 
       const kind = kindOf(path, meta?.is_binary ?? false)
-      if (!isTextKind(kind)) {
+      // CSV / TSV 走可编辑文本网格：按文本全量读进内存（≤32MB），网格自己解析。
+      // 超过上限维持只读预览——表格编辑不做分块，写回必须整文件一致。
+      const editableSheet =
+        kind === 'sheet' && isDelimitedSheet(path) && (!meta || meta.size <= FULL_READ_LIMIT)
+      if (!isTextKind(kind) && !editableSheet) {
         const tab = newTab()
         tab.path = path
         tab.title = fileNameOf(path)
         tab.language = languageOf(path)
         // 二进制进 Hex，能预览的进预览器（DocPreview 自己按扩展名分流）
         tab.view_type = kind === 'binary' ? 'hex' : viewTypeOf(path)
-        tab.showing_preview = kind !== 'binary'
-        tab.read_only = true
+        // XLSX / ODS 默认进可编辑网格（单元格值与公式可改，样式原地保留）；
+        // 其余非文本类默认进预览（图片 / PDF / Word 没有“编辑”这回事）。
+        const editableWorkbook = kind === 'sheet' && isWorkbookSheet(path)
+        tab.showing_preview = kind !== 'binary' && !editableWorkbook
+        tab.read_only = !editableWorkbook
         return tab
       }
 
       let effective = mode
-      let truncatedBySize = false
-      if (!effective) {
-        if (meta && meta.size > FULL_READ_LIMIT) {
-          effective = { mode: 'head' }
-          truncatedBySize = true
+      let forceBig = false
+      if (!effective && meta && meta.size > FULL_READ_LIMIT) {
+        if (meta.size > BIG_EDIT_LIMIT) {
+          // 超过显式放行上限：不再询问，直接进分块（秒开，可逐块编辑）。
+          return await openChunked(path)
         }
+        // 32MB ~ 512MB：弹窗让用户选——普通打开可编辑但慢，分块秒开。
+        const choice = await askPick({
+          title: tr('dialog.bigFile.title', {
+            name: fileNameOf(path),
+            size: formatSize(meta.size),
+          }),
+          items: [
+            {
+              value: 'normal',
+              label: tr('dialog.bigFile.normal'),
+              hint: tr('dialog.bigFile.normalHint'),
+            },
+            {
+              value: 'chunked',
+              label: tr('dialog.bigFile.chunked'),
+              hint: tr('dialog.bigFile.chunkedHint'),
+            },
+          ],
+        })
+        if (choice === 'chunked') return await openChunked(path)
+        if (choice !== 'normal') return null // 用户取消：不开标签
+        effective = { mode: 'full' }
+        forceBig = true
       }
-      const content = await api.readFile(path, undefined, effective)
+      const content = await api.readFile(path, undefined, effective, forceBig)
       const tab = newTab()
+      // 正文暂存：编辑器挂载时直接消费，不再重读一遍（截断标签尤其重要，
+      // 挂载时不带 mode 的重读会被后端拒绝，用户看到错误面）。
+      stagePendingContent(tab.id, content.text)
       applyContent(tab, content)
       // 截断的标签一律只读：保存会把截断后的内容写回磁盘，那是数据丢失。
       if (content.truncated) {
         tab.read_only = true
         tab.truncated = true
-        if (truncatedBySize) tab.truncated_bytes = content.read_bytes
+        tab.truncated_bytes = content.read_bytes
       }
       return tab
     } catch (e) {
@@ -242,6 +271,19 @@ export const useEditorStore = defineStore('editor', () => {
       useToastStore().bad(tr('toast.openFailed', { reason: err.message }))
       return null
     }
+  }
+
+  /** 以分块模式打开超大文件（索引建好后可逐块编辑）。 */
+  async function openChunked(path: string): Promise<Tab | null> {
+    const tab = newTab()
+    tab.path = path
+    tab.title = fileNameOf(path)
+    tab.language = languageOf(path)
+    tab.encoding = 'utf-8'
+    tab.read_only = true
+    tab.chunked = true
+    tab.view_type = viewTypeOf(path)
+    return tab
   }
 
   /** 把读取结果贴到标签上（新建与重载共用）。 */
@@ -262,6 +304,8 @@ export const useEditorStore = defineStore('editor', () => {
   async function reload(id: number): Promise<void> {
     const tab = tabs.value.find((t) => t.id === id)
     if (!tab || !tab.path || tab.path.startsWith('draft:')) return
+    // 分块只读标签不做全量重读：读块时后端按修改时间报 stale，够用。
+    if (tab.chunked) return
     try {
       // 截断标签按原样读前段：全量读会在 >32MB 的文件上直接报错，重载永远失败
       const c = await api.readFile(tab.path, undefined, tab.truncated ? { mode: 'head' } : undefined)
@@ -306,13 +350,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (!tabs.value.some((t) => t.id === activeId.value)) activeId.value = id
   }
 
-  /**
-   * 从后端会话恢复标签。正文由组件层按 path / draft 拉。
-   *
-   * `activeIndex` 必须用上：只恢复标签不恢复活跃项，启动后一个标签都不显示，
-   * 用户看到的是欢迎页——「上次的文件全没了」这种报告就是这么来的。
-   * 恢复是整块替换：先清空再灌入，重复调用不会把同一批标签叠成两份。
-   */
+  /** 从后端会话整块替换标签并恢复 activeIndex；正文由组件层按 path / draft 拉。 */
   function restore(dos: TabDO[], activeIndex = 0) {
     tabs.value = []
     activeId.value = null
@@ -342,6 +380,7 @@ export const useEditorStore = defineStore('editor', () => {
         truncated_bytes: 0,
         split: d.split,
         encoding_uncertain: false,
+        chunked: false,
       }
       tabs.value.push(tab)
     }

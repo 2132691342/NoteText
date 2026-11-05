@@ -18,13 +18,7 @@ const NO_BACKEND: AppError = {
   details: tr('toast.noBackendDetail'),
 }
 
-/**
- * 调一个 Rust command。
- *
- * Tauri v2 的 reject 形状是 `{ code, message, details }`（后端 AppError 序列化
- * 成 JSON 后由 invoke 原样带回）。解析失败时给一个 unknown 码的兜底——
- * 丢原始字符串会让用户看到一串 Rust 内部路径。
- */
+/** 调一个 Rust command：把 `{ code, message, details }` 归一，解析失败给 unknown 兜底。 */
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isDesktop) {
     throw NO_BACKEND
@@ -100,6 +94,15 @@ import type {
   DirEntry,
   DraftSaveReq,
   DraftVO,
+  BigFileMetaVO,
+  BigFileBlockVO,
+  BigFileBlockWriteReq,
+  BigFileBlockWriteVO,
+  WorkbookVO,
+  SheetSaveReq,
+  SheetSaveVO,
+  SheetFindReq,
+  SheetFindVO,
   EncodingInfo,
   FileContentVO,
   FileMeta,
@@ -151,11 +154,12 @@ import type {
 
 export const api = {
   // 文件
-  readFile: (path: string, encoding?: string, mode?: ReadMode) =>
+  readFile: (path: string, encoding?: string, mode?: ReadMode, allowBig?: boolean) =>
     call<FileContentVO>('read_file', {
       path,
       encoding: encoding ?? null,
       mode: serializeReadMode(mode),
+      allow_big: allowBig ?? null,
     }),
   /** 读二进制（预览 / Hex）。返回 base64：走 Vec<u8> 会被序列化成 number[]。 */
   readBinary: (path: string) => call<string>('read_binary', { path }),
@@ -192,6 +196,25 @@ export const api = {
     }),
   readDir: (dir: string) => call<DirEntry[]>('read_dir', { dir }),
   statFile: (path: string) => call<FileMeta>('stat_file', { path }),
+  // 大文件分块：索引建一次，逐块按需读（进度走 bigfile:progress 事件）。
+  // writeBlock 只换目标块的字节区间，其余字节原样不动（乐观锁：old_text 过期即拒）。
+  bigFile: {
+    open: (path: string) => call<BigFileMetaVO>('big_file_open', { path }),
+    block: (path: string, blockIndex: number) =>
+      call<BigFileBlockVO>('big_file_block', { path, block_index: blockIndex }),
+    gotoLine: (path: string, line: number) =>
+      call<number>('big_file_goto_line', { path, line }),
+    writeBlock: (req: BigFileBlockWriteReq) =>
+      call<BigFileBlockWriteVO>('big_file_write_block', { req }),
+    cancel: (path: string) => call<void>('big_file_cancel', { path }),
+    close: (path: string) => call<void>('big_file_close', { path }),
+  },
+  // 表格编辑：XLSX 读全部工作表 + 原地改 XML 写回（样式 / 图表保住）。
+  sheet: {
+    open: (path: string) => call<WorkbookVO>('open_workbook', { req: { path } }),
+    save: (req: SheetSaveReq) => call<SheetSaveVO>('save_workbook', { req }),
+    find: (req: SheetFindReq) => call<SheetFindVO>('find_in_workbook', { req }),
+  },
   // 文件树右键 / 拖拽：目标已存在一律拒绝（见 api.fileOps）
   fileOps: {
     createFile: (path: string) =>
@@ -293,7 +316,7 @@ export const api = {
   loadConfig: () => call<AppConfig>('load_config'),
   saveConfig: (config: AppConfig) => call<void>('save_config', { config }),
 
-  // 归档 / 压缩（specs/18）：同步三件 + 长任务八件（提交队列，进度走事件）
+  // 归档 / 压缩（assets/specs/18）：同步三件 + 长任务八件（提交队列，进度走事件）
   archive: {
     open: (path: string, password?: string) =>
       call<OpenArchiveVO>('open_archive', { path, password: password ?? null }),
@@ -331,6 +354,8 @@ export const api = {
       split_ratio: patch.split_ratio ?? null,
     }),
   rememberWindow: () => call<void>('remember_window'),
+  /** 标记干净退出：崩溃恢复据此区分「没存就退」与「异常终止」。 */
+  markCleanExit: () => call<void>('mark_clean_exit'),
 
   // 窗口与系统
   windowMinimize: () => call<void>('window_minimize'),
@@ -349,7 +374,7 @@ export const api = {
   showConfirm: (title: string, message: string) =>
     call<boolean>('show_confirm', { title, message }),
   openPath: (path: string) => call<void>('open_path', { path }),
-  // 系统文件关联（specs/17）：注册进「打开方式」与默认应用候选
+  // 系统文件关联（assets/specs/17）：注册进「打开方式」与默认应用候选
   fileAssocStatus: () => call<FileAssocStatusVO>('get_file_assoc_status'),
   setFileAssocGroup: (group: string, enable: boolean) =>
     call<void>('set_file_assoc_group', { req: { group, enable } }),

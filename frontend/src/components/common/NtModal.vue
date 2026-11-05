@@ -66,13 +66,7 @@ function trapFocus(e: KeyboardEvent) {
   }
 }
 
-/**
- * Esc 关闭：监听在 document 上而不是弹窗元素上。
- *
- * 挂在元素上的 @keydown.esc 只在焦点还在弹窗内时有效；焦点一旦跑进
- * 内部的 ElInput（它的 input 是独立元素）或者用户点了别处，Esc 就失灵。
- * 浮窗是全屏模态，Esc 必须永远有效。
- */
+/** Esc 关闭：监听在 document 上，焦点在弹窗内的输入框时同样有效。 */
 function onEsc(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   e.preventDefault()

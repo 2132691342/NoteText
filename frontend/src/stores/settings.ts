@@ -63,6 +63,7 @@ function defaultConfig(): AppConfig {
       sidebar_tab: 'files',
     },
     keybindings: {},
+    last_exit_clean: true,
   }
 }
 

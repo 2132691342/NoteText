@@ -1,7 +1,7 @@
 // 文件树 store：目录展开状态、工作目录、脏标记、剪切板。
 // 归属：树的「形状」（哪些目录展开）是纯 UI 态，留在前端；
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { markRaw, ref } from 'vue'
 import { api, normalizeError } from '@/api'
 import type { DirEntry } from '@/types/api'
 import { useToastStore } from './toast'
@@ -23,6 +23,8 @@ export const useFileTreeStore = defineStore('fileTree', () => {
   /** 拖拽悬停的目标目录：高亮 + 落点提示。 */
   const dropTarget = ref<string | null>(null)
   const loading = ref(false)
+  /** 单次「刷新全部」最多重读多少个已展开目录：超过就只刷根（防卡死）。 */
+  const MAX_REFRESH_DIRS = 24
 
   /** 打开一个文件夹为根。 */
   async function open(dir: string) {
@@ -31,6 +33,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
       root.value = dir
       expanded.value = new Set()
       children.value = new Map()
+      watched.value = new Set([dir])
       await api.watchDir(dir)
       await refresh(dir)
     } catch (e) {
@@ -52,21 +55,74 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     root.value = ''
     expanded.value = new Set()
     children.value = new Map()
+    // 换/关文件夹时把所有残留监听收干净。
+    for (const d of [...watched.value]) {
+      try {
+        await api.unwatchDir(d)
+      } catch {
+        /* 已经没了 */
+      }
+    }
+    watched.value = new Set()
   }
 
-  /** 重读一个目录（含其已展开的子目录）。 */
-  async function refresh(dir: string) {
+  /**
+   * 重读一个目录（只读这一层，不递归）；深层目录由外部变更事件单独分发。
+   * 返回 false 表示读失败。
+   */
+  async function refresh(dir: string): Promise<boolean> {
+    // 只刷树里的目录：标签栏 / 拾取器会传任意路径，不该弹错误提示。
+    if (!inTree(dir)) return true
     try {
       const entries = await api.readDir(dir)
-      children.value.set(dir, entries)
-      // 已展开的子目录一起刷：外部改了一个深层文件，整条路径都该反映出来。
-      for (const e of entries) {
-        if (e.is_dir && expanded.value.has(e.path)) {
-          await refresh(e.path)
-        }
-      }
+      // markRaw：条目数组是纯快照（变更时整体替换，从不原地改），
+      // 不给它做 deep-reactive 包装——大目录上千条目逐个代理纯浪费。
+      children.value.set(dir, markRaw(entries))
+      evictChildren()
+      return true
     } catch (e) {
       useToastStore().bad(tr('toast.dirReadFailed', { reason: normalizeError(e).message }))
+      return false
+    }
+  }
+
+  /** 缓存条目上限：超过就淘汰未展开目录的快照。 */
+  const MAX_CACHED_DIRS = 400
+
+  /**
+   * 淘汰函数：缓存目录数超限时删掉「未展开且不是根」的条目快照。
+   * 不淘汰的话，一边浏览一边切换文件夹，children 会只增不减，
+   * 长时间使用后内存持续上涨、每次响应式检查也变慢。
+   */
+  function evictChildren() {
+    if (children.value.size <= MAX_CACHED_DIRS) return
+    const rootPath = root.value
+    const next = new Map(children.value)
+    for (const key of next.keys()) {
+      if (next.size <= MAX_CACHED_DIRS) break
+      if (key !== rootPath && !expanded.value.has(key)) next.delete(key)
+    }
+    if (next.size !== children.value.size) children.value = next
+  }
+
+  /** 该路径是否在已打开的树里（根目录本身也算）。 */
+  function inTree(path: string): boolean {
+    const r = root.value
+    if (!r) return false
+    if (path === r) return true
+    return path.startsWith(r.endsWith('\\') || r.endsWith('/') ? r : `${r}\\`) || path.startsWith(`${r}/`)
+  }
+
+  /**
+   * 全量重建：只在用户主动「刷新」时用。
+   * 逐层重读已展开的目录，但每次都有上限（一次刷太多层等于卡死）。
+   */
+  async function refreshAll() {
+    if (!root.value) return
+    await refresh(root.value)
+    const dirs = [...expanded.value].filter((d) => children.value.has(d))
+    for (const d of dirs.slice(0, MAX_REFRESH_DIRS)) {
+      await refresh(d)
     }
   }
 
@@ -74,17 +130,42 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     return expanded.value.has(path)
   }
 
-  /** 切换展开：首次展开时按需加载。 */
+  /** 切换展开：首次展开时按需加载并加监听，折叠时释放监听。 */
   async function toggle(path: string) {
     if (expanded.value.has(path)) {
       expanded.value.delete(path)
       expanded.value = new Set(expanded.value)
+      // 折叠就停止监听该目录，子目录的监听一并释放。
+      void releaseWatchesUnder(path)
       return
     }
     expanded.value.add(path)
     expanded.value = new Set(expanded.value)
+    // 监听与读取并发：用户不需要等 readDir 回来才能收到变更通知。
+    if (!watched.value.has(path)) {
+      watched.value.add(path)
+      void api.watchDir(path).catch(() => {
+        watched.value.delete(path)
+      })
+    }
     if (!children.value.has(path)) {
       await refresh(path)
+    }
+  }
+
+  /** 已加监听的目录集合：避免重复 watch，也用于折叠时回收。 */
+  const watched = ref<Set<string>>(new Set())
+
+  /** 释放 path 本身及其子路径上的监听。 */
+  async function releaseWatchesUnder(path: string) {
+    const targets = [...watched.value].filter((d) => d === path || d.startsWith(`${path}\\`) || d.startsWith(`${path}/`))
+    for (const d of targets) {
+      watched.value.delete(d)
+      try {
+        await api.unwatchDir(d)
+      } catch {
+        /* 取消监听失败不影响折叠 */
+      }
     }
   }
 
@@ -118,6 +199,8 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     open,
     close,
     refresh,
+    refreshAll,
+    inTree,
     isExpanded,
     toggle,
     markDirty,

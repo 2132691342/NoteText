@@ -4,7 +4,7 @@
 
 `frontend/src/themes.css` 是全项目**唯一**的色值与尺寸刻度定义处。
 `ep-theme.css` 把 Element Plus 的变量接到 `--nt-*`。
-完整的设计语言（布局、五态、文案）见 [DESIGN.md](../DESIGN.md)，这里只讲令牌本身。
+完整的设计语言（布局、五态、文案）见 [DESIGN.md](../../DESIGN.md)，这里只讲令牌本身。
 
 ## 设计
 

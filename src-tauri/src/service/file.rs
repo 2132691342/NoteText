@@ -1,6 +1,5 @@
 //! 文件服务：读取 / 写入 / 目录树 / 元信息 / 编码探测。
-//! 四条决策：BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；
-//! 大文件分模式读；CSV / TSV 预览走后端切行（不受二进制预览上限约束）。
+//! BOM 优先 + 启发式兜底；保存按读到的编码与行尾写回；大文件分模式读。
 
 use std::fs;
 use std::path::Path;
@@ -19,6 +18,11 @@ use crate::service::encoding;
 
 /// 全量读取上限：超过则建议用 Head 模式。
 pub const MAX_FULL_READ: u64 = 32 * 1024 * 1024;
+
+/// 显式放行后的全量可编辑上限：用户在大文件弹窗选「普通打开」时适用。
+/// 再大就只能走分块视图（service/big_file.rs）。
+/// 与前端 `stores/editor.ts` 的 `BIG_EDIT_LIMIT` 必须同值。
+pub const MAX_FORCE_FULL_READ: u64 = 512 * 1024 * 1024;
 
 /// 预览探测用的字节数：够判 BOM 与统计可解码比例。
 const SNIFF_BYTES: usize = 8192;
@@ -178,7 +182,7 @@ impl FileService {
                 ),
             ));
         }
-        fs::read(p).map_err(|e| AppError::wrap("1001", "读不了：文件被占用", e))
+        fs::read(p).map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用", e))
     }
 
     /// 探测是否二进制：前 8KB 里含 NUL 就判二进制。
@@ -206,16 +210,19 @@ impl FileService {
 
     /// 读文件。`mode` 决定全量 / 头部 / 行区间。
     pub fn read(&self, path: &str, mode: ReadMode) -> AppResult<FileContentVO> {
-        self.read_as(path, mode, None)
+        self.read_as(path, mode, None, false)
     }
 
     /// 读文本文件，可强制指定编码。`encoding` 给值时跳过探测；
+    /// `allow_big` 是用户在大文件弹窗里显式选了「普通打开」：上限放宽到
+    /// MAX_FORCE_FULL_READ，再大一律拒绝（只能分块只读）。
     /// 解不动时退回探测编码，不让用户得到打不开的文件。
     pub fn read_as(
         &self,
         path: &str,
         mode: ReadMode,
         encoding: Option<&str>,
+        allow_big: bool,
     ) -> AppResult<FileContentVO> {
         let p = Path::new(path);
         if !p.is_file() {
@@ -225,13 +232,20 @@ impl FileService {
 
         let meta = fs::metadata(p)?;
         if let ReadMode::Full = mode {
-            if meta.len() > MAX_FULL_READ {
+            let limit = if allow_big {
+                MAX_FORCE_FULL_READ
+            } else {
+                MAX_FULL_READ
+            };
+            if meta.len() > limit {
+                let hint = if meta.len() > MAX_FORCE_FULL_READ {
+                    "请用「分块只读」打开"
+                } else {
+                    "请选用「只读前段」或「分块只读」打开"
+                };
                 return Err(AppError::new(
                     codes::FILE_TOO_LARGE,
-                    format!(
-                        "文件较大（{} MB），请选用「只读前段」打开",
-                        meta.len() / 1024 / 1024
-                    ),
+                    format!("文件较大（{} MB），{}", meta.len() / 1024 / 1024, hint),
                 ));
             }
         }
@@ -321,21 +335,23 @@ impl FileService {
         })
     }
 
-    /// 按行区间读：日志跟随用。
+    /// 按行区间读：日志跟随用。计数器增量前进，不对累积文本反复数行。
     fn read_range_lines(&self, path: &Path, start_line: usize, lines: usize) -> AppResult<String> {
         use std::io::{BufRead, BufReader};
         let f = fs::File::open(path)?;
         let reader = BufReader::new(f);
         let mut out = String::new();
+        let mut taken = 0usize;
         for (i, line) in reader.lines().enumerate() {
             if i + 1 < start_line {
                 continue;
             }
-            if out.lines().count() >= lines {
+            if taken >= lines {
                 break;
             }
             out.push_str(&line?);
             out.push('\n');
+            taken += 1;
         }
         Ok(out)
     }
@@ -485,7 +501,7 @@ impl FileService {
         }
     }
 
-    /// 监听目录：文件树的外部变更通知。复用同一个 watcher：每次 `watch` 都新建一个会让 inotify/FSEvents 句柄随目录切换无限增长。
+    /// 监听一个目录（不递归）；子目录在展开时逐个加监听。
     /// watcher 只建一次：首个 sink 长驻，后续 watch_dir 的 sink 丢弃。
     pub fn watch_dir(&self, dir: &str, on_change: WatchSink) -> AppResult<()> {
         let mut guard = self
@@ -531,19 +547,19 @@ impl FileService {
         guard
             .as_mut()
             .ok_or_else(|| AppError::new(codes::WATCH_FAILED, "监控器不可用"))?
-            .watch(Path::new(dir), RecursiveMode::Recursive)
+            .watch(Path::new(dir), RecursiveMode::NonRecursive)
             .map_err(|e| AppError::wrap(codes::WATCH_FAILED, "监听目录失败", e))
     }
 
-    /// 停止监听（切换工作目录时）。
+    /// 停止监听（切换工作目录 / 折叠目录时）。目录没在监听也不算错。
     pub fn unwatch_dir(&self, dir: &str) -> AppResult<()> {
         let mut guard = self
             .watcher
             .lock()
             .map_err(|_| AppError::new(codes::WATCH_FAILED, "监控器锁被污染"))?;
         if let Some(w) = guard.as_mut() {
-            w.unwatch(Path::new(dir))
-                .map_err(|e| AppError::wrap(codes::WATCH_FAILED, "取消监听失败", e))?;
+            // 未监听的路径会报错：折叠一个从没展开过的目录是正常操作，不算失败。
+            let _ = w.unwatch(Path::new(dir));
         }
         Ok(())
     }
@@ -560,13 +576,15 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
     ));
 
     fs::write(&tmp, bytes).map_err(|e| {
-        AppError::wrap("1001", "写临时文件失败", e).with_detail(format!("路径：{}", tmp.display()))
+        AppError::wrap(codes::IO_FAILED, "写临时文件失败", e)
+            .with_detail(format!("路径：{}", tmp.display()))
     })?;
 
     fs::rename(&tmp, path).map_err(|e| {
         // rename 失败时清掉临时文件，否则同目录会留下一堆 .*.notetext-tmp。
         let _ = fs::remove_file(&tmp);
-        AppError::wrap("1001", "替换原文件失败", e).with_detail(format!("路径：{}", path.display()))
+        AppError::wrap(codes::IO_FAILED, "替换原文件失败", e)
+            .with_detail(format!("路径：{}", path.display()))
     })
 }
 
