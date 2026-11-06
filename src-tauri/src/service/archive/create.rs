@@ -127,6 +127,14 @@ pub fn create_archive(req: &CreateArchiveReq, ctx: &TaskCtx) -> AppResult<Create
         .and_then(parse_method)
         .unwrap_or_else(|| level.default_method(format));
 
+    // 只读格式先拦：否则多文件源会先撞上「单文件格式一次只能压缩一个文件」，
+    // 用户照着提示改成单个文件再试，还是失败——白跑一趟。
+    if !format.can_write() {
+        return Err(AppError::new(
+            codes::ARCHIVE_UNSUPPORTED,
+            format!("{} 只支持解压，不支持创建：请改用 zip / 7z", format.id()),
+        ));
+    }
     let items = collect_sources(&req.sources, &req.exclude)?;
     let file_items = items.iter().filter(|(p, _)| p.is_file()).count();
     if file_items == 0 {
@@ -182,7 +190,13 @@ pub fn create_archive(req: &CreateArchiveReq, ctx: &TaskCtx) -> AppResult<Create
             super::cabinet::create_cab(&items, &dest, !matches!(level, CompressLevel::Store), ctx)?
         }
         // 只读格式：编译期就拦住，不给「走到一半才发现写不了」。
-        ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar => {
+        ArchiveFormat::Rar
+        | ArchiveFormat::Lzh
+        | ArchiveFormat::Cpio
+        | ArchiveFormat::Ar
+        | ArchiveFormat::Iso
+        | ArchiveFormat::Lz
+        | ArchiveFormat::Z => {
             return Err(AppError::new(
                 codes::ARCHIVE_UNSUPPORTED,
                 format!("{} 只支持解压，不支持创建：请改用 zip / 7z", format.id()),

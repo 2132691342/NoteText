@@ -221,7 +221,48 @@ const ARCHIVE_EXTS = new Set([
   'cpio',
   'ar',
   'deb',
+  // ISO9660 光盘镜像 / lzip / Unix compress：只读，但能列条目、能取文件
+  'iso',
+  'lz',
+  'lzip',
+  'z',
+  // PK 家族里的「无内置渲染」成员：jar / apk / whl / nupkg 等。
+  // docx / xlsx / pptx / odt / epub 不在此列——它们各有自己的预览器或网格，
+  // 双击该进那个视图；想看里面有什么走「打开方式 → 压缩浏览」（见 isPkZip）。
+  'jar',
+  'war',
+  'apk',
+  'aab',
+  'nupkg',
+  'whl',
+  'egg',
+  'xpi',
+  'crx',
 ])
+
+/** PK 家族（本质是 zip）：用于「用压缩浏览打开」这个显式入口，不改变默认双击行为。 */
+export function isPkZip(path: string): boolean {
+  return [
+    'docx',
+    'docm',
+    'dotx',
+    'xlsx',
+    'xlsm',
+    'pptx',
+    'pptm',
+    'epub',
+    'odt',
+    'ods',
+    'odp',
+    'vsdx',
+    'jar',
+    'war',
+    'apk',
+    'aab',
+    'nupkg',
+    'whl',
+  ].includes(extName(path))
+}
 
 /** 是否为可打开的归档文件（按扩展名；后端 open 时还会做魔数复核）。 */
 export function isArchivePath(path: string): boolean {

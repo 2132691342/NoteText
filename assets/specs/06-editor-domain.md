@@ -176,7 +176,7 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 |---|---|---|
 | `binary` | 可执行 / 媒体，或未知扩展名且 `stat.is_binary`（iso / img 等极少数归档扩展名也落这里，由 Hex 视图兜底） | `HexView.vue`（虚拟滚动，只渲染可视区） |
 | `legacyDoc` | `.doc` `.docx` `.ppt(x)` `.pdf` `.epub` 等无内置渲染器的文档 | `DocPreview.vue` → 「没有内置渲染」卡片 + 外部程序入口 |
-| `archive` | 压缩包（20 种格式全由压缩子系统处理） | 归档浏览浮窗（specs/18） |
+| `archive` | 压缩包（23 种格式全由压缩子系统处理） | 归档浏览浮窗（specs/18） |
 | `chunked` | 标签带 `chunked` 标记（>512MB 自动分块，或会话恢复时按 `1004` 降级） | `ChunkedViewer.vue`（1MB 块导航，只读 + 单块解锁编辑） |
 | `sheet` 可编辑 | CSV / TSV / JSONL / NDJSON（无大小限制）；XLSX / XLSM | `SheetEditor.vue`（大表格网格，分页取数）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
 | `sheet` 只读 | XLS 旧格式与 ODS | `DocPreview.vue`（表格只读预览，可另存为 xlsx 后进网格编辑） |

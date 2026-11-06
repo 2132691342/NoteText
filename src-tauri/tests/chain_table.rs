@@ -422,3 +422,126 @@ fn json_table_indexes_pages_and_writes_back() {
     assert!(!after.contains("\"n-10000\""), "原值应被替换");
     assert!(after.contains("\"n-9999\""), "相邻行不该受影响");
 }
+
+/// 排序 / 筛选链路：视图只改显示顺序，文件一个字节都不动。
+///
+/// 这条链路守四件事，每一件坏了都是用户界面上的具体坏事：
+/// - 排序后行号栏与内容对不上（视图行号 ≠ 文件行号）；
+/// - 筛选后总数没变（界面写着 8 万行，实际只剩几十行）；
+/// - 排序把引号字段里的换行当成记录边界（一条记录被切成两半）；
+/// - 取消视图后回不到文件顺序（用户没法「看回原样」）。
+#[test]
+fn table_view_sorts_filters_and_keeps_file_untouched() {
+    use notetext_lib::domain::table::TableViewReq;
+
+    let (dir, _state) = boot();
+    let svc = TableService::new();
+
+    // 混入数字列、中文列、引号里含换行与逗号的字段：排序与筛选都要能过。
+    let mut text = String::from("id,car_no,note\n");
+    for i in 0..3000 {
+        let plate = format!("川A{:05}", (i * 37) % 3000);
+        text.push_str(&format!("{i},{plate},备注-{i}\n"));
+    }
+    // 末尾放几条带引号换行的记录：它们不能把记录数算错。
+    text.push_str("9001,渝B00001,\"第一行\n第二行\"\n");
+    text.push_str("9002,渝B00002,\"含,逗号\"\n");
+    let path = write(dir.path(), "sort.csv", text.as_bytes());
+    let before = fs::read(dir.path().join("sort.csv")).expect("读源文件失败");
+
+    let meta = svc.open(&path, None, None, None, None).expect("建索引失败");
+    assert_eq!(meta.total_rows, 3003, "3000 数据行 + 2 条引号行 + 表头");
+
+    // ---- 排序：按车牌升序 ----
+    let view = svc
+        .set_view(&TableViewReq {
+            path: path.clone(),
+            sort_col: Some(1),
+            sort_desc: Some(false),
+            filter_query: None,
+            filter_cols: Vec::new(),
+            match_case: None,
+        })
+        .expect("建排序视图失败");
+    assert_eq!(view.data_rows, 3002, "排序不改变行数");
+    assert_eq!(view.total_rows, 3003, "含表头行");
+    assert!(
+        view.sort_col == Some(1) && !view.sort_desc,
+        "排序状态应回传"
+    );
+
+    let (page, _) = svc.page_of(&path, 0, 5).expect("排序后分页失败");
+    assert_eq!(page[0][0], "id", "视图第 0 行仍是表头");
+    // 数字开头的车牌（渝B… 按 UTF-8 排在全角汉字之后，这里只断言单调不降）
+    let plates: Vec<&str> = page[1..].iter().map(|r| r[1].as_str()).collect();
+    for w in plates.windows(2) {
+        assert!(
+            w[0] <= w[1],
+            "升序结果必须单调不降，实际 {:?} 之后是 {:?}",
+            w[0],
+            w[1]
+        );
+    }
+
+    // 升序的首行是整表最小、降序的末行也是整表最小：两端必须指同一条记录。
+    let (asc_first, _) = svc.page_of(&path, 1, 1).expect("升序首行失败");
+    svc.set_view(&TableViewReq {
+        path: path.clone(),
+        sort_col: Some(1),
+        sort_desc: Some(true),
+        filter_query: None,
+        filter_cols: Vec::new(),
+        match_case: None,
+    })
+    .expect("降序视图失败");
+    let (desc_last, _) = svc.page_of(&path, 3002, 1).expect("降序末行失败");
+    assert_eq!(
+        desc_last[0][1], asc_first[0][1],
+        "降序的最后一行应等于升序的第一行（两端都是整表最小值）"
+    );
+
+    // ---- 筛选：车牌里含「渝B」----
+    let filtered = svc
+        .set_view(&TableViewReq {
+            path: path.clone(),
+            sort_col: Some(1),
+            sort_desc: Some(false),
+            filter_query: Some("渝B".into()),
+            filter_cols: vec![1],
+            match_case: None,
+        })
+        .expect("筛选视图失败");
+    assert_eq!(filtered.data_rows, 2, "只有两条渝B记录");
+    assert_eq!(filtered.file_rows, 3003, "源文件行数不该被筛选改掉");
+    assert!(filtered.filtering, "应当报告正在筛选");
+
+    let (fp, _) = svc.page_of(&path, 0, 10).expect("筛选后分页失败");
+    assert_eq!(fp.len(), 3, "表头 + 两条命中");
+    assert!(fp[0][0] == "id", "第一行仍是表头");
+    assert!(
+        fp[1..].iter().all(|r| r[1].contains("渝B")),
+        "筛选后每一行都必须命中，实际 {:?}",
+        fp.iter().map(|r| r[1].as_str()).collect::<Vec<_>>()
+    );
+
+    // ---- 筛选 + 关键字里有引号字段内换行，行数与内容不能错位 ----
+    let quoted = svc
+        .set_view(&TableViewReq {
+            path: path.clone(),
+            sort_col: None,
+            sort_desc: None,
+            filter_query: Some("第二行".into()),
+            filter_cols: vec![2],
+            match_case: None,
+        })
+        .expect("筛选引号换行失败");
+    assert_eq!(quoted.data_rows, 1, "引号内换行的字段仍是一条记录");
+
+    // ---- 取消视图：回到文件顺序，源文件字节级不变 ----
+    svc.clear_view(&path);
+    let (back, _) = svc.page_of(&path, 1, 1).expect("取消视图后分页失败");
+    assert_eq!(back[0][0], "0", "取消视图后第一行数据应是文件里的第 1 条");
+
+    let after = fs::read(dir.path().join("sort.csv")).expect("读源文件失败");
+    assert_eq!(before, after, "排序与筛选不该改动文件的任何字节");
+}

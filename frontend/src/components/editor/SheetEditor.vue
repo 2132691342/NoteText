@@ -40,6 +40,44 @@
       <ElButton size="small" :disabled="!findHits.length || saving" @click="replaceAll">
         {{ t('sheet.replaceAll', { n: findHits.length }) }}
       </ElButton>
+      <span class="nt-toolbar-sep" />
+      <ElInput
+        :model-value="filterText"
+        size="small"
+        class="nt-sheet-filter"
+        :placeholder="t('sheet.filterPlaceholder')"
+        clearable
+        @update:model-value="onFilterInput"
+        @keydown.enter.prevent="void applyView()"
+      >
+        <template #prefix>
+          <NtIcon name="search" size="sm" />
+        </template>
+      </ElInput>
+      <ElButton
+        size="small"
+        :disabled="!hasView"
+        :loading="viewBusy"
+        @click="void clearViewNow()"
+      >
+        {{ t('sheet.clearView') }}
+      </ElButton>
+      <span class="nt-toolbar-sep" />
+      <ElButton size="small" :disabled="!canUndo || saving" :title="t('common.undo')" @click="doUndo">
+        <NtIcon name="undo" size="sm" />
+      </ElButton>
+      <ElButton size="small" :disabled="!canRedo || saving" :title="t('common.redo')" @click="doRedo">
+        <NtIcon name="redo" size="sm" />
+      </ElButton>
+      <ElButton
+        size="small"
+        :type="frozenFirst ? 'primary' : undefined"
+        :title="t('sheet.freezeHint')"
+        @click="toggleFreeze"
+      >
+        <NtIcon name="lock" size="sm" />
+        <span class="nt-btn-text">{{ t('sheet.freezeFirst') }}</span>
+      </ElButton>
       <span class="nt-toolbar-spacer" />
       <ElInput
         ref="gotoEl"
@@ -56,7 +94,11 @@
         </template>
       </ElInput>
       <span class="nt-readout nt-sheet-meta">
-        {{ t('sheet.rows', { n: totalRows }) }} · {{ t('sheet.cols', { n: totalCols }) }}
+        <template v-if="view && view.filtering">
+          {{ t('sheet.rowsOf', { n: viewDataRows, total: view.file_rows }) }}
+        </template>
+        <template v-else>{{ t('sheet.rows', { n: totalRows }) }}</template>
+        · {{ t('sheet.cols', { n: totalCols }) }}
         <template v-if="editCount > 0"> · {{ t('sheet.pending', { n: editCount }) }}</template>
       </span>
       <ElButton
@@ -78,9 +120,23 @@
       <span class="nt-mount-error-detail">{{ error }}</span>
     </div>
 
+    <!-- 建索引期间给真实进度：GB 级表格要顺序扫一遍文件，只有转圈会被当成卡死 -->
     <div v-else-if="loading" class="nt-sheet-loading">
       <span class="nt-spinner" />
-      <span class="nt-readout">{{ t('sheet.indexing') }}</span>
+      <div class="nt-sheet-progress">
+        <span class="nt-readout">
+          {{ t('sheet.indexing') }}
+          <template v-if="progress != null">{{ Math.round(progress * 100) }}%</template>
+        </span>
+        <div class="nt-sheet-progress-track">
+          <div
+            class="nt-sheet-progress-fill"
+            :class="{ 'is-indeterminate': !progress }"
+            :style="progress != null ? { width: `${Math.round(progress * 100)}%` } : undefined"
+          />
+        </div>
+        <span class="nt-sheet-progress-hint">{{ t('sheet.indexingHint') }}</span>
+      </div>
     </div>
 
     <!--
@@ -92,29 +148,59 @@
         class="nt-sheet-grid"
         :style="{ height: `${scrollHeight}px`, width: `${totalWidth + GUTTER}px` }"
       >
-        <!-- 表头行：sticky 吸顶。列字母行在外，表头值行只在首行真是表头时出现 -->
+        <!--
+          吸顶表头分两层，职责不同（Excel / WPS 同构）：
+          上层是**列字母行**（A / B / C…），只做坐标参照，字号与字色都弱一档；
+          下层是**表头值行**（CSV 首行），才是真正的列名，粗体且可点排序。
+          没有表头值行时（首行是数据），列字母行自动成为唯一表头，这时才可点排序。
+          两层都写「行号」会让用户以为表格有两个表头：角标只有最上层出现一次。
+        -->
         <div class="nt-sheet-header">
-          <div class="nt-sheet-cols">
-            <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
+          <div class="nt-sheet-cols nt-sheet-letters">
+            <span class="nt-sheet-corner">{{ t('sheet.colLetters') }}</span>
             <div
               v-for="c in totalCols"
               :key="c - 1"
               class="nt-sheet-head-cell"
-              :style="{ width: `${colWidth(c - 1)}px` }"
+              :class="{
+                'is-sortable': hasHeader,
+                'is-sorted': sortMark(c - 1),
+                'is-frozen': frozenFirst && c === 1,
+              }"
+              :title="hasHeader ? undefined : t('sheet.sortHint', { name: colName(c - 1) })"
+              :style="
+                frozenFirst && c === 1
+                  ? { width: `${colWidth(c - 1)}px`, left: `${frozenLeft(GUTTER)}px` }
+                  : { width: `${colWidth(c - 1)}px` }
+              "
+              @click="hasHeader ? undefined : void toggleSort(c - 1)"
             >
-              <span class="nt-sheet-cell-text">{{ header[c - 1] || colName(c - 1) }}</span>
+              <span class="nt-sheet-cell-text">{{ colName(c - 1) }}</span>
+              <span v-if="!hasHeader && sortMark(c - 1)" class="nt-sheet-sort-mark">
+                {{ sortMark(c - 1) === 'asc' ? '▲' : '▼' }}
+              </span>
             </div>
           </div>
-          <!-- 表头值行：has_header 才是真数据，否则这行只是列字母的补充 -->
+          <!-- 表头值行：首行真是表头时才出现，这才是列名 -->
           <div v-if="hasHeader" class="nt-sheet-cols nt-sheet-datalabels">
             <span class="nt-sheet-corner">{{ t('sheet.colLabel') }}</span>
             <div
               v-for="c in totalCols"
               :key="`d${c - 1}`"
-              class="nt-sheet-head-cell"
-              :style="{ width: `${colWidth(c - 1)}px` }"
+              class="nt-sheet-head-cell is-sortable"
+              :class="{ 'is-sorted': sortMark(c - 1), 'is-frozen': frozenFirst && c === 1 }"
+              :title="t('sheet.sortHint', { name: header[c - 1] || colName(c - 1) })"
+              :style="
+                frozenFirst && c === 1
+                  ? { width: `${colWidth(c - 1)}px`, left: `${frozenLeft(GUTTER)}px` }
+                  : { width: `${colWidth(c - 1)}px` }
+              "
+              @click="void toggleSort(c - 1)"
             >
-              <span class="nt-sheet-cell-text">{{ colName(c - 1) }}</span>
+              <span class="nt-sheet-cell-text">{{ header[c - 1] || colName(c - 1) }}</span>
+              <span v-if="sortMark(c - 1)" class="nt-sheet-sort-mark">
+                {{ sortMark(c - 1) === 'asc' ? '▲' : '▼' }}
+              </span>
             </div>
           </div>
         </div>
@@ -130,8 +216,13 @@
               'is-selected': row.orig != null && row.orig === selectedRow,
             }"
             @click="selectRow(row)"
+            @mouseup="dragging = false"
           >
-            <span class="nt-sheet-gutter" :class="{ 'is-selected': row.orig != null && row.orig === selectedRow }">
+            <span
+              class="nt-sheet-gutter"
+              :class="{ 'is-selected': row.orig != null && row.orig === selectedRow }"
+              @click.stop="selectRow(row)"
+            >
               {{ row.label }}
             </span>
             <div
@@ -139,13 +230,21 @@
               :key="c - 1"
               class="nt-sheet-cell"
               :class="{
+                'is-frozen': frozenFirst && c === 1,
                 'is-editing': isEditing(row, c - 1),
                 'is-hit': isHit(row, c - 1),
                 'is-dirty': row.orig != null && isDirtyCell(row.orig, c - 1),
                 'is-focus': isFocused(row, c - 1),
+                'is-selected': isInSelection(row, c - 1),
               }"
-              :style="{ width: `${colWidth(c - 1)}px` }"
+              :style="
+                frozenFirst && c === 1
+                  ? { width: `${colWidth(c - 1)}px`, left: `${frozenLeft(GUTTER)}px` }
+                  : { width: `${colWidth(c - 1)}px` }
+              "
               @click.stop="startEdit(row, c - 1)"
+              @mousedown.stop="beginSelect(row, c - 1)"
+              @mouseenter="extendSelect(row, c - 1)"
               @contextmenu.prevent="openCellMenu($event, row, c - 1)"
             >
               <input
@@ -188,7 +287,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElButton, ElInput } from 'element-plus'
 import { api, normalizeError } from '@/api'
@@ -228,8 +327,12 @@ const editingDraft = computed({
 const editEl = ref<HTMLInputElement | null>(null)
 /** 当前选中的行（原始行号）。 */
 const selectedRow = ref<number | null>(null)
-/** 键盘焦点格：方向键与 Tab 的定位锚点。 */
+/** 键盘焦点格：方向键与 Tab 的定位锚点，也是区域选择的锚点。 */
 const focused = ref<{ orig: number; col: number } | null>(null)
+/** 区域选择的另一端：与 focused 组成矩形选区（拖动 / Shift+方向键扩展）。 */
+const selectionEnd = ref<{ orig: number; col: number } | null>(null)
+/** 是否正在拖选。 */
+const dragging = ref(false)
 /** 表头判定覆盖：null = 交给后端启发式。切换即按新判定重建索引。 */
 const headerOverride = ref<boolean | null>(null)
 /** 跳行输入。 */
@@ -243,9 +346,11 @@ const {
   meta,
   loading,
   error,
+  progress,
   header,
   hasHeader,
   totalRows,
+  viewDataRows,
   totalCols,
   editCount,
   scrollHost,
@@ -270,12 +375,25 @@ const {
   insertRowAfter,
   resetEdits,
   buildOps,
+  view,
+  viewBusy,
+  filterText,
+  applyView,
+  clearView,
+  toggleSort,
+  dataStart,
+  sortMark,
+  frozenFirst,
+  toggleFreeze,
+  frozenLeft,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
 } = useTableGrid({
   path: pathRef,
   encoding: computed(() => props.tab.encoding),
   hasHeader: headerOverride,
-  // 表头带高度：一行列字母（24px）+ 1px 分隔线；有表头值行再加 24px。
-  headerOffset: computed(() => (hasHeader.value ? 49 : 25)),
   onMeta: (m: TableMetaVO) => {
     props.tab.encoding = m.encoding
     props.tab.line_ending = m.line_ending as Tab['line_ending']
@@ -433,6 +551,21 @@ function isEditing(row: GridRow, col: number): boolean {
 
 function isFocused(row: GridRow, col: number): boolean {
   return row.orig != null && focused.value?.orig === row.orig && focused.value?.col === col
+}
+
+/** 按下：定位焦点格并开始拖选。 */
+function beginSelect(row: GridRow, col: number) {
+  if (row.orig == null) return
+  focused.value = { orig: row.orig, col }
+  selectionEnd.value = { orig: row.orig, col }
+  selectedRow.value = row.orig
+  dragging.value = true
+}
+
+/** 拖过一格：扩展选区（只更新端点，矩形在 computed 里算）。 */
+function extendSelect(row: GridRow, col: number) {
+  if (!dragging.value || row.orig == null) return
+  selectionEnd.value = { orig: row.orig, col }
 }
 
 function startEdit(row: GridRow, col: number) {
@@ -599,6 +732,10 @@ const cellMenuItems = computed<MenuItem[]>(() => {
     },
     { sep: true },
     { label: t('sheet.copyColName'), run: () => void copyCells(colName(col)) },
+    {
+      label: t('sheet.selectColumn'),
+      run: () => selectColumn(col),
+    },
   ]
 })
 
@@ -621,6 +758,94 @@ async function copyCells(text: string) {
   } catch (e) {
     toast.bad(normalizeError(e).message)
   }
+}
+
+// ---- 区域选择 ----
+
+/** 选区矩形（原始行号区间 + 列区间），没有选区时为 null。 */
+const selectionRect = computed(() => {
+  const a = focused.value
+  const b = selectionEnd.value
+  if (!a || !b) return null
+  return {
+    r0: Math.min(a.orig, b.orig),
+    r1: Math.max(a.orig, b.orig),
+    c0: Math.min(a.col, b.col),
+    c1: Math.max(a.col, b.col),
+  }
+})
+
+/** 某格是否在选区内（渲染时每格都问一次，先做边界短路）。 */
+function isInSelection(row: { orig: number | null }, col: number): boolean {
+  if (row.orig == null) return false
+  const r = selectionRect.value
+  if (!r) return false
+  return row.orig >= r.r0 && row.orig <= r.r1 && col >= r.c0 && col <= r.c1
+}
+
+/** 选区文本的分隔符：制表符分行、换行分记录——粘进 Excel 直接分列。 */
+const TSV_SEP = String.fromCharCode(9)
+const LINE_SEP = String.fromCharCode(10)
+
+/** 选区里的文本（TSV）：粘进 Excel 直接分列。 */
+function selectionText(): string {
+  const r = selectionRect.value
+  if (!r) return ''
+  const lines: string[] = []
+  for (let orig = r.r0; orig <= r.r1; orig += 1) {
+    const cells: string[] = []
+    for (let c = r.c0; c <= r.c1; c += 1) cells.push(cellValue(orig, c))
+    lines.push(cells.join(TSV_SEP))
+  }
+  return lines.join(LINE_SEP)
+}
+
+/** 复制选区（没有选区时复制焦点格）。 */
+async function copySelection() {
+  const f = focused.value
+  const text = selectionRect.value ? selectionText() : f ? cellValue(f.orig, f.col) : ''
+  if (!text) return
+  await copyCells(text)
+}
+
+/** 选中整列（右键菜单用一个入口，不抢列头的点击排序）。 */
+function selectColumn(col: number) {
+  if (totalRows.value === 0) return
+  const r0 = dataStart.value
+  const r1 = totalRows.value - 1
+  focused.value = { orig: r0, col }
+  selectionEnd.value = { orig: r1, col }
+}
+
+// ---- 视图与撤销 ----
+
+/** 有没有生效的排序 / 筛选（决定「取消视图」按钮是否可用）。 */
+const hasView = computed(() => view.value != null)
+
+/** 筛选框输入：防抖 350ms 后重建视图（每敲一个字都扫一遍文件太浪费）。 */
+let filterTimer = 0
+function onFilterInput(v: string) {
+  filterText.value = v
+  window.clearTimeout(filterTimer)
+  filterTimer = window.setTimeout(() => {
+    void applyView()
+  }, 350)
+}
+
+/** 清掉排序与筛选，回到文件顺序。 */
+async function clearViewNow() {
+  await clearView()
+  syncDirty()
+}
+
+function doUndo() {
+  undo()
+  syncDirty()
+}
+
+function doRedo() {
+  redo()
+  syncDirty()
 }
 
 // ---- 保存 ----
@@ -677,6 +902,9 @@ function discard() {
   syncDirty()
 }
 
+/** 视图重建后行数会变（筛选）：读数跟着刷。 */
+watch(totalRows, (n) => announceLines(n))
+
 /** 状态栏行数：表格的行数走同一事件通道。 */
 function announceLines(lines: number) {
   document.dispatchEvent(new CustomEvent('nt-stats', { detail: { tabId: props.tab.id, lines } }))
@@ -687,8 +915,39 @@ function onKeyNav(e: KeyboardEvent) {
   const f = focused.value
   if (!f || editing.value) return
   const target = e.target as HTMLElement | null
-  // 输入框里的方向键归输入框自己。
+  // 输入框里的方向键与 Ctrl+Z 归输入框自己。
   if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return
+
+  // Ctrl/Cmd 组合：撤销 / 重做 / 复制选区。
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase()
+    if (k === 'z' && !e.shiftKey) {
+      e.preventDefault()
+      doUndo()
+      return
+    }
+    if ((k === 'z' && e.shiftKey) || k === 'y') {
+      e.preventDefault()
+      doRedo()
+      return
+    }
+    if (k === 'c') {
+      e.preventDefault()
+      void copySelection()
+      return
+    }
+    if (k === 'a') {
+      // 全选：整张表进选区，粘出去就是一整张表。
+      e.preventDefault()
+      const r0 = dataStart.value
+      const r1 = Math.max(r0, totalRows.value - 1)
+      focused.value = { orig: r0, col: 0 }
+      selectionEnd.value = { orig: r1, col: Math.max(0, totalCols.value - 1) }
+      return
+    }
+    return
+  }
+
   let { orig, col } = f
   switch (e.key) {
     case 'ArrowUp':
@@ -708,6 +967,10 @@ function onKeyNav(e: KeyboardEvent) {
       e.preventDefault()
       startEdit({ orig, cells: [] }, col)
       return
+    case 'Escape':
+      e.preventDefault()
+      selectionEnd.value = null
+      return
     default:
       return
   }
@@ -715,6 +978,8 @@ function onKeyNav(e: KeyboardEvent) {
   scrollToCell(orig, col)
   focused.value = { orig, col }
   selectedRow.value = orig
+  // 不按 Shift 移动焦点 = 重新开始选区。
+  selectionEnd.value = e.shiftKey ? selectionEnd.value ?? { orig, col } : { orig, col }
 }
 
 onMounted(async () => {
@@ -796,6 +1061,32 @@ void settings
   flex: none;
 }
 
+.nt-sheet-filter {
+  width: 180px;
+  flex: none;
+}
+
+/* 列头可排序：整格可点，悬停只换底色（不缩放——表头缩放会让整列跟着抖） */
+.nt-sheet-head-cell.is-sortable {
+  cursor: pointer;
+  transition: background var(--nt-dur-fast) var(--nt-ease);
+}
+
+.nt-sheet-head-cell.is-sortable:hover {
+  background: var(--nt-elev-hover);
+}
+
+.nt-sheet-head-cell.is-sorted {
+  color: var(--nt-primary);
+}
+
+.nt-sheet-sort-mark {
+  flex: none;
+  margin-left: var(--nt-sp-1);
+  font-size: var(--nt-fs-2xs);
+  color: var(--nt-primary);
+}
+
 .nt-sheet-goto {
   width: 150px;
   flex: none;
@@ -818,6 +1109,48 @@ void settings
   align-items: center;
   justify-content: center;
   gap: var(--nt-sp-3);
+}
+
+/* 建索引进度：条 + 百分比 + 一句「在忙什么」，让用户知道该等还是该取消 */
+.nt-sheet-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nt-sp-1);
+  min-width: calc(220px * var(--nt-vw-scale));
+}
+
+.nt-sheet-progress-track {
+  height: 4px;
+  border-radius: var(--nt-radius-full);
+  background: var(--nt-elev-selected);
+  overflow: hidden;
+}
+
+.nt-sheet-progress-fill {
+  height: 100%;
+  background: var(--nt-primary);
+  border-radius: var(--nt-radius-full);
+  transition: width var(--nt-dur) var(--nt-ease);
+}
+
+/* 进度未知时来回滑动：条不动等于「没在做事」 */
+.nt-sheet-progress-fill.is-indeterminate {
+  width: 40%;
+  animation: nt-sheet-indeterminate 1.1s var(--nt-ease) infinite;
+}
+
+@keyframes nt-sheet-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.nt-sheet-progress-hint {
+  font-size: var(--nt-fs-2xs);
+  color: var(--nt-ink-muted);
 }
 
 /* 滚动容器：横向与纵向都由它承担，虚拟滚动只换纵向内容高度 */
@@ -848,12 +1181,17 @@ void settings
   height: 24px;
 }
 
+/* 表头值行：真列名，压在列字母行下面，底色比字母行亮一档 */
 .nt-sheet-datalabels {
   border-top: 1px solid var(--nt-border);
+  background: var(--nt-elev-surface);
 }
 
 .nt-sheet-corner {
   flex: none;
+  position: sticky;
+  left: 0;
+  z-index: 5;
   width: 64px;
   display: flex;
   align-items: center;
@@ -874,6 +1212,18 @@ void settings
   overflow: hidden;
   font-weight: 600;
   color: var(--nt-ink);
+}
+
+/* 列字母行只做坐标参照（Excel 同构）：居中、等宽、弱一档。
+   与表头值行同粗同色会让两层读起来是两个表头——用户分不清哪个是真的列名。 */
+.nt-sheet-letters .nt-sheet-head-cell {
+  justify-content: center;
+  padding: 0;
+  font-weight: 400;
+  font-size: var(--nt-fs-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--nt-ink-muted);
+  background: var(--nt-editor-gutter-bg);
 }
 
 /* 数据窗口：绝对定位，靠 translateY 落到正确位置 */
@@ -899,6 +1249,10 @@ void settings
 
 .nt-sheet-gutter {
   flex: none;
+  /* 行号是「这行是谁」的唯一线索：横向滚动时必须常驻，否则滚到第 20 列就丢了定位 */
+  position: sticky;
+  left: 0;
+  z-index: 3;
   width: 64px;
   padding: 0 var(--nt-sp-2);
   display: flex;
@@ -935,6 +1289,35 @@ void settings
 
 .nt-sheet-cell.is-editing {
   padding: 0;
+}
+
+/* 冻结首列：横向滚动时常驻，左偏移由行号栏宽度给（行号栏不冻结，所以首列粘在它右侧） */
+.nt-sheet-cell.is-frozen {
+  position: sticky;
+  z-index: 2;
+  background: var(--nt-elev-surface);
+  border-right: 1px solid var(--nt-border-strong);
+}
+
+.nt-sheet-row:hover .nt-sheet-cell.is-frozen {
+  background: var(--nt-surface-hover);
+}
+
+.nt-sheet-head-cell.is-frozen {
+  position: sticky;
+  z-index: 4;
+  background: var(--nt-elev-raised);
+  border-right: 1px solid var(--nt-border-strong);
+}
+
+/* 选区：连续矩形必须与「查找命中」区分开——命中是单格描边，选区是整片浅底 */
+.nt-sheet-cell.is-selected {
+  background: var(--nt-primary-soft);
+}
+
+.nt-sheet-cell.is-selected.is-focus {
+  outline: 1px solid var(--nt-primary);
+  outline-offset: -1px;
 }
 
 .nt-sheet-cell.is-hit {

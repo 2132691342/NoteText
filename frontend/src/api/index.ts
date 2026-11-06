@@ -111,6 +111,8 @@ import type {
   TablePageReq,
   TablePageVO,
   TableFindReq,
+  TableViewReq,
+  TableViewVO,
   TableFindVO,
   TableSaveReq,
   TableSaveVO,
@@ -234,6 +236,8 @@ export const api = {
     open: (req: TableOpenReq) => call<TableMetaVO>('table_open', { req }),
     page: (req: TablePageReq) => call<TablePageVO>('table_page', { req }),
     find: (req: TableFindReq) => call<TableFindVO>('table_find', { req }),
+    view: (req: TableViewReq) => call<TableViewVO>('table_view', { req }),
+    clearView: (path: string) => call<void>('table_view_clear', { path }),
     save: (req: TableSaveReq) => call<TableSaveVO>('table_save', { req }),
     saveAs: (req: TableSaveReq, suggestedName?: string) =>
       call<TableSaveVO | null>('table_save_as', { req, suggested_name: suggestedName ?? null }),

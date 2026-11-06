@@ -53,7 +53,10 @@ pub fn test_archive(req: &TestArchiveReq, ctx: &TaskCtx) -> AppResult<TestArchiv
         | ArchiveFormat::Rar
         | ArchiveFormat::Lzh
         | ArchiveFormat::Cpio
-        | ArchiveFormat::Ar => test_readonly(src, &req.password, ctx, &mut out)?,
+        | ArchiveFormat::Ar
+        | ArchiveFormat::Iso
+        | ArchiveFormat::Z
+        | ArchiveFormat::Lz => test_readonly(src, &req.password, ctx, &mut out)?,
         _ => test_single(src, format, ctx, &mut out)?,
     }
     out.ok = out.failures.is_empty();
@@ -299,6 +302,9 @@ fn test_readonly(
         ArchiveFormat::Lzh => crate::service::archive::readonly::extract_lzh(&req, &dest, ctx),
         ArchiveFormat::Cpio => crate::service::archive::readonly::extract_cpio(&req, &dest, ctx),
         ArchiveFormat::Ar => crate::service::archive::readonly::extract_ar(&req, &dest, ctx),
+        ArchiveFormat::Iso => crate::service::archive::readonly::extract_iso(&req, &dest, ctx),
+        ArchiveFormat::Z => crate::service::archive::readonly::extract_z(&req, &dest, ctx),
+        ArchiveFormat::Lz => crate::service::archive::readonly::extract_lz(&req, &dest, ctx),
         _ => return Ok(()),
     };
     match result {

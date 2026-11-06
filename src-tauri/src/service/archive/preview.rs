@@ -93,7 +93,13 @@ pub fn preview_entry(req: &PreviewEntryReq, ctx: &TaskCtx) -> AppResult<PreviewE
         ArchiveFormat::Cab => {
             buf = super::cabinet::read_cab_entry(src, &name, req.max_bytes as usize)?;
         }
-        ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar => {
+        ArchiveFormat::Rar
+        | ArchiveFormat::Lzh
+        | ArchiveFormat::Cpio
+        | ArchiveFormat::Ar
+        | ArchiveFormat::Iso
+        | ArchiveFormat::Z
+        | ArchiveFormat::Lz => {
             buf = super::readonly::read_entry_bytes(
                 src,
                 format,

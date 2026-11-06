@@ -442,3 +442,133 @@ pub fn sniff_delimiter(text: &str) -> char {
     }
     best
 }
+
+/// 文本级记录游标：逐条吐记录的字段区间，**不为每行分配字符串**。
+///
+/// 建视图（排序 / 筛选）要扫几十万条记录，`parse_delimited` 那种
+/// 「每条记录 13 个 String」的解析在 70 万行上就是 900 万次分配。
+/// 这里只给出字段在原文里的字节区间，需要哪个字段才切哪个。
+pub struct TextRecordIter<'a> {
+    text: &'a str,
+    delim: u8,
+    pos: usize,
+}
+
+impl<'a> TextRecordIter<'a> {
+    pub fn new(text: &'a str, delim: char) -> Self {
+        Self {
+            text,
+            delim: delim as u8,
+            pos: 0,
+        }
+    }
+
+    /// 读下一条记录，把字段区间填进 `spans`（复用同一个 Vec）。
+    /// 返回 `false` 表示读完；末尾没有行尾的残余也算一条。
+    pub fn next_record(&mut self, spans: &mut Vec<(usize, usize)>) -> bool {
+        spans.clear();
+        let bytes = self.text.as_bytes();
+        if self.pos >= bytes.len() {
+            return false;
+        }
+        let n = bytes.len();
+        let mut i = self.pos;
+        let mut field_start = i;
+        let mut in_quotes = false;
+        loop {
+            if i >= n {
+                spans.push((field_start, i));
+                self.pos = n;
+                return true;
+            }
+            let b = bytes[i];
+            if in_quotes {
+                if b == b'"' {
+                    // `""` 是转义引号，字段继续。
+                    if bytes.get(i + 1) == Some(&b'"') {
+                        i += 2;
+                        continue;
+                    }
+                    in_quotes = false;
+                }
+                i += 1;
+                continue;
+            }
+            if b == b'"' && i == field_start {
+                in_quotes = true;
+                i += 1;
+                continue;
+            }
+            if b == self.delim {
+                spans.push((field_start, i));
+                i += 1;
+                field_start = i;
+                continue;
+            }
+            if b == b'\n' {
+                spans.push((field_start, i));
+                self.pos = i + 1;
+                return true;
+            }
+            if b == b'\r' {
+                // CRLF 交给紧随的 `\n` 收尾；单独 CR 也是一条记录的结尾。
+                if bytes.get(i + 1) == Some(&b'\n') {
+                    i += 1;
+                    continue;
+                }
+                spans.push((field_start, i));
+                self.pos = i + 1;
+                return true;
+            }
+            i += 1;
+        }
+    }
+
+    /// 取一个字段的文本：剥掉包裹引号，`""` 还原成一个引号。没有引号时零拷贝。
+    pub fn field(&self, span: (usize, usize)) -> std::borrow::Cow<'a, str> {
+        let raw = &self.text[span.0..span.1];
+        if !raw.contains('"') {
+            return std::borrow::Cow::Borrowed(raw);
+        }
+        let trimmed = raw.strip_prefix('"').unwrap_or(raw);
+        let trimmed = trimmed.strip_suffix('"').unwrap_or(trimmed);
+        if trimmed.contains("\"\"") {
+            std::borrow::Cow::Owned(trimmed.replace("\"\"", "\""))
+        } else {
+            std::borrow::Cow::Borrowed(trimmed)
+        }
+    }
+}
+
+/// 大小写不敏感的子串包含：ASCII 关键字走 SIMD 首字节定位，不做整串小写化。
+/// 非 ASCII 关键字（中文、俄文等）退到「先小写再找」——它们的折射不只看大小写。
+pub fn contains_ci(hay: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if !needle_lower.is_ascii() {
+        return hay.to_lowercase().contains(needle_lower);
+    }
+    let h = hay.as_bytes();
+    let n = needle_lower.as_bytes();
+    if h.len() < n.len() {
+        return false;
+    }
+    let first = n[0];
+    let mut from = 0usize;
+    while from + n.len() <= h.len() {
+        // 首字节按 ASCII 折射匹配：大小写两种可能都用 memchr2 一次扫出。
+        let at = memchr::memchr2(
+            first.to_ascii_lowercase(),
+            first.to_ascii_uppercase(),
+            &h[from..from + (h.len() - from - n.len() + 1)],
+        );
+        let Some(off) = at else { return false };
+        let start = from + off;
+        if h[start..start + n.len()].eq_ignore_ascii_case(n) {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}

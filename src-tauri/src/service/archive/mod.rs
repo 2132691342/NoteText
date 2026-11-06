@@ -17,7 +17,7 @@ pub mod update;
 pub mod util;
 
 // 引擎内互相引用走这里：子模块 import `crate::service::archive::xxx` 收口一处。
-pub use list::split_parts;
+pub use list::{single_entry_name, split_parts};
 pub use util::{
     collect_sources, copy_with_ctx, detect_format, err_codec, err_sevenz, err_undetectable,
     err_zip, lzma2_preset, method_id, native_level, parse_format, parse_method, password_error,

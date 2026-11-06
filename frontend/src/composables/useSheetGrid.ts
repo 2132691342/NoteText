@@ -2,7 +2,14 @@
 // 与大表格（CSV）同构，但单元格的值是领域对象（公式 / 数值 / 布尔）。
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { api, normalizeError } from '@/api'
-import { computeGridWindow, FALLBACK_VIEWPORT, MAX_SCROLL_PX, ROW_H } from '@/composables/gridScroll'
+import {
+  computeGridWindow,
+  contentYOf,
+  FALLBACK_VIEWPORT,
+  headerHeightOf,
+  MAX_SCROLL_PX,
+  ROW_H,
+} from '@/composables/gridScroll'
 import type { CellValue, SheetCell, SheetInfoVO, WorkbookInfoVO } from '@/types/api'
 
 export { ROW_H }
@@ -19,8 +26,8 @@ const COL_W_MAX = 640
 
 export interface SheetGridOptions {
   path: Ref<string>
-  /** 吸顶表头的高度（像素）：数据行从它下面开始，不算会把前几行盖住。 */
-  headerOffset?: Ref<number>
+  /** 吸顶表头行数覆盖：默认恒为 1（工作表没有独立的表头值行）。 */
+  headerRows?: () => number
   onError?: (message: string) => void
   onMeta?: (info: WorkbookInfoVO) => void
 }
@@ -92,17 +99,16 @@ export function useSheetGrid(opts: SheetGridOptions) {
   const scrollTop = ref(0)
   const viewport = ref(0)
 
-  const logicalHeight = computed(() => totalRows.value * ROW_H)
+  const logicalHeight = computed(() => totalRows.value * ROW_H + headerHeightOf(topRows()))
   const maxLogical = computed(() => Math.max(0, logicalHeight.value - viewport.value))
   const scrollHeight = computed(() => Math.min(logicalHeight.value, MAX_SCROLL_PX))
+  /** 吸顶表头行数：工作表只有列字母一行。 */
+  function topRows(): number {
+    return Math.max(0, opts.headerRows?.() ?? 1)
+  }
   /** 渲染窗口：一次算完，滚动坐标与窗口位置同源。 */
   const grid = computed(() =>
-    computeGridWindow(
-      totalRows.value,
-      viewport.value,
-      scrollTop.value,
-      opts.headerOffset?.value ?? 0,
-    ),
+    computeGridWindow(totalRows.value, viewport.value, scrollTop.value, topRows()),
   )
   const scale = computed(() => grid.value.scale)
   const logicalScroll = computed(() => grid.value.logicalScroll)
@@ -243,6 +249,7 @@ export function useSheetGrid(opts: SheetGridOptions) {
     }
   }
 
+  /** 设到某个内容位置（含表头占位），并同步滚动条。 */
   function scrollToLogical(target: number) {
     const clamped = Math.max(0, Math.min(target, maxLogical.value))
     const px = clamped * scale.value
@@ -251,12 +258,10 @@ export function useSheetGrid(opts: SheetGridOptions) {
     if (host && Math.abs(host.scrollTop - px) > 0.5) host.scrollTop = px
   }
 
-  /** 滚到某行并尽量居中。 */
+  /** 滚到某行并尽量居中：行中心对准可视区（表头以下）的中心。 */
   function scrollToRow(row: number) {
-    const header = opts.headerOffset?.value ?? 0
-    const vp = Math.max(ROW_H, effectiveViewport.value - header)
-    const center = row * ROW_H - vp / 2 + ROW_H / 2
-    scrollToLogical(Math.max(0, center))
+    const at = contentYOf(row, topRows()) + ROW_H / 2 - effectiveViewport.value / 2
+    scrollToLogical(Math.max(0, at))
   }
 
   /** 滚动条被拖动（rAF 合帧）。 */

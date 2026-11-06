@@ -3,7 +3,7 @@
 **轻量级 Windows 桌面文本编辑器（2.0.0）。** Rust 后端 + Tauri 2 壳 + Vue 3 前端，冷启动 < 1 秒，
 安装包 10MB 以内（CI 有体积门禁）。内置代码编辑、查找替换、12 种编码转换、
 JSON / Diff / 哈希工具箱、Markdown 三态预览、大表格引擎、GB 级大文件分块、
-20 种格式的压缩解压（可写 16 / 只读 4）、批量操作与系统文件关联。
+23 种格式的压缩解压（可写 16 / 只读 7）、批量操作与系统文件关联。
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
@@ -55,7 +55,7 @@ JSON / Diff / 哈希工具箱、Markdown 三态预览、大表格引擎、GB 级
 | 表格与图片预览 | 按扩展名分流 xlsx / xlsm / xls / ods / csv / tsv / jsonl / 图片 / Markdown / HTML（沙箱静态预览，不执行脚本）/ 纯文本。Word / PDF / PPT 不做内置渲染，统一给「用系统程序打开」的出路 |
 | 批量查找替换 | 目录 + glob，**先扫描预览再勾选应用**，不直接改磁盘 |
 | 批量重命名 | 查找替换 / 加序号 / 大小写三种模式，冲突项标红不可选 |
-| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换 / 单条目直接在编辑器里打开）/ 测试 / 分卷合并 / 任务面板；**可写 16 种**：7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ cab / gz / bz2 / zst / xz / lz4 / br；**只读 4 种**（6 个扩展名：rar / lzh（含 lha）/ cpio / ar（含 deb））。双击压缩包直接进浏览浮窗，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗（assets/specs/18） |
+| 压缩 / 解压 | 菜单栏顶级「压缩」菜单：新建压缩包（加密 / 固实 / 分卷，源清单可直接拖入）/ 解压浮窗（条目勾选 + 密码 + 覆盖策略 + 批量解压多包）/ 打开浏览（增删 / 预览 / 转换 / 单条目直接在编辑器里打开）/ 测试 / 分卷合并 / 任务面板；**可写 16 种**：7z / zip / tar 全家族（tgz / txz / tbz2 / tzst / tlz4 / tbr）/ cab / gz / bz2 / zst / xz / lz4 / br；**只读 7 种**（9 个扩展名：rar / lzh（含 lha）/ cpio / ar（含 deb）/ iso / lz（lzip）/ Z（Unix compress））。双击压缩包直接进浏览浮窗，长任务走队列并在浮窗内显示进度，大包打开与解压不冻窗（assets/specs/18） |
 | 文件分卷 | 任意文件按大小切卷 / 合并还原；压缩包创建时可直接分卷 |
 | 系统关联 | 设置 → 系统与关联：把 NoteText 挂进文本 / 压缩包的「打开方式」与默认应用候选，双击即开（assets/specs/17） |
 | 文件树 | 懒展开 + 右键全套（新建 / 重命名 / 删除 / 剪切 / 复制 / 粘贴 / 副本 / 资源管理器 / 压缩 / 解压到… / 一键解压）+ 树内拖拽移动 |
@@ -196,7 +196,7 @@ NoteText/
 | [assets/specs/15](assets/specs/15-error-codes.md) | 错误码分段与处置动作 |
 | [assets/specs/16](assets/specs/16-page-structure.md) | 页面与组件地图 |
 | [assets/specs/17](assets/specs/17-deployment.md) | 构建与分发 |
-| [assets/specs/18](assets/specs/18-archive.md) | 压缩子系统：20 种格式、任务队列、安全底线 |
+| [assets/specs/18](assets/specs/18-archive.md) | 压缩子系统：23 种格式、任务队列、安全底线 |
 | [assets/specs/19](assets/specs/19-large-files-and-sheet-edit.md) | 大文件分块、大表格引擎、XLSX 单元格补丁、崩溃恢复 |
 | [assets/docs/faq](assets/docs/faq.md) | 开发排障速查 |
 

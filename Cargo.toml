@@ -58,6 +58,12 @@ tempfile = "3"
 unrar-rs = { version = "0.15", default-features = false, features = ["crypto-rust"] }
 delharc = { version = "0.6", features = ["std", "lh1", "lz"] }
 cab = "0.6"
+# ISO9660：光驱镜像的卷描述符 + 目录记录解析。与压缩无关，但用户把 .iso 拖进来时
+# 「能列条目、能取文件」比「换个工具」有用得多。只读：创建 ISO 的场景不在桌面编辑器里。
+iso9660 = "0.1"
+# lzip（.lz）的载荷是裸 LZMA 数据（无 13 字节 alone 头），需要能「自己给头」的解码器。
+# xz2 的 `new_lzma_decoder` 要求流里带 alone 头，所以这里用纯 Rust 的 lzma-rs 手拼头再喂进去。
+lzma-rs = { version = "0.3", default-features = false }
 # CAB 条目时间戳是 PrimitiveDateTime，转毫秒要用它的 API；显式声明避免版本漂移
 time = "0.3"
 

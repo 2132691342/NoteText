@@ -79,6 +79,38 @@ pub struct TablePageVO {
     pub stale: bool,
 }
 
+/// 表格视图（排序 / 筛选）的请求。只影响显示，不改文件。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableViewReq {
+    pub path: String,
+    /// 排序列；`None` = 保持文件顺序。
+    pub sort_col: Option<usize>,
+    /// 排序方向：`true` 为降序。
+    pub sort_desc: Option<bool>,
+    /// 筛选关键字；空 / `None` = 不筛选。
+    pub filter_query: Option<String>,
+    /// 筛选只在这些列里找；空 = 全列。
+    #[serde(default)]
+    pub filter_cols: Vec<usize>,
+    /// 筛选是否区分大小写。
+    pub match_case: Option<bool>,
+}
+
+/// 视图建好的摘要：显示行数与生效的排序 / 筛选。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableViewVO {
+    pub path: String,
+    /// 视图里的总记录数（含表头行）。
+    pub total_rows: usize,
+    /// 通过筛选的数据行数（不含表头）。
+    pub data_rows: usize,
+    /// 文件里的原始记录数：用来区分「筛掉了多少行」。
+    pub file_rows: usize,
+    pub sort_col: Option<usize>,
+    pub sort_desc: bool,
+    pub filtering: bool,
+}
+
 /// 表格内查找的请求。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableFindReq {

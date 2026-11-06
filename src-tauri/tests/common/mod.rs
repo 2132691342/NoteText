@@ -231,3 +231,190 @@ pub const STYLES_XML: &str = r#"<styleSheet xmlns="http://schemas.openxmlformats
 pub const SHEET1_XML: &str = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s" s="1"><v>0</v></c></row><row r="2"><c r="B2" s="2"><v>42</v></c></row></sheetData></worksheet>"#;
 
 pub const SHEET2_XML: &str = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>1</v></c></row></sheetData></worksheet>"#;
+
+/// 造一个合法的 Unix compress（.Z）样本：头 + 定长 9 位码字流的 LZW。
+///
+/// 测试必须自己编码，不能拿被测的解码器「自证」：解码器把码长增长点算错、
+/// 或把字典初始化错，自己编自己解仍然能对上。这里只覆盖短输入（码长不会增长，
+/// 字典也不清表），所以编码器可以写得极简：每个码字都是「已出现的最长匹配」或「新字节」，
+/// 全部按 9 位定长写出——这正是解码器第一段的输入。
+pub fn build_compress_z(body: &[u8]) -> Vec<u8> {
+    // 头：魔数 + flags（0 = 非块模式）+ maxbits（9）。
+    let mut out = vec![0x1Fu8, 0x9D, 0x09];
+
+    // 标准 LZW：256 个基础码字 + 258 起的新串（256/257 是保留码）。
+    let mut dict: std::collections::BTreeMap<Vec<u8>, u16> = std::collections::BTreeMap::new();
+    let mut next: u16 = 258;
+    let mut codes: Vec<u16> = Vec::new();
+    let mut cur: Vec<u8> = Vec::new();
+
+    for &b in body {
+        cur.push(b);
+        if cur.len() == 1 {
+            continue;
+        }
+        if dict.contains_key(&cur) {
+            continue;
+        }
+        // 当前串不在字典里：发出前缀，登记当前串。
+        let prefix = &cur[..cur.len() - 1];
+        let code = if prefix.len() == 1 {
+            u16::from(prefix[0])
+        } else {
+            *dict.get(prefix).expect("前缀必在字典里")
+        };
+        codes.push(code);
+        dict.insert(cur.clone(), next);
+        next += 1;
+        cur = vec![b];
+    }
+    if !cur.is_empty() {
+        let code = if cur.len() == 1 {
+            u16::from(cur[0])
+        } else {
+            *dict.get(&cur).expect("尾巴必在字典里")
+        };
+        codes.push(code);
+    }
+
+    // 9 位码字按低位在前打包。
+    let mut bitbuf: u32 = 0;
+    let mut bits: u32 = 0;
+    for code in codes {
+        bitbuf |= u32::from(code) << bits;
+        bits += 9;
+        while bits >= 8 {
+            out.push((bitbuf & 0xFF) as u8);
+            bitbuf >>= 8;
+            bits -= 8;
+        }
+    }
+    if bits > 0 {
+        out.push((bitbuf & 0xFF) as u8);
+    }
+    out
+}
+
+/// 造一个最小 ISO9660 镜像：根目录 + 两个文件（一个文本、一个二进制）。
+///
+/// 手写而不是拿现成镜像：只读引擎的价值全在「卷描述符偏移算对、
+/// 目录记录长度对齐、根目录项指到第几个扇区」这几处，
+/// 一份真实镜像解不出来时，用户看到的是空列表或一屏乱码。
+pub fn build_iso9660(text: &[u8], bin: &[u8]) -> Vec<u8> {
+    const SECTOR: usize = 2048;
+
+    fn both16(v: u16) -> Vec<u8> {
+        let mut out = v.to_le_bytes().to_vec();
+        out.extend_from_slice(&v.to_be_bytes());
+        out
+    }
+    fn both32(v: u32) -> Vec<u8> {
+        let mut out = v.to_le_bytes().to_vec();
+        out.extend_from_slice(&v.to_be_bytes());
+        out
+    }
+    fn dirrec(name: &[u8], extent: u32, size: u32, is_dir: bool) -> Vec<u8> {
+        let mut rec_len = 33 + name.len();
+        if rec_len % 2 == 1 {
+            rec_len += 1;
+        }
+        let mut r = vec![rec_len as u8, 0];
+        r.extend_from_slice(&both32(extent));
+        r.extend_from_slice(&both32(size));
+        r.extend_from_slice(&[126, 1, 1, 0, 0, 0, 0]);
+        r.extend_from_slice(&[if is_dir { 2 } else { 0 }, 0, 0]);
+        r.extend_from_slice(&both16(1));
+        r.push(name.len() as u8);
+        r.extend_from_slice(name);
+        r.resize(rec_len, 0);
+        r
+    }
+    fn pad(b: &mut Vec<u8>) {
+        while b.len() % SECTOR != 0 {
+            b.push(0);
+        }
+    }
+
+    let root_extent: u32 = 18;
+    let mut layout: Vec<(&[u8], u32, u32, &[u8])> = Vec::new();
+    let mut extent: u32 = 19;
+    for (name, body) in [
+        (b"HELLO.TXT;1".as_slice(), text),
+        (b"DATA.BIN;1".as_slice(), bin),
+    ] {
+        layout.push((name, extent, body.len() as u32, body));
+        extent += (body.len() + SECTOR - 1) as u32 / SECTOR as u32;
+    }
+
+    // 先用占位大小算一遍目录长度，再回填真实长度（root 的大小写在自身条目里）。
+    let mut root: Vec<u8> = Vec::new();
+    root.extend_from_slice(&dirrec(b"\x00", root_extent, 0, true));
+    root.extend_from_slice(&dirrec(b"\x01", root_extent, 0, true));
+    for (name, ext, size, _) in &layout {
+        root.extend_from_slice(&dirrec(name, *ext, *size, false));
+    }
+    pad(&mut root);
+    let root_size = root.len() as u32;
+
+    let mut root2: Vec<u8> = Vec::new();
+    root2.extend_from_slice(&dirrec(b"\x00", root_extent, root_size, true));
+    root2.extend_from_slice(&dirrec(b"\x01", root_extent, root_size, true));
+    for (name, ext, size, _) in &layout {
+        root2.extend_from_slice(&dirrec(name, *ext, *size, false));
+    }
+    pad(&mut root2);
+
+    let mut img = vec![0u8; 16 * SECTOR];
+    let mut pvd = vec![0u8; SECTOR];
+    pvd[0] = 1;
+    pvd[1..6].copy_from_slice(b"CD001");
+    pvd[6] = 1;
+    pvd[8..40].fill(b' ');
+    pvd[40..72].copy_from_slice(&{
+        let mut v = b"NOTETEXT".to_vec();
+        v.resize(32, b' ');
+        v
+    });
+    pvd[80..84].copy_from_slice(&extent.to_le_bytes());
+    pvd[84..88].copy_from_slice(&extent.to_be_bytes());
+    pvd[120..122].copy_from_slice(&1u16.to_le_bytes());
+    pvd[122..124].copy_from_slice(&1u16.to_be_bytes());
+    pvd[124..126].copy_from_slice(&1u16.to_le_bytes());
+    pvd[126..128].copy_from_slice(&1u16.to_be_bytes());
+    pvd[128..130].copy_from_slice(&(SECTOR as u16).to_le_bytes());
+    pvd[130..132].copy_from_slice(&(SECTOR as u16).to_be_bytes());
+    let rr = dirrec(b"\x00", root_extent, root_size, true);
+    pvd[156..156 + rr.len()].copy_from_slice(&rr);
+    pvd[190..318].fill(b' ');
+    pvd[318..446].fill(b' ');
+    pvd[446..574].fill(b' ');
+    pvd[574..702].fill(b' ');
+    pvd[702..740].fill(b' ');
+    pvd[740..776].fill(b' ');
+    pvd[776..813].fill(b' ');
+    let t = b"2024010100000000\x00";
+    for start in [813usize, 830, 847, 864] {
+        pvd[start..start + 17].copy_from_slice(t);
+    }
+    pvd[881] = 1;
+    img.extend_from_slice(&pvd);
+
+    let mut term = vec![0u8; SECTOR];
+    term[0] = 255;
+    term[1..6].copy_from_slice(b"CD001");
+    term[6] = 1;
+    img.extend_from_slice(&term);
+
+    assert_eq!(img.len(), root_extent as usize * SECTOR);
+    img.extend_from_slice(&root2);
+    for (_, ext, _, body) in &layout {
+        while img.len() < *ext as usize * SECTOR {
+            img.push(0);
+        }
+        img.extend_from_slice(body);
+        while img.len() % SECTOR != 0 {
+            img.push(0);
+        }
+    }
+    img
+}

@@ -66,6 +66,8 @@ unrar-rs = { workspace = true }
 delharc = { workspace = true }
 cab = { workspace = true }
 time = { workspace = true }
+iso9660 = { workspace = true }
+lzma-rs = { workspace = true }
 
 # 壳层：Tauri 本体 + 对话框 + 单实例 + 托盘
 tauri = { workspace = true }

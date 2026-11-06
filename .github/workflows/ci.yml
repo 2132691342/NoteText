@@ -55,8 +55,10 @@ jobs:
       - name: 运行 Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
+      # 一条命令跑全部链路测试：七域各一个 chain_* 集成二进制，覆盖文件 / 大文件 / 大表格 /
+      # 表格编辑 / 会话 / 批量 / 压缩 / 系统关联。改一个域只重编那一个二进制。
       - name: 运行链路测试
-        run: cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       # 虚拟滚动窗口的计算在 gridScroll.ts：它被生产代码与脚本共用，
       # 脚本直接 import 生产模块，所以两边不会漂移。

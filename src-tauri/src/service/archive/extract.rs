@@ -85,6 +85,9 @@ pub fn extract_archive(req: &ExtractArchiveReq, ctx: &TaskCtx) -> AppResult<Extr
         ArchiveFormat::Lzh => super::readonly::extract_lzh(req, &dest, ctx)?,
         ArchiveFormat::Cpio => super::readonly::extract_cpio(req, &dest, ctx)?,
         ArchiveFormat::Ar => super::readonly::extract_ar(req, &dest, ctx)?,
+        ArchiveFormat::Iso => super::readonly::extract_iso(req, &dest, ctx)?,
+        ArchiveFormat::Z => super::readonly::extract_z(req, &dest, ctx)?,
+        ArchiveFormat::Lz => super::readonly::extract_lz(req, &dest, ctx)?,
         _ => extract_single(&src, format, &dest, policy, ctx)?,
     };
     out.dest = dest.to_string_lossy().to_string();

@@ -43,6 +43,9 @@ pub fn list_archive(path: &Path, password: Option<&str>) -> AppResult<ArchiveInf
         ArchiveFormat::Lzh => super::readonly::list_lzh(path)?,
         ArchiveFormat::Cpio => super::readonly::list_cpio(path)?,
         ArchiveFormat::Ar => super::readonly::list_ar(path)?,
+        ArchiveFormat::Iso => super::readonly::list_iso(path)?,
+        ArchiveFormat::Z => super::readonly::list_z(path)?,
+        ArchiveFormat::Lz => super::readonly::list_lz(path)?,
         ArchiveFormat::Gz => list_single(path, "gz"),
         ArchiveFormat::Bz2 => list_single(path, "bz2"),
         ArchiveFormat::Zst => list_single(path, "zst"),
@@ -250,6 +253,18 @@ fn list_tar(
 }
 
 /* ---------------- 单文件压缩 ---------------- */
+
+/// 单文件流格式的条目名：剥掉末级压缩后缀（a.txt.gz → a.txt）。
+pub fn single_entry_name(path: &Path) -> String {
+    let stem = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".into());
+    match stem.rsplit_once('.') {
+        Some((base, _)) => base.to_string(),
+        None => format!("{stem}.out"),
+    }
+}
 
 fn list_single(path: &Path, ext: &str) -> ArchiveInfoVO {
     let packed = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);

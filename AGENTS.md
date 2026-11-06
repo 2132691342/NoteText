@@ -29,7 +29,7 @@
 | 日志 | tracing + tracing-subscriber | info / warn / error 三档，双文件落盘 |
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
-| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli · cab · unrar-rs · delharc | 压缩子系统（assets/specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程；cab 读写 MSZIP，rar（含分卷/加密）与 lzh 只读 |
+| 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli · cab · unrar-rs · delharc · iso9660 · lzma-rs | 压缩子系统（assets/specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程；cab 读写 MSZIP；rar（含分卷/加密）/ lzh / ISO9660 / lzip / Unix compress 只读 |
 | 测试 | 标准库 `#[test]` + tempfile | 14 条长链路；不挂源码内单元测试；本地与 GitHub Actions 执行同一组命令 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（assets/specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
@@ -497,6 +497,7 @@ mod dialog_stub;
 | | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 单块写回动到别的块 / 整文查找命中行号对不上 / 查找一轮一轮接不上 / 非 UTF-8 文件命中行号错位 |
 | | `stream_decode_keeps_multibyte_across_any_chunk_boundary` | 块边界切在多字节字符中间解出替换符（按编码 × 块长穷举） |
 | 大表格 | `csv_table_indexes_pages_finds_and_writes_back` | 记录数算错 / 行下标与内容错位 / 命中行号对不上 / 改格动到别的行 / 另存为改到源文件 / 引号内的换行把记录切断 / 百万行深处给不满页 |
+| | `table_view_sorts_filters_and_keeps_file_untouched` | 排序后行号与内容对不上 / 筛选后总数没变 / 排序把引号字段里的换行当记录边界 / 取消视图回不到文件顺序 / 排序筛选改动了源文件字节 |
 | | `csv_table_decodes_deep_pages_and_counts_trailing_row` | GB18030 深处分页解成替换符 / UTF-16 BOM 文件行号错位 / 无尾换行的末行取不到 / 表头误判无法纠正 / 强制 UTF-8 时首格多出 U+FEFF |
 | | `json_table_indexes_pages_and_writes_back` | 跨行元素被切碎 / 含逗号的字段被切开 / 嵌套数组被切碎 / 改一个元素动到相邻元素 |
 | 表格编辑 | `sheet_opens_pages_edits_and_preserves_styles` | 整块解析把百万行工作表读进内存 / 改单元格把字体 / 填充 / 图表全丢了 / 共享串解成乱码 / 改一张表动了另一张 |
@@ -505,7 +506,7 @@ mod dialog_stub;
 | 批量 | `batch_preview_then_apply_touches_only_confirmed_files` | 扫描就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |
 | 压缩 | `archive_lifecycle_covers_all_formats_update_and_split` | 某格式往返丢内容 / 中文名与层级塌 / 改名后认不出 tar 家族 / 合并后字节变了 |
 | | `archive_rejects_escape_and_distinguishes_password_from_corruption` | 恶意条目写到目标目录外 / 缺密码与密码错混成一个 / 损坏包测试照样说「好」 |
-| | `archive_readonly_formats_list_extract_and_refuse_create` | 只读能力表与引擎能力漂移 / CAB 往返丢内容 / 创建只读格式留半文件 / 只读容器头偏移算错解出垃圾 / 真实包头解析错导致空列表 |
+| | `archive_readonly_formats_list_extract_and_refuse_create` | 只读能力表与引擎能力漂移 / CAB 往返丢内容 / 创建只读格式留半文件 / 只读容器头偏移算错解出垃圾 / 真实包头解析错导致空列表 / ISO 卷描述符或目录记录偏移算错 / .Z 的 LZW 码长增长点算错解出垃圾 |
 | 系统关联 | `file_assoc_toggle_registers_and_restores_shell_entries` | 双击没反应（open 命令丢引号 / ProgId 挂错）/ 注销后留悬空默认 / 注销一组误伤另一组 |
 
 **改这里 → 这样验**：

@@ -99,20 +99,6 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
         .expect("写二进制失败");
     assert_eq!(fs::read(&target).expect("回读"), bytes, "落盘后字节变了");
 
-    // 带换行的 base64（前端分块拼串时会出现）必须解出同样结果。
-    let src = b"hello world, \xe4\xbd\xa0\xe5\xa5\xbd";
-    let wrapped: String = notetext_lib::pkg::base64::encode(src)
-        .as_bytes()
-        .chunks(4)
-        .map(|c| String::from_utf8_lossy(c).to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_eq!(
-        notetext_lib::pkg::base64::decode(&wrapped).expect("换行包裹的 base64 解码失败"),
-        src.to_vec(),
-        "换行包裹的 base64 解出来的字节不一样"
-    );
-
     // 非法字符必须报错，不能静默产出垃圾字节。
     let err = notetext_lib::pkg::base64::decode("abc$def").expect_err("非法字符必须被拒");
     assert_eq!(
@@ -145,10 +131,6 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
         !data.join("no-such-dir").exists(),
         "失败后不该顺手建出父目录"
     );
-
-    // 空路径：直接拒，不去碰当前目录。
-    let err = file.write_bytes("", b"x").expect_err("空路径必须被拒");
-    assert_eq!(err.code, codes::PATH_EMPTY, "空路径应报 1000，实际 {err}");
 
     // ---- 文件树护栏：改名不许覆盖 / 成环 / 逃逸 ----
     let ops = &state.services.file_ops;

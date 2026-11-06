@@ -9,12 +9,13 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::domain::table::{TableKind, TableMetaVO};
+use crate::domain::table::{TableKind, TableMetaVO, TableViewReq, TableViewVO};
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::encoding;
 use crate::service::table::records::{
     parse_delimited, sniff_delimiter, JsonArrayScanner, RecordEnd, RecordScanner, StreamParser,
 };
+use crate::service::table::view::{self, TableView};
 
 /// 块的目标字节数：1MB 一块，1000 万行约几千块，索引几十 KB。
 const TARGET_BLOCK: u64 = 1024 * 1024;
@@ -103,6 +104,8 @@ pub type FindResult = (Vec<Hit>, usize, bool, bool);
 pub struct TableService {
     /// path → 索引。
     indexes: Mutex<HashMap<String, Arc<TableIndex>>>,
+    /// path → 视图（排序 / 筛选）。视图跟索引一起失效。
+    views: Mutex<HashMap<String, Arc<TableView>>>,
     /// path → 取消位。
     cancelled: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
@@ -117,6 +120,7 @@ impl TableService {
     pub fn new() -> Self {
         Self {
             indexes: Mutex::new(HashMap::new()),
+            views: Mutex::new(HashMap::new()),
             cancelled: Mutex::new(HashMap::new()),
         }
     }
@@ -494,11 +498,8 @@ impl TableService {
         }
 
         // 补齐列宽：缺的列补空串，网格按 max_cols 画。
-        let width = index.total_cols;
         for r in out.iter_mut() {
-            while r.len() < width {
-                r.push(String::new());
-            }
+            fit_width_in_place(r, index.total_cols);
         }
 
         Ok((out, stale))
@@ -707,7 +708,104 @@ impl TableService {
         if let Ok(mut map) = self.indexes.lock() {
             map.remove(path);
         }
+        if let Ok(mut map) = self.views.lock() {
+            map.remove(path);
+        }
         self.unregister_cancel(path);
+    }
+
+    /// 建视图（排序 / 筛选）：顺序扫一遍文件收顺序表，随后分页按字节区间取。
+    /// 同步阻塞：70 万行的排序要几十毫秒到几百毫秒，调用方放阻塞线程池。
+    pub fn set_view(&self, req: &TableViewReq) -> AppResult<TableViewVO> {
+        let index = self.index_of(&req.path)?;
+        let index = if self.is_stale(&index) {
+            let enc = index.encoding.clone();
+            let delim = index.delimiter;
+            let hdr = index.has_header;
+            self.open(&req.path, Some(&enc), Some(delim), Some(hdr), None)?;
+            self.index_of(&req.path)?
+        } else {
+            index
+        };
+        let view = Arc::new(view::build_view(&index, req)?);
+        let out = TableViewVO {
+            path: req.path.clone(),
+            total_rows: view.total_rows(),
+            data_rows: view.data_rows(),
+            file_rows: index.total_rows as usize,
+            sort_col: req.sort_col,
+            sort_desc: req.sort_desc.unwrap_or(false),
+            filtering: view.filter.is_some(),
+        };
+        if let Ok(mut map) = self.views.lock() {
+            map.insert(req.path.clone(), view);
+        }
+        Ok(out)
+    }
+
+    /// 视图里的总记录数（含表头）；没有视图时 None。
+    pub fn view_rows(&self, path: &str) -> Option<usize> {
+        self.views
+            .lock()
+            .ok()
+            .and_then(|m| m.get(path).map(|v| v.total_rows()))
+    }
+
+    /// 取消视图：回到文件顺序。
+    pub fn clear_view(&self, path: &str) {
+        if let Ok(mut map) = self.views.lock() {
+            map.remove(path);
+        }
+    }
+
+    /// 取一页（按视图顺序；没有视图时按文件顺序）。
+    pub fn page_of(
+        &self,
+        path: &str,
+        start_row: usize,
+        rows: usize,
+    ) -> AppResult<(Vec<Vec<String>>, bool)> {
+        let view = self.views.lock().ok().and_then(|m| m.get(path).cloned());
+        match view {
+            Some(v) => self.page_in_view(path, &v, start_row, rows),
+            None => self.page(path, start_row, rows),
+        }
+    }
+
+    /// 按视图顺序取一页：逐条按字节区间读，不解析整块。
+    fn page_in_view(
+        &self,
+        path: &str,
+        view: &TableView,
+        start_row: usize,
+        rows: usize,
+    ) -> AppResult<(Vec<Vec<String>>, bool)> {
+        let index = self.index_of(path)?;
+        let stale = self.is_stale(&index);
+        let total = view.total_rows();
+        if start_row >= total || rows == 0 {
+            return Ok((Vec::new(), stale));
+        }
+        let want = rows.min(total - start_row);
+        let mut out: Vec<Vec<String>> = Vec::with_capacity(want);
+        let mut buf: Vec<u8> = Vec::new();
+        let mut file = fs::File::open(&index.path)?;
+        for d in start_row..start_row + want {
+            // 表头行不在视图里：照旧按文件第 0 行取。
+            let rec = match view.row_at(d) {
+                Some(vr) => view::read_view_row(vr, &index, &mut file, &mut buf)?,
+                None => {
+                    let head = read_first_record(
+                        Path::new(&index.path),
+                        &index.encoding,
+                        index.delimiter,
+                    )?;
+                    head.unwrap_or_default()
+                }
+            };
+            out.push(fit_width(rec, index.total_cols));
+        }
+        Ok((out, stale))
     }
 
     fn index_of(&self, path: &str) -> AppResult<Arc<TableIndex>> {
@@ -741,6 +839,19 @@ impl TableService {
         if let Ok(mut map) = self.cancelled.lock() {
             map.remove(path);
         }
+    }
+}
+
+/// 补齐列宽：缺的列补空串，多出的列保留（网格按总列数画）。
+fn fit_width(mut rec: Vec<String>, cols: usize) -> Vec<String> {
+    fit_width_in_place(&mut rec, cols);
+    rec
+}
+
+/// 原地补齐列宽。
+fn fit_width_in_place(rec: &mut Vec<String>, cols: usize) {
+    while rec.len() < cols {
+        rec.push(String::new());
     }
 }
 
@@ -892,7 +1003,7 @@ fn read_jsonl_keys(p: &Path, enc: &str, sample: usize) -> AppResult<Vec<String>>
 }
 
 /// 解析一段 JSONL 文本：每行一个对象，按给定键顺序铺成一行。
-fn parse_jsonl_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
+pub(crate) fn parse_jsonl_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
     let mut out = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
@@ -920,7 +1031,7 @@ fn parse_jsonl_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
 }
 
 /// 解析一段顶层 JSON 数组文本：每个元素按给定键顺序铺成一行。
-fn parse_json_array_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
+pub(crate) fn parse_json_array_block(text: &str, keys: &[String]) -> Vec<Vec<String>> {
     let mut out = Vec::new();
     for el in json_array_elements(text) {
         let trimmed = strip_element_sep(&el).trim();

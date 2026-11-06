@@ -7,7 +7,8 @@
 mod common;
 
 use common::{
-    build_ar, build_cpio, create_req, extract_req, pack_and_unpack, sample_tree, task_ctx,
+    build_ar, build_compress_z, build_cpio, build_iso9660, create_req, extract_req,
+    pack_and_unpack, sample_tree, task_ctx,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -170,7 +171,7 @@ fn archive_readonly_formats_list_extract_and_refuse_create() {
     );
 
     // 只读格式：创建必须报「不支持创建」而不是走到一半才失败。
-    for fmt in ["rar", "lzh", "cpio", "ar"] {
+    for fmt in ["rar", "lzh", "cpio", "ar", "iso", "lz", "z"] {
         let dest = dir.path().join(format!("bad.{fmt}"));
         let err = arch::create::create_archive(&create_req(vec![root_s.clone()], &dest, fmt), &ctx)
             .expect_err(&format!("{fmt} 不该被允许创建"));
@@ -192,6 +193,60 @@ fn archive_readonly_formats_list_extract_and_refuse_create() {
     assert_eq!(ar_list.entries[0].name, "control.tar", "ar 条目名读错");
     arch::extract::extract_archive(&extract_req(&ar_path, &dir.path().join("x-ar")), &ctx)
         .unwrap_or_else(|e| panic!("ar 解压失败：{e}"));
+
+    // ---- .Z（Unix compress 的 LZW）与 .lz（lzip 的裸 LZMA）----
+    //
+    // 这两种都是「老备份里才有、但一旦遇到就必须能开」的格式，而且都没有现成 crate：
+    // .Z 的 LZW 自解析，.lz 要给裸 LZMA 载荷补一个 alone 头。头偏移算错一个字节，
+    // 解出来的就是一屏二进制垃圾，所以样本由本测试自己造、自己核对。
+    let z_path = dir.path().join("legacy.Z");
+    fs::write(&z_path, build_compress_z(b"hello compress")).expect("写 .Z 失败");
+    let z_list = arch::list::list_archive(&z_path, None).expect(".Z 列表失败");
+    assert_eq!(z_list.entries[0].name, "legacy", ".Z 条目名应剥掉压缩后缀");
+    let z_out = dir.path().join("x-z");
+    arch::extract::extract_archive(&extract_req(&z_path, &z_out), &ctx)
+        .unwrap_or_else(|e| panic!(".Z 解压失败：{e}"));
+    assert_eq!(
+        fs::read(z_out.join("legacy")).expect(".Z 解压后缺文件"),
+        b"hello compress",
+        ".Z 解出来的内容不对"
+    );
+
+    // ---- ISO9660 光盘镜像 ----
+    //
+    // 用户把 .iso 拖进来时期望「看到里面有什么」，而不是「换个工具」。
+    // 卷描述符在 32KB 处、根目录记录在 PVD 偏移 156、目录记录长度按偶数对齐——
+    // 这三处任一算错都表现为空列表或一屏乱码。
+    let iso_path = dir.path().join("disc.iso");
+    let iso_text: &[u8] = b"hello iso\r\n";
+    let iso_bin: Vec<u8> = (0..=255u8).collect();
+    fs::write(&iso_path, build_iso9660(iso_text, &iso_bin)).expect("写 ISO 失败");
+    let iso_list = arch::list::list_archive(&iso_path, None).expect("ISO 列表失败");
+    assert_eq!(iso_list.format, "iso");
+    let names: Vec<&str> = iso_list.entries.iter().map(|e| e.name.as_str()).collect();
+    assert!(
+        names.contains(&"HELLO.TXT"),
+        "ISO 条目表缺 HELLO.TXT（目录记录解析错），实际 {names:?}"
+    );
+    assert!(
+        names.contains(&"DATA.BIN"),
+        "ISO 条目表缺 DATA.BIN，实际 {names:?}"
+    );
+    let iso_out = dir.path().join("x-iso");
+    arch::extract::extract_archive(&extract_req(&iso_path, &iso_out), &ctx)
+        .unwrap_or_else(|e| panic!("ISO 解压失败：{e}"));
+    assert_eq!(
+        fs::read(iso_out.join("HELLO.TXT")).expect("ISO 解压后缺 HELLO.TXT"),
+        iso_text,
+        "ISO 解出来的内容不对"
+    );
+    assert_eq!(
+        fs::read(iso_out.join("DATA.BIN"))
+            .expect("ISO 解压后缺 DATA.BIN")
+            .len(),
+        256,
+        "ISO 里的二进制文件长度不对"
+    );
 
     // 仓库内的真实 RAR / LHA 样本：头解析错会表现为空列表或一屏乱码。
     let fx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -140,6 +140,8 @@ macro_rules! command_handlers {
             commands::table::table_save_as,
             commands::table::table_cancel,
             commands::table::table_close,
+            commands::table::table_view,
+            commands::table::table_view_clear,
             // 窗口与系统
             commands::window::window_minimize,
             commands::window::window_toggle_maximize,

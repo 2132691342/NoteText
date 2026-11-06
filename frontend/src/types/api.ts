@@ -185,6 +185,34 @@ export interface TablePageVO {
 }
 
 /** 表格内查找请求。 */
+/** 表格视图（排序 / 筛选）：只影响显示，不改文件。 */
+export interface TableViewReq {
+  path: string
+  /** 排序列；不指定 = 保持文件顺序。 */
+  sort_col?: number | null
+  sort_desc?: boolean | null
+  /** 筛选关键字；空 = 不筛选。 */
+  filter_query?: string | null
+  /** 筛选只在这些列里找；空 = 全列。 */
+  filter_cols?: number[]
+  match_case?: boolean | null
+}
+
+/** 视图建好的摘要。 */
+export interface TableViewVO {
+  path: string
+  /** 视图里的总记录数（含表头行）。 */
+  total_rows: number
+  /** 通过筛选的数据行数（不含表头）。 */
+  data_rows: number
+  /** 文件里的原始记录数：用来算筛掉了多少行。 */
+  file_rows: number
+  sort_col: number | null
+  sort_desc: boolean
+  /** 是否在筛选。 */
+  filtering: boolean
+}
+
 export interface TableFindReq {
   path: string
   query: string

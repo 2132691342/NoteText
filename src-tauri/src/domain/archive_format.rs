@@ -48,6 +48,12 @@ pub enum ArchiveFormat {
     Cpio,
     /// ar / .deb（只读）
     Ar,
+    /// ISO9660 光盘镜像（只读：列条目 / 取文件，不能造）
+    Iso,
+    /// lzip（.lz，LZMA 单文件流 + lzip 头；只读）
+    Lz,
+    /// Unix compress（.Z，LZW；只读：老 Unix 备份里常见）
+    Z,
 }
 
 /// 压缩方法：创建对话框可指定，缺省按「格式 + 级别」取推荐。
@@ -169,9 +175,13 @@ impl CompressLevel {
                 _ => CompressMethod::Brotli,
             },
             // 只读格式不给推荐方法：它们在创建对话框里根本不出现在下拉里。
-            ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar => {
-                CompressMethod::Store
-            }
+            ArchiveFormat::Rar
+            | ArchiveFormat::Lzh
+            | ArchiveFormat::Cpio
+            | ArchiveFormat::Ar
+            | ArchiveFormat::Iso
+            | ArchiveFormat::Lz
+            | ArchiveFormat::Z => CompressMethod::Store,
         }
     }
 }
@@ -199,6 +209,9 @@ impl ArchiveFormat {
             ArchiveFormat::Lzh => "lzh",
             ArchiveFormat::Cpio => "cpio",
             ArchiveFormat::Ar => "ar",
+            ArchiveFormat::Iso => "iso",
+            ArchiveFormat::Lz => "lz",
+            ArchiveFormat::Z => "z",
         }
     }
 
@@ -225,6 +238,9 @@ impl ArchiveFormat {
             ArchiveFormat::Lzh => &["lzh", "lha"],
             ArchiveFormat::Cpio => &["cpio"],
             ArchiveFormat::Ar => &["ar", "deb"],
+            ArchiveFormat::Iso => &["iso"],
+            ArchiveFormat::Lz => &["lz", "lzip"],
+            ArchiveFormat::Z => &["z"],
         }
     }
 
@@ -236,7 +252,7 @@ impl ArchiveFormat {
     }
 
     /// 全部格式的固定顺序：能力表 / 格式下拉共用。
-    pub fn all() -> [ArchiveFormat; 20] {
+    pub fn all() -> [ArchiveFormat; 23] {
         [
             ArchiveFormat::SevenZ,
             ArchiveFormat::Zip,
@@ -258,6 +274,9 @@ impl ArchiveFormat {
             ArchiveFormat::Lzh,
             ArchiveFormat::Cpio,
             ArchiveFormat::Ar,
+            ArchiveFormat::Iso,
+            ArchiveFormat::Lz,
+            ArchiveFormat::Z,
         ]
     }
 
@@ -272,6 +291,7 @@ impl ArchiveFormat {
                 | ArchiveFormat::Lzh
                 | ArchiveFormat::Cpio
                 | ArchiveFormat::Ar
+                | ArchiveFormat::Iso
         ) || self.is_tar_family()
     }
 
@@ -312,7 +332,13 @@ impl ArchiveFormat {
     pub fn can_write(self) -> bool {
         !matches!(
             self,
-            ArchiveFormat::Rar | ArchiveFormat::Lzh | ArchiveFormat::Cpio | ArchiveFormat::Ar
+            ArchiveFormat::Rar
+                | ArchiveFormat::Lzh
+                | ArchiveFormat::Cpio
+                | ArchiveFormat::Ar
+                | ArchiveFormat::Iso
+                | ArchiveFormat::Lz
+                | ArchiveFormat::Z
         )
     }
 

@@ -1,9 +1,17 @@
 // 大表格网格：分页取数 + 虚拟滚动（空间压缩）+ 覆盖层编辑；坐标系在 gridScroll.ts。
 // 关键不变量：**滚动容器的 DOM 必须挂到 scrollHost 上**——量不到视口时窗口只剩几行。
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { api, normalizeError } from '@/api'
-import { computeGridWindow, FALLBACK_VIEWPORT, MAX_SCROLL_PX, ROW_H } from '@/composables/gridScroll'
-import type { TableMetaVO, TableOp } from '@/types/api'
+import {
+  computeGridWindow,
+  contentYOf,
+  FALLBACK_VIEWPORT,
+  headerHeightOf,
+  MAX_SCROLL_PX,
+  ROW_H,
+} from '@/composables/gridScroll'
+import type { TableMetaVO, TableOp, TableViewVO } from '@/types/api'
 
 export { ROW_H }
 
@@ -15,8 +23,23 @@ const PREFETCH_PAGES = 3
 const MAX_CACHED_PAGES = 80
 /** 列宽：初值、下限、上限（像素）。 */
 export const COL_W_DEFAULT = 160
+/**
+ * 列宽下限。不能设太大：低于它的短列（序号 / 开关位 / 两字颜色）
+ * 全部被顶到同一个宽度，一张 13 列的表看起来像 13 个等宽格子，
+ * 反而比自适应更浪费横向空间。56 是「数字列 + 表头两字」的下限。
+ */
 const COL_W_MIN = 56
 const COL_W_MAX = 640
+/**
+ * 后端给的列宽是「字符宽度」（中日韩按 2 个半角算），这里换成像素。
+ * 13px 字号下 ASCII 平均字宽约 7.2px、全角约 13px；后端已按 2 折算，
+ * 所以统一乘 7.4 再补单元格内边距（左右各 8px），
+ * 少算内边距会让每列都差一截，长文本一律被截成省略号。
+ */
+const COL_W_PAD = 18
+function widthFromChars(chars: number): number {
+  return Math.round(chars * 7.4 + COL_W_PAD)
+}
 
 export interface TableGridOptions {
   path: Ref<string>
@@ -26,8 +49,9 @@ export interface TableGridOptions {
   delimiter?: Ref<string | undefined>
   /** 表头判定覆盖；`null` = 交给后端启发式。 */
   hasHeader?: Ref<boolean | null>
-  /** 吸顶表头的高度（像素）：数据行从它下面开始，不算会把前几行盖住。 */
-  headerOffset?: Ref<number>
+  /** 吸顶表头的行数覆盖：默认按「列字母行 + 有表头值行」算（2 或 1）。
+   *  是纯函数而不是 computed：setup 阶段 watch 就会求值一次，里面不能碰调用方还没赋值的变量。 */
+  headerRows?: () => number
   /** 索引建好后回调（供状态栏刷新读数）。 */
   onMeta?: (meta: TableMetaVO) => void
   /** 出错回调。 */
@@ -38,6 +62,8 @@ export function useTableGrid(opts: TableGridOptions) {
   const meta = ref<TableMetaVO | null>(null)
   const loading = ref(false)
   const error = ref('')
+  /** 建索引进度（0..1）；null = 没有进行中的扫描。 */
+  const progress = ref<number | null>(null)
 
   /** 页缓存：页号 → 行数组。整体替换 Map，避免深度响应式。 */
   const pages = shallowRef(new Map<number, string[][]>())
@@ -55,6 +81,60 @@ export function useTableGrid(opts: TableGridOptions) {
   /** 插入的记录：锚点原始行号 → 记录列表（插在该行之后）。 */
   const insertedRows = shallowRef(new Map<number, string[][]>())
 
+  /** 表格视图（排序 / 筛选）：只改显示顺序，不动文件。 */
+  const view = ref<TableViewVO | null>(null)
+  /** 当前排序列与方向（`null` = 文件顺序）。 */
+  const sortCol = ref<number | null>(null)
+  const sortDesc = ref(false)
+  /** 筛选条件：关键字 + 限定列（空 = 全列）。 */
+  const filterText = ref('')
+  const filterCols = shallowRef<number[]>([])
+  /** 视图正在重建（排序 / 筛选要顺序扫一遍文件）。 */
+  const viewBusy = ref(false)
+
+  /**
+   * 撤销栈：只存反向操作，不存快照。
+   * 覆盖层本来就是增量，所以「撤销一格」= 把那一格改回旧值；
+   * 存整表快照会在几十万行上直接吃光内存。
+   */
+  type UndoStep = { forward: () => void; backward: () => void }
+  const undoStack: UndoStep[] = []
+  const redoStack: UndoStep[] = []
+  const canUndo = ref(false)
+  const canRedo = ref(false)
+  /** 栈上限：再多用户也按不回去，占内存没意义。 */
+  const UNDO_LIMIT = 200
+
+  function pushUndo(step: UndoStep) {
+    undoStack.push(step)
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift()
+    redoStack.length = 0
+    canUndo.value = undoStack.length > 0
+    canRedo.value = false
+  }
+
+  /** 撤销一步。成对操作：`backward` 回到旧值，栈项转进重做栈。 */
+  function undo() {
+    const step = undoStack.pop()
+    if (!step) return
+    step.backward()
+    redoStack.push(step)
+    canUndo.value = undoStack.length > 0
+    canRedo.value = true
+    version.value += 1
+  }
+
+  /** 重做一步：`forward` 再走一遍。 */
+  function redo() {
+    const step = redoStack.pop()
+    if (!step) return
+    step.forward()
+    undoStack.push(step)
+    canUndo.value = true
+    canRedo.value = redoStack.length > 0
+    version.value += 1
+  }
+
   const editCount = computed(
     () =>
       [...cellEdits.value.values()].reduce((n, m) => n + m.size, 0) +
@@ -67,7 +147,15 @@ export function useTableGrid(opts: TableGridOptions) {
   const hasHeader = computed(() => meta.value?.has_header ?? false)
   /** 数据起始的原始行号：有表头时第 0 行是表头。 */
   const dataStart = computed(() => (hasHeader.value ? 1 : 0))
-  const totalRows = computed(() => meta.value?.total_rows ?? 0)
+  /** 总记录数（含表头行）：视图与索引的口径一致，筛选后行号栏跟着变少。 */
+  const totalRows = computed(() => view.value?.total_rows ?? meta.value?.total_rows ?? 0)
+  /** 数据行数（不含表头）：读数里「n / total 行」用这个，否则无表头的表会多算一行。 */
+  const viewDataRows = computed(() => {
+    if (view.value) return view.value.data_rows
+    // 不能用 dataStart：它在本行之后才声明，读到的是 TDZ 里的临时值。
+    const headerRows = meta.value?.has_header ? 1 : 0
+    return Math.max(0, (meta.value?.total_rows ?? 0) - headerRows)
+  })
   const totalCols = computed(() => meta.value?.total_cols ?? 0)
   const header = computed(() => meta.value?.header ?? [])
 
@@ -94,11 +182,83 @@ export function useTableGrid(opts: TableGridOptions) {
     return auto ?? COL_W_DEFAULT
   }
 
-  /** 设列宽（拖拽结束时调）。 */
+  /** 设列宽（拖拽结束时调，顺便落盘）。 */
   function setColWidth(col: number, width: number) {
     const next = new Map(colWidths.value)
     next.set(col, Math.round(Math.min(COL_W_MAX, Math.max(COL_W_MIN, width))))
     colWidths.value = next
+    saveColWidths()
+  }
+
+  // ---- 列宽与冻结的记忆 ----
+  //
+  // 存在 localStorage 而不是数据库：它是「这个文件的查看偏好」，换机器不该跟过去，
+  // 也不进导出备份。key 用路径的后缀（同名文件在同目录下不会撞，因为带目录名）。
+
+  const WIDTHS_KEY = 'nt.table.widths'
+  const FREEZE_KEY = 'nt.table.freeze'
+
+  /** 冻结首列：横向滚动时第一列常驻，宽表里不至于「滚过去就不知道这行是谁」。 */
+  const frozenFirst = ref(false)
+
+  /** 路径 → 序列化后的列宽，避免每个文件一个 key 把 localStorage 撑爆。 */
+  function pathKey(): string {
+    const p = opts.path.value
+    if (!p) return ''
+    // 用文件名 + 目录尾段：够区分，又不会把整条长路径当 key。
+    const parts = p.replace(/\\/g, '/').split('/')
+    return parts.slice(-2).join('/')
+  }
+
+  function loadPrefs() {
+    if (!pathKey()) return
+    try {
+      const allW = JSON.parse(localStorage.getItem(WIDTHS_KEY) ?? '{}') as Record<string, number[]>
+      const w = allW[pathKey()]
+      if (Array.isArray(w)) {
+        const m = new Map<number, number>()
+        w.forEach((px, i) => {
+          if (typeof px === 'number' && px > 0) m.set(i, px)
+        })
+        colWidths.value = m
+      }
+      const allF = JSON.parse(localStorage.getItem(FREEZE_KEY) ?? '{}') as Record<string, boolean>
+      frozenFirst.value = allF[pathKey()] === true
+    } catch {
+      /* 存的东西坏了就当没存过，不该拦住打开文件 */
+    }
+  }
+
+  function saveColWidths() {
+    const key = pathKey()
+    if (!key) return
+    try {
+      const allW = JSON.parse(localStorage.getItem(WIDTHS_KEY) ?? '{}') as Record<string, number[]>
+      const width: number[] = []
+      for (const [c, px] of colWidths.value) width[c] = px
+      allW[key] = width
+      localStorage.setItem(WIDTHS_KEY, JSON.stringify(allW))
+    } catch {
+      /* 超配额就放弃记忆，不影响当前会话 */
+    }
+  }
+
+  function toggleFreeze() {
+    frozenFirst.value = !frozenFirst.value
+    const key = pathKey()
+    if (!key) return
+    try {
+      const allF = JSON.parse(localStorage.getItem(FREEZE_KEY) ?? '{}') as Record<string, boolean>
+      allF[key] = frozenFirst.value
+      localStorage.setItem(FREEZE_KEY, JSON.stringify(allF))
+    } catch {
+      /* 同上 */
+    }
+  }
+
+  /** 冻结首列的左偏移（像素）：粘在行号栏右侧。 */
+  function frozenLeft(gutter: number): number {
+    return gutter
   }
 
   /** 列宽合计：横向滚动的内容宽度。 */
@@ -144,25 +304,32 @@ export function useTableGrid(opts: TableGridOptions) {
   /** 视口高度（像素）。 */
   const viewport = ref(0)
 
-  /** 逻辑总高度。 */
-  const logicalHeight = computed(() => displayRows.value * ROW_H)
-  /** 逻辑可滚距离。 */
-  const maxLogical = computed(() => Math.max(0, logicalHeight.value - viewport.value))
+  /** 逻辑总高度：含吸顶表头的占位，滚到底时最后一行才够得着。 */
+  const logicalHeight = computed(() => displayRows.value * ROW_H + headerHeightOf(topRows()))
   /** 滚动条空间高度：压缩到上限之内。 */
   const scrollHeight = computed(() => Math.min(logicalHeight.value, MAX_SCROLL_PX))
-  /** 渲染窗口：一次算完，滚动坐标与窗口位置同源。 */
+  /**
+   * 渲染窗口：一次算完，滚动坐标与窗口位置同源。
+   * **只依赖四个标量**——不能在这里再读 `logicalScroll` / `maxLogical`：
+   * 那两个是 grid 派生出来的，反向依赖会形成循环，每帧多算两轮。
+   */
   const grid = computed(() =>
-    computeGridWindow(
-      displayRows.value,
-      viewport.value,
-      scrollTop.value,
-      opts.headerOffset?.value ?? 0,
-    ),
+    computeGridWindow(displayRows.value, viewport.value, scrollTop.value, topRows()),
   )
-  /** 压缩比：滚动条像素 → 逻辑像素。 */
-  const scale = computed(() => grid.value.scale)
-  /** 视口顶部的逻辑位置。 */
+  /** 内容坐标系的视口顶部（滚动条位置换算回来）。 */
   const logicalScroll = computed(() => grid.value.logicalScroll)
+  /** 内容坐标系的滚动范围：`scrollToContent` 的钳制上界。 */
+  const maxLogical = computed(() => Math.max(0, logicalHeight.value - viewport.value))
+  /** 吸顶表头行数：覆盖优先，否则按有没有表头值行算。
+   *  读的是本 composable 的 hasHeader，不是调用方的变量——
+   *  setup 阶段 watch 会立即求值一次，去读调用方还没赋值的变量就是 TDZ 崩。 */
+  function topRows(): number {
+    return Math.max(0, opts.headerRows?.() ?? (hasHeader.value ? 2 : 1))
+  }
+  /** 吸顶表头占的高度（像素）。 */
+  const headerOffset = computed(() => headerHeightOf(topRows()))
+  /** 压缩比：滚动条像素 → 内容像素。 */
+  const scale = computed(() => grid.value.scale)
   /** 视口顶部的显示行。 */
   const firstVisible = computed(() => grid.value.firstVisible)
   /** 渲染窗口的首行（带 overscan）。 */
@@ -224,8 +391,17 @@ export function useTableGrid(opts: TableGridOptions) {
     return r - dataStart.value - deletedBefore(r) + insertedBefore(r)
   }
 
-  /** 显示下标 d 处的原始行号（二分）。 */
+  /**
+   * 显示下标 d 处的原始行号。
+   *
+   * 没有删行 / 插行时显示下标与原始行号只差一个表头偏移——直接加，
+   * 不做二分。二分是 O(log n)，而渲染窗口每帧对每行都要问一次，
+   * 几十万行的表上「每帧几十次二分」正是拖动滚动条跟不上手的原因。
+   */
   function originalRowAt(d: number): number {
+    if (deletedRows.value.size === 0 && insertedRows.value.size === 0) {
+      return d + dataStart.value
+    }
     let lo = dataStart.value
     let hi = totalRows.value - 1
     let best = dataStart.value
@@ -291,12 +467,19 @@ export function useTableGrid(opts: TableGridOptions) {
     return out
   })
 
-  /** 一行的字段值：页缓存 + 覆盖层。 */
+  /**
+   * 一行的字段值：页缓存 + 覆盖层。
+   *
+   * 没有改动、也没有缺列时**直接返回缓存里的那个数组**，不逐格复制：
+   * 渲染窗口每帧要几十行 × 十几列，逐格新建数组在滚动时就是主要开销。
+   * 缓存数组是只读的（取页时已补齐列），下游只读不写。
+   */
   function cellsOf(orig: number): string[] {
     const pageIdx = Math.floor(orig / PAGE_SIZE)
     const page = pages.value.get(pageIdx)
     const base = page?.[orig - pageIdx * PAGE_SIZE]
     const edits = cellEdits.value.get(orig)
+    if (!edits && base && base.length === totalCols.value) return base
     const width = totalCols.value
     const out: string[] = new Array(width)
     for (let c = 0; c < width; c += 1) {
@@ -411,8 +594,8 @@ export function useTableGrid(opts: TableGridOptions) {
     }
   }
 
-  /** 设到某个逻辑位置（并同步滚动条）。 */
-  function scrollToLogical(target: number) {
+  /** 设到某个内容位置（含表头占位），并同步滚动条。 */
+  function scrollToContent(target: number) {
     const clamped = Math.max(0, Math.min(target, maxLogical.value))
     const px = clamped * scale.value
     scrollTop.value = px
@@ -422,10 +605,13 @@ export function useTableGrid(opts: TableGridOptions) {
     }
   }
 
-  /** 滚到第几行（显示下标）。 */
+  /** `scrollToContent` 的别名：滚轮按内容像素累加，单位与它一致。 */
+  const scrollToLogical = scrollToContent
+
+  /** 滚到第几行（显示下标）：行顶贴着可视区顶部，不藏在吸顶表头下面。 */
   function scrollToDisplayRow(index: number) {
     const target = Math.max(0, Math.min(index, displayRows.value - 1))
-    scrollToLogical(target * ROW_H)
+    scrollToContent(contentYOf(target, topRows()))
   }
 
   /** 滚到某个原始行（显示下标由映射算出）。 */
@@ -435,10 +621,10 @@ export function useTableGrid(opts: TableGridOptions) {
 
   /** 把某格滚进视口并尽量居中：查找跳转要的是「看到这一格」。 */
   function scrollToCell(orig: number, col: number) {
-    // 纵向：目标行放在视口中间
+    // 纵向：目标行放在视口中间（行中心对准视口中心）。
     const d = displayIndexOf(orig)
-    const center = d * ROW_H - effectiveViewport.value / 2 + ROW_H / 2
-    scrollToLogical(center)
+    const center = contentYOf(d, topRows()) + ROW_H / 2 - effectiveViewport.value / 2
+    scrollToContent(center)
     // 横向：列不在视口内才滚
     const host = scrollHost.value
     if (!host) return
@@ -478,6 +664,21 @@ export function useTableGrid(opts: TableGridOptions) {
     if (!path) return
     loading.value = true
     error.value = ''
+    progress.value = 0
+    // 建索引要顺序扫一遍文件：GB 级表格几十秒都有可能，
+    // 没有进度就是「打开就卡死」。事件按路径过滤，多个标签互不干扰。
+    let off: UnlistenFn | null = null
+    try {
+      off = await listen<{ path: string; done: number; total: number }>(
+        'table:progress',
+        (ev) => {
+          if (ev.payload.path !== path || ev.payload.total <= 0) return
+          progress.value = Math.min(1, ev.payload.done / ev.payload.total)
+        },
+      )
+    } catch {
+      /* 浏览器预览里没有 Tauri 事件，进度条不出现即可 */
+    }
     try {
       // 编码：`'auto'` 或未指定时交后端探测——前端预设 'utf-8' 会让探测永远不生效，
       // GB18030 的 CSV 会整表解成替换符。
@@ -491,13 +692,20 @@ export function useTableGrid(opts: TableGridOptions) {
       meta.value = m
       pages.value = new Map()
       pageOrder.length = 0
+      // 重建索引等于换了行基准：视图与撤销栈一起作废。
+      view.value = null
+      sortCol.value = null
+      sortDesc.value = false
+      filterText.value = ''
+      filterCols.value = []
       cellEdits.value = new Map()
       deletedRows.value = new Set()
       insertedRows.value = new Map()
       colWidths.value = new Map()
+      loadPrefs()
       // 后端按采样给的列宽（字符宽度 → 像素），没给就留空走默认档。
       autoWidths.value = (m.col_widths ?? []).map((w) =>
-        w == null ? COL_W_DEFAULT : Math.min(COL_W_MAX, Math.max(COL_W_MIN, Math.round(w * 7.4))),
+        w == null ? COL_W_DEFAULT : Math.min(COL_W_MAX, Math.max(COL_W_MIN, widthFromChars(w))),
       )
       version.value += 1
       scrollTop.value = 0
@@ -509,7 +717,103 @@ export function useTableGrid(opts: TableGridOptions) {
       opts.onError?.(error.value)
     } finally {
       loading.value = false
+      progress.value = null
+      off?.()
     }
+  }
+
+  // ---- 视图：排序 / 筛选 ----
+
+  /**
+   * 重建视图。排序与筛选都走这一条：后端顺序扫一遍文件收顺序表，
+   * 之后分页按字节区间取，所以「排序后翻到第 50 万行」与未排序时一样快。
+   * 不传参数就用当前状态（取消排序时把列也清掉）。
+   */
+  async function applyView(
+    next?: { sortCol?: number | null; sortDesc?: boolean; filterText?: string; filterCols?: number[] },
+  ) {
+    const path = opts.path.value
+    if (!path) return
+    if (next) {
+      if (next.sortCol !== undefined) sortCol.value = next.sortCol
+      if (next.sortDesc !== undefined) sortDesc.value = next.sortDesc
+      if (next.filterText !== undefined) filterText.value = next.filterText
+      if (next.filterCols !== undefined) filterCols.value = next.filterCols
+    }
+    const filtering = filterText.value.trim().length > 0
+    const sorting = sortCol.value != null
+    if (!filtering && !sorting) {
+      await clearView()
+      return
+    }
+    viewBusy.value = true
+    error.value = ''
+    try {
+      const v = await api.table.view({
+        path,
+        sort_col: sortCol.value,
+        sort_desc: sortDesc.value,
+        filter_query: filtering ? filterText.value : null,
+        filter_cols: filtering ? filterCols.value : [],
+        match_case: false,
+      })
+      view.value = v
+      // 视图换了行序：页缓存与覆盖层全部作废（行号已经不对应同一行内容）。
+      pages.value = new Map()
+      pageOrder.length = 0
+      resetEdits()
+      version.value += 1
+      scrollToContent(0)
+      ensureVisiblePages()
+    } catch (e) {
+      error.value = normalizeError(e).message
+      opts.onError?.(error.value)
+    } finally {
+      viewBusy.value = false
+    }
+  }
+
+  /** 取消排序 / 筛选，回到文件顺序。 */
+  async function clearView() {
+    if (!view.value && sortCol.value == null && !filterText.value.trim()) return
+    const path = opts.path.value
+    sortCol.value = null
+    sortDesc.value = false
+    filterText.value = ''
+    filterCols.value = []
+    view.value = null
+    try {
+      if (path) await api.table.clearView(path)
+    } catch {
+      /* 释放失败不影响使用：后端下次打开会重建 */
+    }
+    pages.value = new Map()
+    pageOrder.length = 0
+    version.value += 1
+    scrollToContent(0)
+    ensureVisiblePages()
+  }
+
+  /** 点列头：升序 → 降序 → 取消，三态循环。 */
+  async function toggleSort(col: number) {
+    if (sortCol.value !== col) {
+      await applyView({ sortCol: col, sortDesc: false })
+    } else if (!sortDesc.value) {
+      await applyView({ sortCol: col, sortDesc: true })
+    } else {
+      await applyView({ sortCol: null, sortDesc: false })
+    }
+  }
+
+  /** 按关键字筛选（全列）。 */
+  async function setFilter(text: string) {
+    await applyView({ filterText: text })
+  }
+
+  /** 该列的排序标记：`'asc'` / `'desc'` / `null`。 */
+  function sortMark(col: number): 'asc' | 'desc' | null {
+    if (sortCol.value !== col) return null
+    return sortDesc.value ? 'desc' : 'asc'
   }
 
   /** 关标签：释放后端索引。 */
@@ -525,17 +829,36 @@ export function useTableGrid(opts: TableGridOptions) {
 
   // ---- 编辑 ----
 
-  /** 改一个单元格。 */
+  /** 改一个单元格（记一步撤销）。 */
   function setCell(orig: number, col: number, value: string) {
+    const before = cellValue(orig, col)
+    if (before === value) return
+    applyCell(orig, col, value)
+    pushUndo({
+      forward: () => applyCell(orig, col, value),
+      backward: () => applyCell(orig, col, before),
+    })
+  }
+
+  /** 直接写覆盖层，不进撤销栈（撤销 / 重做自己走这里）。
+   *  值回到基线（页缓存里那格的原值）就删掉覆盖项：否则撤销后读数还挂着「1 处未保存」。 */
+  function applyCell(orig: number, col: number, value: string) {
+    const base = baselineCell(orig, col)
     const next = new Map(cellEdits.value)
-    let rowEdits = next.get(orig)
-    if (!rowEdits) {
-      rowEdits = new Map()
-      next.set(orig, rowEdits)
-    }
-    rowEdits.set(col, value)
+    const rowEdits = next.get(orig) ? new Map(next.get(orig)!) : new Map<number, string>()
+    if (value === base) rowEdits.delete(col)
+    else rowEdits.set(col, value)
+    if (rowEdits.size === 0) next.delete(orig)
+    else next.set(orig, rowEdits)
     cellEdits.value = next
     version.value += 1
+  }
+
+  /** 一格的基线值：页缓存里的原值（不含覆盖层）。 */
+  function baselineCell(orig: number, col: number): string {
+    const pageIdx = Math.floor(orig / PAGE_SIZE)
+    const page = pages.value.get(pageIdx)
+    return page?.[orig - pageIdx * PAGE_SIZE]?.[col] ?? ''
   }
 
   /** 某格是否被改过（脏格高亮）。 */
@@ -543,29 +866,66 @@ export function useTableGrid(opts: TableGridOptions) {
     return cellEdits.value.get(orig)?.has(col) ?? false
   }
 
-  /** 删一行。 */
+  /** 删一行（记一步撤销）。 */
   function deleteRow(orig: number) {
+    if (deletedRows.value.has(orig)) return
+    applyDelete(orig, true)
+    pushUndo({
+      forward: () => applyDelete(orig, true),
+      backward: () => applyDelete(orig, false),
+    })
+  }
+
+  /** 设置删除标记，不进撤销栈。 */
+  function applyDelete(orig: number, deleted: boolean) {
     const next = new Set(deletedRows.value)
-    next.add(orig)
+    if (deleted) next.add(orig)
+    else next.delete(orig)
     deletedRows.value = next
     version.value += 1
   }
 
-  /** 在某行之后插入一条记录。 */
+  /** 在某行之后插入一条记录（记一步撤销）。 */
   function insertRowAfter(orig: number, values: string[]) {
+    const at = applyInsert(orig, values)
+    pushUndo({
+      forward: () => void applyInsert(orig, values),
+      backward: () => applyUninsert(orig, at),
+    })
+  }
+
+  /** 插入并返回它在列表里的位置，撤销时按位置摘掉（同锚点可能插了多条）。 */
+  function applyInsert(orig: number, values: string[]): number {
+    const next = new Map(insertedRows.value)
+    const list = next.get(orig) ? [...next.get(orig)!] : []
+    list.push(values)
+    next.set(orig, list)
+    insertedRows.value = next
+    version.value += 1
+    return list.length - 1
+  }
+
+  function applyUninsert(orig: number, at: number) {
     const next = new Map(insertedRows.value)
     const list = next.get(orig)
-    if (list) list.push(values)
-    else next.set(orig, [values])
+    if (!list) return
+    const copy = [...list]
+    copy.splice(at, 1)
+    if (copy.length === 0) next.delete(orig)
+    else next.set(orig, copy)
     insertedRows.value = next
     version.value += 1
   }
 
-  /** 撤销全部改动。 */
+  /** 撤销全部改动（同时清空撤销栈：这是「从头再来」，不该还能撤销回去）。 */
   function resetEdits() {
     cellEdits.value = new Map()
     deletedRows.value = new Set()
     insertedRows.value = new Map()
+    undoStack.length = 0
+    redoStack.length = 0
+    canUndo.value = false
+    canRedo.value = false
     version.value += 1
   }
 
@@ -619,9 +979,11 @@ export function useTableGrid(opts: TableGridOptions) {
     meta,
     loading,
     error,
+    progress,
     header,
     hasHeader,
     totalRows,
+    viewDataRows,
     totalCols,
     displayRows,
     dataStart,
@@ -643,6 +1005,8 @@ export function useTableGrid(opts: TableGridOptions) {
     onWheel,
     onScroll,
     scrollToLogical,
+    scrollToContent,
+    headerOffset,
     scrollToDisplayRow,
     scrollToOriginalRow,
     scrollToCell,
@@ -656,5 +1020,24 @@ export function useTableGrid(opts: TableGridOptions) {
     buildOps,
     ensureVisiblePages,
     ensureRowCached,
+    // 视图与撤销
+    view,
+    viewBusy,
+    sortCol,
+    sortDesc,
+    filterText,
+    filterCols,
+    applyView,
+    clearView,
+    toggleSort,
+    setFilter,
+    sortMark,
+    frozenFirst,
+    toggleFreeze,
+    frozenLeft,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   }
 }

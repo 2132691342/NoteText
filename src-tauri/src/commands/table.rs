@@ -8,7 +8,7 @@ use tauri::{AppHandle, State};
 use crate::app::bootstrap::AppState;
 use crate::domain::table::{
     TableFindReq, TableFindVO, TableHitVO, TableMetaVO, TableOpenReq, TablePageReq, TablePageVO,
-    TableSaveReq, TableSaveVO,
+    TableSaveReq, TableSaveVO, TableViewReq, TableViewVO,
 };
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::service::table::index::ProgressFn;
@@ -55,11 +55,16 @@ pub async fn table_page(state: State<'_, AppState>, req: TablePageReq) -> AppRes
     let rows = req.rows;
     let worker = svc.clone();
     let (out, stale) =
-        tauri::async_runtime::spawn_blocking(move || worker.page(&path, start_row, rows))
+        tauri::async_runtime::spawn_blocking(move || worker.page_of(&path, start_row, rows))
             .await
             .map_err(|e| AppError::new(codes::IO_FAILED, format!("分页任务异常退出：{e}")))??;
     let meta = svc.meta_of(&req.path);
-    let total_rows = meta.as_ref().map(|m| m.total_rows).unwrap_or(0);
+    // 行数按视图口径：筛选生效时前端读数与行号栏都要跟着变少，
+    // 直接给索引总数会让界面写着 71 万行而实际只有 3 条。
+    let total_rows = svc
+        .view_rows(&req.path)
+        .or_else(|| meta.as_ref().map(|m| m.total_rows))
+        .unwrap_or(0);
     let total_cols = meta.as_ref().map(|m| m.total_cols).unwrap_or(0);
     Ok(TablePageVO {
         path: req.path,
@@ -144,5 +149,22 @@ pub async fn table_save_as(
 #[tauri::command(async)]
 pub fn table_close(state: State<'_, AppState>, path: String) -> AppResult<()> {
     state.services.table.close(&path);
+    Ok(())
+}
+
+/// 建视图（排序 / 筛选）：只改显示顺序，不动文件。
+#[tauri::command(async)]
+pub async fn table_view(state: State<'_, AppState>, req: TableViewReq) -> AppResult<TableViewVO> {
+    let svc = state.services.table.clone();
+    let req2 = req.clone();
+    tauri::async_runtime::spawn_blocking(move || svc.set_view(&req2))
+        .await
+        .map_err(|e| AppError::new(codes::IO_FAILED, format!("视图任务异常退出：{e}")))?
+}
+
+/// 取消视图：回到文件顺序。
+#[tauri::command(async)]
+pub fn table_view_clear(state: State<'_, AppState>, path: String) -> AppResult<()> {
+    state.services.table.clear_view(&path);
     Ok(())
 }
