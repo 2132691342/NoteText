@@ -30,7 +30,7 @@
 | 剪贴板 | arboard | ^3.x：WebView2 不给渲染层 clipboard-read 权限，粘贴链路在壳层兜底 |
 | 编码 | encoding_rs | ^0.8：GB18030 / Big5 / Shift_JIS / EUC 的完整码表；手写表只能覆盖标点，中文正文必然解成替换符 |
 | 归档 | sevenz-rust · zip · tar · flate2 · zstd · xz2 · bzip2 · lz4_flex · brotli · cab · unrar-rs · delharc · iso9660 · lzma-rs | 压缩子系统（assets/specs/18）：Rust 原生库不拉外部进程，7z 只写 LZMA2；tar 组合全家族（tgz/txz/tbz2/tzst/tlz4/tbr），zip 兼读 Deflate64/LZMA，zstd 压缩多线程；cab 读写 MSZIP；rar（含分卷/加密）/ lzh / ISO9660 / lzip / Unix compress 只读 |
-| 测试 | 标准库 `#[test]` + tempfile | 14 条长链路；不挂源码内单元测试；本地与 GitHub Actions 执行同一组命令 |
+| 测试 | 标准库 `#[test]` + tempfile | 15 条长链路；不挂源码内单元测试；本地与 GitHub Actions 执行同一组命令 |
 | 注册表 | winreg · windows-sys（Shell） | ^0.56 / ^0.61：系统文件关联（assets/specs/17）只写 HKCU；`SHChangeNotify` 让资源管理器立即刷新；非 Windows 走桩 |
 | 平台 | Windows | 本期只考虑 Windows；平台特定代码按 `#[cfg(windows)]` 分文件，不写按运行时判断的大分支 |
 
@@ -465,9 +465,9 @@ mod dialog_stub;
 
 ### 3.2 规模与速度约束
 
-- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），14 条链路按
-  「文件(3) / 大表格(3) / 表格编辑(2) / 会话 / 批量 / 压缩(3) / 系统关联」七组排列，每条编排是一个独立编译单元；
-  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 13 条
+- **集成测试按域拆成独立文件**（`src-tauri/tests/chain_*.rs`），15 条链路按
+  「文件(3) / 大表格(4) / 表格编辑(2) / 会话 / 批量 / 压缩(3) / 系统关联」七组排列，每条编排是一个独立编译单元；
+  共享设施放 `tests/common/mod.rs`；系统关联一条在 `#[cfg(windows)]` 内，非 Windows 编译为 14 条
 - **源码内不挂 `#[cfg(test)]` 单元测试**：简单断言分散在各文件会让验证入口失去焦点
 - **昂贵的 setup 只在入口准备一次**：建临时目录、装配服务容器都属于这一类
 - 测试用 `tempfile::tempdir()` 隔离，**绝不碰用户真实的 `%APPDATA%\NoteText`**
@@ -483,7 +483,7 @@ mod dialog_stub;
 | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Rust 格式门禁 |
 | `cargo check --manifest-path src-tauri/Cargo.toml --all-targets` | 全目标编译检查 |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | 静态检查 |
-| `cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc` | 14 条链路测试 |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | 15 条链路测试（7 个测试二进制全跑，与 CI 同一命令） |
 | `npm --prefix frontend run check:grid` | 虚拟滚动窗口坐标守护 |
 
 `tauri::generate_context!()` 会在 Rust 编译期读取 `frontend/dist`；新 checkout 中该目录
@@ -496,7 +496,6 @@ mod dialog_stub;
 | 文件 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 / base64 通道写出垃圾字节 / 改名覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
 | | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 单块写回动到别的块 / 整文查找命中行号对不上 / 查找一轮一轮接不上 / 非 UTF-8 文件命中行号错位 / 块边界切在多字节字符中间解出替换符 |
 | | `wide_line_file_probes_paginates_and_jumps_to_line_start` | 超宽行探不出来（压缩 JSON 卡死的根源漏检）/ 按行取数跨块行被切碎 / 深处分页解成替换符 / 越界页不给空数组 / 巨行翻页整行进内存 / 行号跳转落在行尾碎片 |
-| | `stream_decode_keeps_multibyte_across_any_chunk_boundary` | 块边界切在多字节字符中间解出替换符（按编码 × 块长穷举） |
 | 大表格 | `csv_table_indexes_pages_finds_and_writes_back` | 记录数算错 / 行下标与内容错位 / 命中行号对不上 / 改格动到别的行 / 另存为改到源文件 / 引号内的换行把记录切断 / 百万行深处给不满页 |
 | | `table_view_sorts_filters_and_keeps_file_untouched` | 排序后行号与内容对不上 / 筛选后总数没变 / 排序把引号字段里的换行当记录边界 / 取消视图回不到文件顺序 / 排序筛选改动了源文件字节 |
 | | `csv_table_decodes_deep_pages_and_counts_trailing_row` | GB18030 深处分页解成替换符 / UTF-16 BOM 文件行号错位 / 无尾换行的末行取不到 / 表头误判无法纠正 / 强制 UTF-8 时首格多出 U+FEFF |
@@ -528,11 +527,11 @@ npm --prefix frontend run build                                      # 先生成
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check      # 必须无输出
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml                      # 15 条链路，与 CI 同一命令
 ./frontend/node_modules/.bin/tauri build                              # 产物 target/release/NoteText.exe
 ```
 
-为什么测试不喂 `--all-targets`：没有测试文件的包交给 `cargo test` 也要编译一遍，
+测试单命令跑全部 7 个测试二进制；没有测试文件的包交给 `cargo test` 也要编译一遍，
 而它们的编译错误已经由 `cargo check --all-targets` 兜住了。
 
 `rustfmt --check` 要能当门禁用，行尾就必须统一：`.gitattributes` 里 `*.rs text eol=lf`

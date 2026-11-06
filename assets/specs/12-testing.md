@@ -23,17 +23,17 @@
 src-tauri/tests/       每域一个文件，一条长链路覆盖一个域的全部能力面
   common/mod.rs         隔离装配与构造器（不单独编译成测试）
   chain_file.rs         文件往返保真与文件树护栏、大文件分块、宽行探测与按行取数
-  chain_table.rs        大表格：CSV 记录边界与规模、编码与边界、JSON 数组 / JSONL
+  chain_table.rs        大表格：CSV 记录边界与规模、排序筛选视图、编码与边界、JSON 数组 / JSONL
   chain_sheet.rs        XLSX 分页、样式保留、跨窗口取页与切表
   chain_session.rs      会话恢复与空列表序列化、备份导出导入
   chain_batch.rs        两阶段查找替换与重命名
-  chain_archive.rs      可写格式全生命周期、只读格式解析、异常包拒绝
+  chain_archive.rs      可写格式全生命周期、只读格式解析（含 iso / lz / Z）、异常包拒绝
   chain_file_assoc.rs   注册与注销（仅 Windows）
 ```
 
 每个域一个测试二进制，编译相互独立、可单独跑。非 Windows 下
 `chain_file_assoc` 不编译；本项目只发 Windows、CI 跑 `windows-latest`，
-门禁口径按 7 个集成测试二进制、14 条链路。
+门禁口径按 7 个集成测试二进制、15 条链路。
 
 ## 链路清单
 
@@ -48,6 +48,7 @@ src-tauri/tests/       每域一个文件，一条长链路覆盖一个域的全
 | `session_and_backup_survive_restart_and_reimport` | chain_session | 首次启动 → 开三个标签 → 重启 → 关光标签 → 备份导出导入 | 空列表序列化成 null（前端白屏）/ 标签顺序与活跃项丢失 / 关光标签丢会话行 / 备份导不回来（换机丢数据）/ 导入抹掉本机数据 |
 | `batch_preview_then_apply_touches_only_confirmed_files` | chain_batch | 扫描 → 勾选 → 替换 → 改名 | 扫描阶段就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |
 | `csv_table_indexes_pages_finds_and_writes_back` | chain_table | 打开 5 万行 CSV → 翻页 → 整表查找 → 改一格删一行 → 另存为 → 引号换行 / 百万行满页 | 记录数算错 / 行下标与内容错位 / 命中行号对不上 / 改格动到别的行 / 另存为改到源文件 / 引号内换行切断记录 / 百万行深处给不满页 |
+| `table_view_sorts_filters_and_keeps_file_untouched` | chain_table | 排序 → 筛选 → 取消回文件顺序 | 排序后行号与内容对不上 / 筛选后总数没变 / 排序把引号字段里的换行当记录边界 / 取消视图回不到文件顺序 / 排序筛选改动了源文件字节 |
 | `csv_table_decodes_deep_pages_and_counts_trailing_row` | chain_table | GB18030 十万行深处分页 → UTF-16LE BOM 跨块 → 无尾换行末行 → 表头纠正 → 强制编码遇 BOM | 深处分页解成替换符 / UTF-16 行号错位 / 末行取不到 / 表头误判无法纠正 / 首格多出 U+FEFF |
 | `json_table_indexes_pages_and_writes_back` | chain_table | 打开跨行的顶层 JSON 数组 → 翻页 → 改一个元素；打开 JSONL → 翻页 → 改一格 | 按行切把元素切碎 / 含逗号的字段被切开 / 改一个元素动到相邻元素 / 嵌套数组被切碎 / 改一格动到相邻行 |
 | `sheet_opens_pages_edits_and_preserves_styles` | chain_sheet | 打开 xlsx → 分页浏览 → 跨表查找 → 改格加行 → 重开 | 整块解析把百万行工作表读进内存 / 改单元格把样式表与未编辑工作表全冲掉 / 共享串解成乱码 / 新增行丢失 |
@@ -75,7 +76,7 @@ npm --prefix frontend run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml
 npm --prefix frontend run check:grid
 ```
 

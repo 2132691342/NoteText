@@ -111,7 +111,8 @@ npm --prefix frontend run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
+cargo test --manifest-path src-tauri/Cargo.toml
+npm --prefix frontend run check:grid
 ```
 
 ## 项目结构
@@ -205,15 +206,15 @@ NoteText/
 
 ## 测试
 
-集成测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件
+集成测试按域拆成 `src-tauri/tests/chain_*.rs` 七个文件、15 条链路
 （文件 / 大表格 / 表格编辑 / 会话与备份 / 批量 / 压缩 / 系统关联；系统关联一条仅 Windows）。
-分块解码的静默损坏由 `chain_file` 的边界穷举守护。
+分块解码的静默损坏由 `chain_file` 的边界穷举段守护。
 **每个测试函数名就是它守护的那件坏事**，失败时报文直接指出坏在哪。
 全量约 1 秒；一条测试就是一条完整的用户故事，改一个小功能只跑一个域。
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_file --test chain_session --test chain_batch --test chain_table --test chain_sheet --test chain_archive --test chain_file_assoc
-cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- archive
+cargo test --manifest-path src-tauri/Cargo.toml          # 全量（与 CI 同一命令）
+cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- archive   # 只跑一个域
 ```
 
 判据见 [AGENTS.md §3](AGENTS.md) 与 [assets/specs/12](assets/specs/12-testing.md)：
@@ -221,13 +222,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --test chain_archive -- archive
 
 | 分组 | 守护的坏事（摘） |
 |---|---|
-| 文件 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；GBK CSV 在文本视图与表格预览里解出同一份汉字；原子写不留临时文件；重命名拒绝覆盖 / 成环 / 路径逃逸 |
+| 文件 | 行尾 / BOM 在读写链上无损；选错编码退回探测编码而非打不开；原子写不留临时文件；重命名拒绝覆盖 / 成环 / 路径逃逸；超宽行探得出、按行取数跨块不切碎、巨行跳转落行首 |
 | 大文件 | 15MB 日志逐块拼回原文；行号定位落对块；外部修改报 stale；单块写不动前后字节；过期基线被拒；GB18030 文件的命中行号不错位 |
 | 会话与备份 | 首次启动写默认配置；关光标签仍留会话行（记窗口尺寸）；空列表序列化成 `[]` 而非 `null`；五个用户数据表导出后导得回；不在备份里的本机数据不被抹掉 |
 | 批量 | 扫描阶段不落盘、应用只改勾选的；重命名遇冲突整体拒绝、无冲突真的落地 |
-| 大表格 | 5 万行 CSV 的记录数 / 行下标 / 命中行号都对得上；引号字段里的换行不被切断；GB18030 的汉字不被误判成分隔符；跨行的 JSON 数组元素不被切碎；改一格保存后其余字节逐字节不变 |
+| 大表格 | 5 万行 CSV 的记录数 / 行下标 / 命中行号都对得上；排序筛选不动源文件；引号字段里的换行不被切断；GB18030 的汉字不被误判成分隔符；跨行的 JSON 数组元素不被切碎；改一格保存后其余字节逐字节不变 |
 | 表格编辑 | 分页读只解析要的行；改单元格保住样式表与未编辑工作表；共享串解析、跨表查找、新增行都正确 |
-| 压缩 | 16 种可写格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；只读格式拒绝创建且不留半文件；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
+| 压缩 | 16 种可写格式压缩往返逐字节无损；改名后的 .tar.xz / .tar.br 照样认得出；追加 / 删除 / 分卷合并不丢内容；只读格式（含 iso / lz / Z）拒绝创建且不留半文件；恶意条目整包拒绝；密码三态分得清；损坏的包测得出 |
 | 系统关联 | 关联注册写对注册表三件套；注销不留悬空默认、不误伤另一组 |
 
 ## 许可证
