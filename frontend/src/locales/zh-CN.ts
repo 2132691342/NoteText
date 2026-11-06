@@ -136,6 +136,7 @@ export default {
   },
   editor: {
     openFailedTitle: '文件无法读取',
+    opening: '正在打开 {name} …',
     openWithSystem: '用系统程序打开',
   },
   toolbar: {
@@ -274,8 +275,8 @@ export default {
   },
   // 大文件分块只读视图
   chunked: {
-    block: '块',
-    fromLine: '起始行',
+    position: '行 {n} / {total}',
+    emptyFile: '这是一份空文件',
     gotoPlaceholder: '行号',
     goto: '跳转',
     readonly: '只读分块',
@@ -286,6 +287,7 @@ export default {
     saveBlock: '保存本块',
     discardBlock: '放弃改动',
     editingWarn: '只改本块',
+    wideEditWarn: '这一块包含超长行，编辑可能出现短暂卡顿',
     savedBlock: '已保存 {name} 的当前块',
     staleBlock: '这块已被外部程序改过，已重新加载',
     discardTitle: '放弃本块的改动？',
@@ -528,18 +530,6 @@ export default {
     toastCancelled: '{kind}已取消：{name}',
     toastFailed: '{kind}失败：{reason}',
   },
-  bigfile: {
-    mode: '大文件模式',
-    lines: '共 {n} 行',
-    readonly: '大文件只读',
-    readonlyHint: '文件较大，已用分页视图打开：可按行跳转与全局查找，修改请另存为副本',
-    findPlaceholder: '在大文件中查找…',
-    jump: '第 {line} 行',
-    indexed: '已建立行索引',
-    indexing: '正在建立行索引…',
-    saveAs: '另存为副本',
-    tooLargeForEditor: '文件超过 {mb} MB，已切换到大文件模式（只读）',
-  },
   dialog: {
     unsavedTitle: '「{name}」有未保存的修改',
     unsavedBody: '关闭后会丢失这些修改。',
@@ -573,9 +563,15 @@ export default {
     bigFile: {
       title: '「{name}」（{size}）较大，如何打开？',
       chunked: '分块打开（快，可逐块编辑）',
-      chunkedHint: '秒开；按块浏览，需要时只解锁当前块来改',
+      chunkedHint: '秒开；虚拟滚动浏览全文件，需要时只解锁当前块来改',
       normal: '普通打开（整篇编辑）',
       normalHint: '全篇可编辑，但几百 MB 时会明显变慢',
+      normalWideHint: '全篇可编辑，但包含超长行，滚动到它时可能卡顿',
+    },
+    wideLine: {
+      title: '「{name}」包含超长行，如何打开？',
+      chunkedHint: '秒开；超长行截断显示，浏览与查找不受影响',
+      normalHint: '整篇进编辑器，渲染超长行时可能卡顿',
     },
     crash: {
       title: '上次未正常退出，发现 {n} 份未保存快照',

@@ -177,7 +177,7 @@ paste 事件自带数据，不经过 `navigator.clipboard`，没有权限问题�
 | `binary` | 可执行 / 媒体，或未知扩展名且 `stat.is_binary`（iso / img 等极少数归档扩展名也落这里，由 Hex 视图兜底） | `HexView.vue`（虚拟滚动，只渲染可视区） |
 | `legacyDoc` | `.doc` `.docx` `.ppt(x)` `.pdf` `.epub` 等无内置渲染器的文档 | `DocPreview.vue` → 「没有内置渲染」卡片 + 外部程序入口 |
 | `archive` | 压缩包（23 种格式全由压缩子系统处理） | 归档浏览浮窗（specs/18） |
-| `chunked` | 标签带 `chunked` 标记（>512MB 自动分块，或会话恢复时按 `1004` 降级） | `ChunkedViewer.vue`（1MB 块导航，只读 + 单块解锁编辑） |
+| `chunked` | 标签带 `chunked` 标记（>512MB 自动分块；宽行探测 / 会话恢复 / 挂载兜底也会转分块） | `ChunkedViewer.vue`（虚拟滚动网格浏览，只读 + 单块解锁编辑） |
 | `sheet` 可编辑 | CSV / TSV / JSONL / NDJSON（无大小限制）；XLSX / XLSM | `SheetEditor.vue`（大表格网格，分页取数）/ `WorkbookEditor.vue`（单元格网格，值 + 公式可改） |
 | `sheet` 只读 | XLS 旧格式与 ODS | `DocPreview.vue`（表格只读预览，可另存为 xlsx 后进网格编辑） |
 | `image` | 扩展名表 | `DocPreview.vue`（动态 import 图片预览器） |
@@ -252,7 +252,7 @@ Excel 与 CSV 例外——那类文件用户想看的就是表格本身。
 **不引模态键位系统**：目标用户是 Windows 桌面用户，
  modal editing 的学习成本与收益不成比例。
 
-## 右键菜单、选区浮条与文本变换
+## 右键菜单与文本变换
 
 菜单项与命令是两份数据：菜单在 `CodeEditor.vue` 的 `buildMenuItems()` 里
 （**每次右键现算快照**存进 `menuItems` ref），命令在 `useCommands.ts` 注册表里
@@ -261,11 +261,11 @@ Excel 与 CSV 例外——那类文件用户想看的就是表格本身。
 菜单顺序就是使用频率：剪贴板 → 选中快操作 → 查找 → 注释与大小写 →
 行操作 → 书签行操作（低频，沉底）。
 
-**选区浮条**：选中即在选区上方浮出一步操作条（格式化 / 压缩 JSON、
-转 YAML、大小写、查找）。位置由 `coordsAtPos` 算（视口坐标，fixed 定位）；
-`docChanged` 分支也要刷新它——替换后选区变了，提前 return 的分支
-会让浮条残留。快操作替换后光标收在结果尾部，不选中新文本
-（保持选中会让浮条立刻再弹一次）。
+**不做选区浮条**：选中文本时不弹任何悬浮 UI。选中即弹的操作条有四个
+天然缺陷：选中 1 个字符就弹、正好盖住向上拖选的路径、`mousedown.prevent`
+吞掉覆盖区域的点击、滚动后停在原地遮着无关文本。文本操作的归宿是
+右键菜单 + 主菜单 + 快捷键（快操作键位见下），选中的响应只有
+就地高亮同词与菜单项使能。
 
 **一键快操作**（`useQuickActions`）：选中文本直接执行、结果原地替换，
 不经浮窗。JSON 格式化 / 压缩走后端（错误报行列），后端不可用时退回

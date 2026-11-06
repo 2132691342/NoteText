@@ -417,7 +417,7 @@ export function useTableGrid(opts: TableGridOptions) {
     return best
   }
 
-  /** 渲染窗口里的每一行。 */
+  /** 渲染窗口里的每一行。`pending` 表示所在页还没取到：模板画占位。 */
   const windowRows = computed(() => {
     const start = windowStart.value
     const end = windowEnd.value
@@ -433,6 +433,8 @@ export function useTableGrid(opts: TableGridOptions) {
       cells: string[]
       /** 插入行的标记。 */
       inserted: boolean
+      /** 所在页还没取到。 */
+      pending: boolean
     }> = []
     const ops = insertedRows.value
     for (let d = start; d < end; d += 1) {
@@ -447,6 +449,7 @@ export function useTableGrid(opts: TableGridOptions) {
           label: String(r + 1),
           cells: cellsOf(r),
           inserted: false,
+          pending: !pages.value.has(Math.floor(r / PAGE_SIZE)),
         })
         continue
       }
@@ -462,6 +465,7 @@ export function useTableGrid(opts: TableGridOptions) {
         label: '＋',
         cells: rec,
         inserted: true,
+        pending: false,
       })
     }
     return out
@@ -582,8 +586,10 @@ export function useTableGrid(opts: TableGridOptions) {
     e.preventDefault()
     const dir = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0
     if (dir === 0) return
+    // 步进跟随滚轮幅度：标准滚轮一格 ±120 → 3 行；触控板的连续小增量按比例缩。
+    const mag = Math.min(Math.abs(e.deltaY), 120)
     // 一帧内的多次滚轮先累积，帧边界一次应用：快速滚动不失真也不掉帧。
-    wheelAcc += dir * 3 * ROW_H
+    wheelAcc += ((dir * mag) / 120) * 3 * ROW_H
     if (!wheelRaf) {
       wheelRaf = requestAnimationFrame(() => {
         wheelRaf = 0

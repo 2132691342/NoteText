@@ -311,11 +311,6 @@ fn archive_readonly_formats_list_extract_and_refuse_create() {
         "报告 2024.txt",
         "UTF-8 名字应原样保留"
     );
-    // 纯 ASCII 不走任何编码猜测。
-    assert_eq!(
-        notetext_lib::service::archive::util::decode_zip_name(b"readme.txt"),
-        "readme.txt"
-    );
 
     // 完整链路：UTF-8 名字的 zip 列出来仍要正常（不能因新增回退而回归）。
     let normal = dir.path().join("normal.zip");

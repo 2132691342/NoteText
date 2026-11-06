@@ -494,7 +494,8 @@ mod dialog_stub;
 | 分组 | 测试 | 坏法 |
 |---|---|---|
 | 文件 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 临时文件堆积 / base64 通道写出垃圾字节 / 改名覆盖已有文件 / 目录移进自己子目录 / 路径逃逸 / 一个坏路径让整批删除失败 |
-| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 单块写回动到别的块 / 整文查找命中行号对不上 / 查找一轮一轮接不上 / 非 UTF-8 文件命中行号错位 |
+| | `big_file_block_index_reads_blocks_and_reports_lines` | 分块逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 单块写回动到别的块 / 整文查找命中行号对不上 / 查找一轮一轮接不上 / 非 UTF-8 文件命中行号错位 / 块边界切在多字节字符中间解出替换符 |
+| | `wide_line_file_probes_paginates_and_jumps_to_line_start` | 超宽行探不出来（压缩 JSON 卡死的根源漏检）/ 按行取数跨块行被切碎 / 深处分页解成替换符 / 越界页不给空数组 / 巨行翻页整行进内存 / 行号跳转落在行尾碎片 |
 | | `stream_decode_keeps_multibyte_across_any_chunk_boundary` | 块边界切在多字节字符中间解出替换符（按编码 × 块长穷举） |
 | 大表格 | `csv_table_indexes_pages_finds_and_writes_back` | 记录数算错 / 行下标与内容错位 / 命中行号对不上 / 改格动到别的行 / 另存为改到源文件 / 引号内的换行把记录切断 / 百万行深处给不满页 |
 | | `table_view_sorts_filters_and_keeps_file_untouched` | 排序后行号与内容对不上 / 筛选后总数没变 / 排序把引号字段里的换行当记录边界 / 取消视图回不到文件顺序 / 排序筛选改动了源文件字节 |

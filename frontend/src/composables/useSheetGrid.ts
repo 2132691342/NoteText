@@ -175,9 +175,9 @@ export function useSheetGrid(opts: SheetGridOptions) {
     }
   }
 
-  /** 渲染窗口里的每一行。 */
+  /** 渲染窗口里的每一行。`pending` 表示所在页还没取到：模板画占位。 */
   const windowRows = computed(() => {
-    const out: Array<{ index: number; cells: (CellValue | null)[] }> = []
+    const out: Array<{ index: number; cells: (CellValue | null)[]; pending: boolean }> = []
     const start = windowStart.value
     const end = windowEnd.value
     const width = totalCols.value
@@ -196,7 +196,7 @@ export function useSheetGrid(opts: SheetGridOptions) {
         const [rr, cc] = key.split(':').map(Number)
         if (rr === r && cc < width) cells[cc] = v
       }
-      out.push({ index: r, cells })
+      out.push({ index: r, cells, pending: page == null })
     }
     return out
   })
@@ -238,7 +238,9 @@ export function useSheetGrid(opts: SheetGridOptions) {
     e.preventDefault()
     const dir = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0
     if (dir === 0) return
-    wheelAcc += dir * 3 * ROW_H
+    // 步进跟随滚轮幅度：标准滚轮一格 ±120 → 3 行；触控板的连续小增量按比例缩。
+    const mag = Math.min(Math.abs(e.deltaY), 120)
+    wheelAcc += ((dir * mag) / 120) * 3 * ROW_H
     if (!wheelRaf) {
       wheelRaf = requestAnimationFrame(() => {
         wheelRaf = 0

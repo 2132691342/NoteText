@@ -98,6 +98,9 @@ import type {
   BigFileBlockWriteVO,
   BigFileFindReq,
   BigFileFindVO,
+  BigFileLinesReq,
+  BigFileLinesVO,
+  TextShapeVO,
   WorkbookVO,
   SheetSaveReq,
   SheetSaveVO,
@@ -209,6 +212,8 @@ export const api = {
     }),
   readDir: (dir: string) => call<DirEntry[]>('read_dir', { dir }),
   statFile: (path: string) => call<FileMeta>('stat_file', { path }),
+  /** 文本形态探测：头部 ≤2MB 采样，前端据此决定普通打开还是分块打开。 */
+  probeTextShape: (path: string) => call<TextShapeVO>('probe_text_shape', { path }),
   // 大文件分块：索引建一次，逐块按需读（进度走 bigfile:progress 事件）。
   // writeBlock 只换目标块的字节区间，其余字节原样不动（乐观锁：old_text 过期即拒）。
   bigFile: {
@@ -217,6 +222,8 @@ export const api = {
       call<BigFileBlockVO>('big_file_block', { path, block_index: blockIndex }),
     gotoLine: (path: string, line: number) =>
       call<number>('big_file_goto_line', { path, line }),
+    /** 按全局行号取一页行：只读网格浏览的数据源（跨块巨行拼接 + 超宽行截断）。 */
+    lines: (req: BigFileLinesReq) => call<BigFileLinesVO>('big_file_lines', { req }),
     writeBlock: (req: BigFileBlockWriteReq) =>
       call<BigFileBlockWriteVO>('big_file_write_block', { req }),
     find: (req: BigFileFindReq) => call<BigFileFindVO>('big_file_find', { req }),

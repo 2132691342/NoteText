@@ -19,6 +19,7 @@ import { baseName, formatSize } from '@/utils'
 import { isTextKind, isTableGrid, isWorkbookSheet, kindOf } from '@/utils/fileKind'
 import { askPick } from '@/components/common/askPick'
 import { stagePendingContent } from '@/composables/useEditorRegistry'
+import { SHAPE_PROBE_MIN, isWide, probeShape } from '@/utils/textShape'
 
 /** 一个标签页。`path` 为空 = 新建未保存的草稿标签。 */
 export interface Tab {
@@ -38,10 +39,6 @@ export interface Tab {
   showing_preview: boolean
   /** 内容被截断（大文件只读了前段）：此时只读，禁止保存。 */
   truncated: boolean
-  /**
-   * 走大文件分页视图：超过 64MB 的文本不再进 CodeMirror，改由后端建行索引 + 虚拟滚动渲染。
-   */
-  big_file: boolean
   /** 截断时实际读入的字节数：状态栏据此提示「已读前 X MB」。 */
   truncated_bytes: number
   /** 分屏时次视图是否打开。 */
@@ -63,7 +60,7 @@ let nextId = 1
  */
 const FULL_READ_LIMIT = 64 * 1024 * 1024
 
-/** 大文件模式的提示阈值（MB）：与上面同源，文案里不写死数字。 */
+/** 全量读阈值的 MB 数值：弹窗文案里不写死数字。 */
 export const FULL_READ_LIMIT_MB = Math.round(FULL_READ_LIMIT / 1024 / 1024)
 
 /**
@@ -71,6 +68,9 @@ export const FULL_READ_LIMIT_MB = Math.round(FULL_READ_LIMIT / 1024 / 1024)
  * 对齐（512MB）。再大只能分块（可逐块编辑）。
  */
 const BIG_EDIT_LIMIT = 512 * 1024 * 1024
+
+/** 全量读挂「打开中」提示的阈值：几 MB 以内读得比提示本身还快。 */
+const LOADING_HINT_LIMIT = 16 * 1024 * 1024
 
 export const useEditorStore = defineStore('editor', () => {
   const tabs = ref<Tab[]>([])
@@ -82,6 +82,8 @@ export const useEditorStore = defineStore('editor', () => {
 
   const active = computed(() => tabs.value.find((t) => t.id === activeId.value) ?? null)
   const dirtyCount = computed(() => tabs.value.filter((t) => t.dirty).length)
+  /** 正在全量读的文件路径：编辑区据此挂「打开中」提示，大文件读入不再像假死。 */
+  const opening = ref<string | null>(null)
 
   /**
    * 新建空标签。`draftId` 非空表示从草稿恢复。
@@ -111,7 +113,6 @@ export const useEditorStore = defineStore('editor', () => {
       showing_preview: false,
       truncated: false,
       truncated_bytes: 0,
-      big_file: false,
       split: false,
       encoding_uncertain: false,
       chunked: false,
@@ -249,12 +250,18 @@ export const useEditorStore = defineStore('editor', () => {
 
       let effective = mode
       let forceBig = false
+      // 宽行探测：CodeMirror 对几 MB 的单行会冻住主线程，开之前先看一眼头部。
+      // 用户显式给了读取模式就不再探测——那是一次明确的意图。
+      let wide = false
+      if (!effective && (meta === null || meta.size > SHAPE_PROBE_MIN)) {
+        wide = isWide(await probeShape(path))
+      }
       if (!effective && meta && meta.size > FULL_READ_LIMIT) {
         if (meta.size > BIG_EDIT_LIMIT) {
           // 超过显式放行上限：不再询问，直接进分块（秒开，可逐块编辑）。
           return await openChunked(path)
         }
-        // 32MB ~ 512MB：弹窗让用户选——普通打开可编辑但慢，分块秒开。
+        // 64MB ~ 512MB：弹窗让用户选——普通打开可编辑但慢，分块秒开。
         const choice = await askPick({
           title: tr('dialog.bigFile.title', {
             name: fileNameOf(path),
@@ -264,7 +271,7 @@ export const useEditorStore = defineStore('editor', () => {
             {
               value: 'normal',
               label: tr('dialog.bigFile.normal'),
-              hint: tr('dialog.bigFile.normalHint'),
+              hint: tr(wide ? 'dialog.bigFile.normalWideHint' : 'dialog.bigFile.normalHint'),
             },
             {
               value: 'chunked',
@@ -277,8 +284,42 @@ export const useEditorStore = defineStore('editor', () => {
         if (choice !== 'normal') return null // 用户取消：不开标签
         effective = { mode: 'full' }
         forceBig = true
+      } else if (!effective && wide) {
+        // 不足全量读阈值但含超宽行：同样给一次选择，普通打开可能卡顿。
+        const choice = await askPick({
+          title: tr('dialog.wideLine.title', { name: fileNameOf(path) }),
+          items: [
+            {
+              value: 'chunked',
+              label: tr('dialog.bigFile.chunked'),
+              hint: tr('dialog.wideLine.chunkedHint'),
+            },
+            {
+              value: 'normal',
+              label: tr('dialog.bigFile.normal'),
+              hint: tr('dialog.wideLine.normalHint'),
+            },
+          ],
+        })
+        if (choice === 'chunked') return await openChunked(path)
+        if (choice !== 'normal') return null
       }
-      const content = await api.readFile(path, undefined, effective, forceBig)
+      // 大文件全量读有秒级耗时：挂「打开中」提示，别让用户以为界面死了。
+      const hintLoading = (meta?.size ?? 0) > LOADING_HINT_LIMIT
+      if (hintLoading) opening.value = path
+      let content: FileContentVO
+      try {
+        content = await api.readFile(path, undefined, effective, forceBig)
+      } catch (e) {
+        const err = normalizeError(e)
+        if (err.code === '1004') {
+          // stat 失败或建标签竞态导致没走到分流的：这里兜底转分块，不弹错误。
+          return await openChunked(path)
+        }
+        throw e
+      } finally {
+        if (hintLoading) opening.value = null
+      }
       const tab = newTab()
       // 正文暂存：编辑器挂载时直接消费，不再重读一遍（截断标签尤其重要，
       // 挂载时不带 mode 的重读会被后端拒绝，用户看到错误面）。
@@ -332,9 +373,7 @@ export const useEditorStore = defineStore('editor', () => {
     // 分块只读标签不做全量重读：读块时后端按修改时间报 stale，够用。
     if (tab.chunked) return
     try {
-      // 大文件模式没有完整正文可重载：只刷元数据。
       // 截断标签按原样读前段：全量读会在上限之外的文件上直接报错，重载永远失败。
-      if (tab.big_file) return
       const c = await api.readFile(tab.path, undefined, tab.truncated ? { mode: 'head' } : undefined)
       // 只更新元数据，正文由组件层按 fs:changed 事件决定是否替换
       // （用户正在编辑时不强制覆盖，见 composables/useExternalChange.ts）。
@@ -405,7 +444,6 @@ export const useEditorStore = defineStore('editor', () => {
         showing_preview: false,
         truncated: false,
         truncated_bytes: 0,
-        big_file: false,
         split: d.split,
         encoding_uncertain: false,
         chunked: false,
@@ -422,7 +460,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * 会话恢复后把超大标签改成分块模式。
+   * 会话恢复后把超大或含超宽行的标签改成分块模式。
    * 只对文本形态的标签做：二进制与表格各有自己的打开路径。
    */
   async function markOversizedAsChunked() {
@@ -442,6 +480,12 @@ export const useEditorStore = defineStore('editor', () => {
             tab.chunked = true
             tab.read_only = true
             tab.truncated = false
+            return
+          }
+          // 尺寸不大但含超宽行的文件同样进分块：全量读进 CodeMirror 会冻结。
+          if (meta.size > SHAPE_PROBE_MIN && isWide(await probeShape(tab.path))) {
+            tab.chunked = true
+            tab.read_only = true
           }
         } catch {
           /* stat 失败：文件可能已不在，保持原样让组件层给错误面 */
@@ -477,6 +521,7 @@ export const useEditorStore = defineStore('editor', () => {
     active,
     dirtyCount,
     splitRatio,
+    opening,
     newTab,
     findByPath,
     activate,

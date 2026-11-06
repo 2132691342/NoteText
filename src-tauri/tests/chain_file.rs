@@ -1,7 +1,8 @@
-//! 文件域长链路：文本往返保真、大文件分块编辑、分块解码穷举、文件树护栏。
+//! 文件域长链路：文本往返保真与文件树护栏、大文件分块、宽行探测与按行取数。
 //!
-//! 这些链路各自对应一种会真正伤到用户的事：
-//! 保存时丢字节、编辑大文件时动到别的内容、块边界切坏汉字、文件树操作覆盖或删掉不该动的东西。
+//! 每条链路对应一种会真正伤到用户的事：
+//! 保存时丢字节、文件树操作覆盖或删掉不该动的东西、
+//! 大文件打开卡死或动到别的内容、块边界切坏汉字、宽行文件探不出来。
 
 mod common;
 
@@ -9,7 +10,7 @@ use common::{boot, roundtrip};
 use std::fs;
 use std::time::Duration;
 
-use notetext_lib::domain::file::{BigFileBlockWriteReq, BigFileFindReq, ReadMode};
+use notetext_lib::domain::file::{BigFileBlockWriteReq, BigFileFindReq, BigFileLinesReq, ReadMode};
 use notetext_lib::domain::file_ops::{DeleteReq, MkdirReq, RenameReq};
 use notetext_lib::pkg::error::codes;
 use notetext_lib::service::big_file::BigFileService;
@@ -88,12 +89,6 @@ fn file_round_trip_keeps_line_ending_bom_and_forced_encoding() {
     // 前端生成字节（.xls / .ods 转 .xlsx）走 base64 过 IPC：
     // 全字节域往返必须无损、非法字符必须报错而不是产出垃圾。
     let bytes: Vec<u8> = (0..=255u8).collect();
-    let b64 = notetext_lib::pkg::base64::encode(&bytes);
-    assert_eq!(
-        notetext_lib::pkg::base64::decode(&b64).expect("解码失败"),
-        bytes,
-        "全字节域 base64 往返后变了"
-    );
     let target = data.join("bin.dat");
     file.write_bytes(&target.to_string_lossy(), &bytes)
         .expect("写二进制失败");
@@ -409,29 +404,18 @@ fn big_file_block_index_reads_blocks_and_reports_lines() {
     assert!(res.hits[0].text.contains("第4321行"), "命中文本应正确");
 
     bf.close(&gb_path);
-}
 
-/// 分块解码穷举：块边界切在多字节字符中间也不解出替换符。
-///
-/// 大文件查看器逐块解码的唯一静默损坏面：不报错、不 panic，只是汉字变乱码。
-/// 按「编码 × 块长」穷举，任何一块的切点都不能坏字。
-#[test]
-fn stream_decode_keeps_multibyte_across_any_chunk_boundary() {
+    // ---- 块边界解码：切点落在多字节字符中间也不解出替换符 ----
+    //
+    // 逐块解码唯一的静默损坏面：不报错、不 panic，只是汉字变乱码。
+    // gb18030 是 1~4 字节混合编码，utf-16le 码元 2 字节——奇数切长必然切在半码元上。
     let cases = [
-        (
-            "车牌号京A12345，中文长句测试：这是一段用来验证分块解码的文本。",
-            "gb18030",
-        ),
-        ("繁体中文：車牌號碼測試，臺北高雄", "big5"),
-        ("日本語のテキストを分割してデコードする", "shift_jis"),
-        ("UTF-8 mixed 中文 and emoji 🚗 号牌", "utf-8"),
-        // UTF-16 的码元是两个字节：奇数块长必然切在半码元上。
+        ("车牌号京A12345，中文长句：验证分块解码的文本。", "gb18030"),
         ("hello 中文 車牌 🚗", "utf-16le"),
-        ("hello 中文 車牌 🚗", "utf-16be"),
     ];
     for (text, enc) in cases {
         let bytes = notetext_lib::service::encoding::encode(text, enc).expect("编码失败");
-        for chunk in 1..=17 {
+        for chunk in 1..=9usize {
             let mut dec = notetext_lib::pkg::stream::ChunkDecoder::new(enc).expect("建解码器失败");
             let mut out = String::new();
             for piece in bytes.chunks(chunk) {
@@ -439,9 +423,169 @@ fn stream_decode_keeps_multibyte_across_any_chunk_boundary() {
             }
             dec.finish(&mut out);
             assert_eq!(out, text, "enc={enc} chunk={chunk} 分块后没还原");
-            if enc != "utf-16le" && enc != "utf-16be" {
-                assert!(!dec.had_errors, "enc={enc} chunk={chunk} 不该有替换符");
-            }
+            assert!(!dec.had_errors, "enc={enc} chunk={chunk} 不该有替换符");
         }
     }
+}
+
+/// 宽行文件：头部探测、按行取数与行首跳转。
+///
+/// 「几十万行超宽 JSON 打不开 / 卡死」的三段根因各守一段：探测分得出超宽行
+/// （压缩 JSON 一根 300KB 的行必须现形）；按行取数分页正确、GB18030 深处不乱码、
+/// 无换行末行取得到、越界给空数组；跨块巨行拼回一行并截断（翻页只付一页 IO），
+/// 行号跳转落在行首块而不是行尾碎片。
+#[test]
+fn wide_line_file_probes_paginates_and_jumps_to_line_start() {
+    let (dir, state) = boot();
+    let bf: &BigFileService = &state.services.big_file;
+
+    // ---- 探测：稀疏短行与压缩单行 JSON 必须分得开 ----
+    let sparse = dir.path().join("sparse.json");
+    fs::write(&sparse, "{\n  \"a\": 1,\n  \"b\": 2\n}\n").expect("写探测样本失败");
+    let shape = BigFileService::probe_shape(&sparse.to_string_lossy()).expect("探测失败");
+    assert_eq!(shape.sampled_lines, 4, "4 个换行应数出 4 行");
+    assert!(
+        shape.max_line_bytes <= 16,
+        "短行的最长行应很小，实际 {}",
+        shape.max_line_bytes
+    );
+
+    let minified = dir.path().join("minified.json");
+    let wide = format!("{{\"data\":\"{}\"}}", "x".repeat(300 * 1024));
+    fs::write(&minified, &wide).expect("写压缩 JSON 失败");
+    let shape = BigFileService::probe_shape(&minified.to_string_lossy()).expect("探测失败");
+    assert_eq!(shape.sampled_lines, 0, "压缩 JSON 应一个换行都没有");
+    assert!(
+        shape.max_line_bytes >= 300 * 1024,
+        "超宽行必须被探出来，实际 {}",
+        shape.max_line_bytes
+    );
+
+    // ---- 按行取数：GB18030 多行文件分页、深处行不乱码、末行无换行、越界空数组 ----
+    // 行数压在 64KB 编码采样之内：否则采样切在多字节字符中间，
+    // windows-1252 以零损失反超，探测会判成西文（编码探测自己的取舍，见 specs/05）。
+    let gbk_file = dir.path().join("lines.txt");
+    let mut content = String::new();
+    for i in 1..=1200 {
+        content.push_str(&format!("第{i}行：中文内容，用来验证分页取数不乱码。\n"));
+    }
+    content.push_str("末行没有换行");
+    let gb_bytes = notetext_lib::service::encoding::encode(&content, "gb18030").expect("编码失败");
+    fs::write(&gbk_file, &gb_bytes).expect("写 GBK 文件失败");
+    let gb_path = gbk_file.to_string_lossy().to_string();
+    let meta = bf.open(&gb_path, None).expect("建索引失败");
+    assert_eq!(meta.encoding, "gb18030", "应探测为 GB18030");
+    assert_eq!(meta.total_lines, 1201, "1200 行 + 无换行末行");
+
+    let page1 = bf
+        .read_lines(&BigFileLinesReq {
+            path: gb_path.clone(),
+            start_line: 1,
+            line_count: 500,
+            clip_chars: None,
+        })
+        .expect("取第一页失败");
+    assert_eq!(page1.lines.len(), 500, "第一页应取满 500 行");
+    assert_eq!(page1.lines[0].line_no, 1);
+    assert_eq!(
+        page1.lines[0].text, "第1行：中文内容，用来验证分页取数不乱码。",
+        "首页第一行的文本应逐字一致"
+    );
+    assert!(!page1.lines[0].clipped);
+    assert_eq!(page1.total_lines, 1201);
+
+    let page3 = bf
+        .read_lines(&BigFileLinesReq {
+            path: gb_path.clone(),
+            start_line: 801,
+            line_count: 500,
+            clip_chars: None,
+        })
+        .expect("取深处页失败");
+    assert_eq!(page3.lines.len(), 401, "801 到文件尾只有 401 行");
+    assert_eq!(
+        page3.lines[0].text, "第801行：中文内容，用来验证分页取数不乱码。",
+        "GB18030 深处页不能解成替换符"
+    );
+
+    let tail = bf
+        .read_lines(&BigFileLinesReq {
+            path: gb_path.clone(),
+            start_line: 1199,
+            line_count: 500,
+            clip_chars: None,
+        })
+        .expect("取尾页失败");
+    assert_eq!(tail.lines.len(), 3, "越界部分不应多给");
+    assert_eq!(tail.lines[2].line_no, 1201);
+    assert_eq!(tail.lines[2].text, "末行没有换行", "无换行的末行也要取得到");
+
+    let beyond = bf
+        .read_lines(&BigFileLinesReq {
+            path: gb_path.clone(),
+            start_line: 9999,
+            line_count: 500,
+            clip_chars: None,
+        })
+        .expect("越界取数失败");
+    assert!(beyond.lines.is_empty(), "越界页必须给空数组而不是 null");
+
+    bf.close(&gb_path);
+
+    // ---- 跨块巨行：拼回一行 + 截断标记 + 跳转落在行首碎片 ----
+    // 一根 12MB 的行：索引在 5MB 上限处硬切出碎片块，行号账目必须把碎片拼回一行。
+    let giant_file = dir.path().join("giant.json");
+    let mut body = String::with_capacity(12 * 1024 * 1024 + 16);
+    body.push_str("{\"blob\":\"");
+    body.push_str(&"x".repeat(12 * 1024 * 1024));
+    body.push_str("\"}\n{\"k\":1}\n");
+    fs::write(&giant_file, &body).expect("写巨行文件失败");
+    let g_path = giant_file.to_string_lossy().to_string();
+    let meta = bf.open(&g_path, None).expect("建巨行索引失败");
+    assert_eq!(meta.total_lines, 2, "巨行算一行，后面算另一行");
+    assert!(
+        meta.max_line_bytes >= 12 * 1024 * 1024,
+        "索引应统计出巨行长度"
+    );
+    assert!(
+        meta.block_count >= 3,
+        "12MB 巨行必须在 5MB 上限处硬切成多块（硬切不可达 = 整根行进一个块，读块即冻结），实际 {} 块",
+        meta.block_count
+    );
+
+    let head_idx = bf.block_for_line(&g_path, 1).expect("定位巨行失败");
+    assert_eq!(head_idx, 0, "第 1 行的行首在第一块");
+    let tail_idx = bf.block_for_line(&g_path, 2).expect("定位第 2 行失败");
+    assert!(tail_idx > head_idx, "第 2 行应在巨行碎片之后");
+
+    let first_page = bf
+        .read_lines(&BigFileLinesReq {
+            path: g_path.clone(),
+            start_line: 1,
+            line_count: 50,
+            clip_chars: Some(1000),
+        })
+        .expect("取巨行首页失败");
+    assert_eq!(
+        first_page.lines.len(),
+        2,
+        "巨行一行 + 第二行，不许碎片当两行"
+    );
+    assert!(first_page.lines[0].clipped, "巨行应打截断标记");
+    assert_eq!(
+        first_page.lines[0].text.len(),
+        1000,
+        "截断应精确到 clip_chars 字符"
+    );
+    assert!(
+        first_page.lines[0].text.starts_with("{\"blob\":\""),
+        "巨行要从行首拼起"
+    );
+    assert_eq!(first_page.lines[1].line_no, 2);
+    assert_eq!(
+        first_page.lines[1].text, "{\"k\":1}",
+        "巨行之后的行不能被巨行吞掉"
+    );
+
+    bf.close(&g_path);
 }

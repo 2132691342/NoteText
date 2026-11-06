@@ -2,7 +2,7 @@
 // 铁律：跨边界字段一律 snake_case。改字段必须同步 `src-tauri/src/domain/` 与
 
 /** 契约版本：后端改字段时 +1，前端 `api/index.ts` 在启动时校验。 */
-export const CONTRACT_VERSION = 4
+export const CONTRACT_VERSION = 5
 
 /** 后端统一错误：invoke reject 时的形状。 */
 export interface AppError {
@@ -66,7 +66,8 @@ export interface WriteResultVO {
 
 /** CSV / TSV 表格预览：后端已按探测编码解好，前端只画。 */
 /** 大文件元信息：块索引建好后的概览。 */
-export interface BigFileMetaVO {  path: string
+export interface BigFileMetaVO {
+  path: string
   size: number
   /** 头部采样探测出的编码 id：整个文件按它逐块解码。 */
   encoding: string
@@ -75,6 +76,8 @@ export interface BigFileMetaVO {  path: string
   block_count: number
   /** 编辑器意义上的总行数（末行无换行也计一行）。 */
   total_lines: number
+  /** 全文件最长一行的字节数：进块编辑前提示卡顿风险用。 */
+  max_line_bytes: number
 }
 
 /** 大文件的一个块：解码后的文本 + 它在整份文件里的行号范围。 */
@@ -87,6 +90,38 @@ export interface BigFileBlockVO {
   text: string
   /** 读取时发现文件已被外部修改。 */
   stale: boolean
+}
+
+/** 大文件按行取数请求：只读网格浏览的分页数据源。 */
+export interface BigFileLinesReq {
+  path: string
+  /** 起始行（1-based）。 */
+  start_line: number
+  line_count: number
+  /** 单行文本的字符上限：超过就截断并打 clipped 标记。 */
+  clip_chars?: number
+}
+
+/** 大文件的一行：全局行号 + 文本（可能截断）。 */
+export interface BigFileLineVO {
+  line_no: number
+  text: string
+  clipped: boolean
+}
+
+/** 大文件按行取数结果。 */
+export interface BigFileLinesVO {
+  lines: BigFileLineVO[]
+  total_lines: number
+}
+
+/** 文本形态探测：头部采样出「稀疏短行还是超宽行」，打开分流用。 */
+export interface TextShapeVO {
+  size: number
+  sampled_bytes: number
+  sampled_lines: number
+  max_line_bytes: number
+  avg_line_bytes: number
 }
 
 /** 单块写回请求：`old_text` 是乐观锁基线，磁盘上的块与它不一致就拒。 */

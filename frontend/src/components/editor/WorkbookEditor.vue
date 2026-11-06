@@ -124,7 +124,12 @@
                 @keydown.esc.prevent="cancelEdit"
                 @blur="commitEdit(0)"
               />
-              <span v-else class="nt-sheet-cell-text" :title="displayText(row.cells[c - 1])">
+              <span
+                v-else
+                class="nt-sheet-cell-text"
+                :class="{ 'is-pending': row.pending }"
+                :title="cellTitle(displayText(row.cells[c - 1]))"
+              >
                 {{ displayText(row.cells[c - 1]) }}
               </span>
               <span class="nt-sheet-col-resize" @mousedown.stop.prevent="startResize($event, c - 1)" />
@@ -272,6 +277,11 @@ function displayText(v: CellValue | null | undefined): string {
     case 'error':
       return v.text
   }
+}
+
+/** 悬浮提示截断：几 MB 的单元格文本进 DOM title 会拖慢整窗绘制。 */
+function cellTitle(s: string): string {
+  return s.length > 500 ? `${s.slice(0, 500)}…` : s
 }
 
 // ---- 查找 ----
@@ -641,6 +651,18 @@ function sheetEdits(): Map<number, Map<string, CellValue | null>> {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--nt-ink-2);
+}
+
+/* 页还没到的占位：低频呼吸，几何不变（行高固定，不跳） */
+.nt-sheet-cell-text.is-pending {
+  background: var(--nt-elev-hover);
+  animation: nt-sheet-pending 1.2s ease-in-out infinite;
+}
+
+@keyframes nt-sheet-pending {
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .nt-sheet-input {

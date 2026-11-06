@@ -2,7 +2,7 @@
 
 ## 定位
 
-前端 `api/index.ts` 与后端 `commands/` 的对照表：126 个 invoke 命令的入参出参。
+前端 `api/index.ts` 与后端 `commands/` 的对照表：128 个 invoke 命令的入参出参。
 **改字段必须两边同步**，并且把 `types/api.ts` 的 `CONTRACT_VERSION` +1。
 
 ## 通用约定
@@ -14,7 +14,7 @@
 | 成功 | 直接返回值（Tauri 的 invoke 成功态） |
 | 失败 | `AppError { code, message, details }`，前端 `normalizeError` 归一 |
 | 二进制 | 走 `read_binary`，出参是 base64 字符串（`Vec<u8>` 会被序列化成 `number[]`，体积约 4 倍） |
-| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `session_round_trip_restores_tabs_and_empty_lists_serialize_as_arrays`） |
+| 空数组 | 后端构造时初始化，契约说是数组就永远发 `[]`（守护见 [12](12-testing.md) 的 `session_and_backup_survive_restart_and_reimport`） |
 
 ## 文件
 
@@ -23,9 +23,11 @@
 | `read_file` | `path`, `mode?`, `encoding?`, `allow_big?` | `FileContentVO` |
 | `read_binary` | `path` | `string`（base64，上限 20MB） |
 | `write_binary` | `path`, `data`（base64） | `()`（前端生成字节落盘，如「另存为 xlsx」） |
+| `probe_text_shape` | `path` | `TextShapeVO`（头部 ≤2MB 采样出最长行 / 平均行宽，打开分流用） |
 | `big_file_open` | `path` | `BigFileMetaVO`（建块索引，进度走 `bigfile:progress` 事件） |
 | `big_file_block` | `path`, `block_index` | `BigFileBlockVO`（含全局起始行与 stale 标记） |
-| `big_file_goto_line` | `path`, `line` | `usize`（块下标，二分定位） |
+| `big_file_lines` | `req: BigFileLinesReq` | `BigFileLinesVO`（按全局行号取一页行，跨块巨行拼接 + 超宽行截断） |
+| `big_file_goto_line` | `path`, `line` | `usize`（**行首**所在块下标，二分定位） |
 | `big_file_cancel` | `path` | `()` |
 | `big_file_close` | `path` | `()`（释放缓存索引） |
 | `big_file_write_block` | `req: BigFileBlockWriteReq` | `BigFileBlockWriteVO`（单块写回，乐观锁过期报 1008） |
@@ -281,8 +283,8 @@
 | `app:open-file` | `string`（路径） | 单实例转交（冷启动走 `take_launch_intent` 拉取，不发事件） |
 | `app:new-document` | — | 托盘「新建文档」 |
 | `fs:changed` | `string[]`（路径） | `service::file` 的 notify watcher |
-| `bigfile:progress` | `u64`（已扫描字节数） | 大文件建块索引的进度 |
-| `table:progress` | `u64`（已扫描字节数） | 大表格建记录索引的进度 |
+| `bigfile:progress` | `{ path, done, total }` | 大文件建块索引的进度（每 8MB 一次） |
+| `table:progress` | `{ path, done, total }` | 大表格建记录索引的进度 |
 | `archive:task-update` | `ArchiveTaskVO[]`（全量快照） | 队列状态变化 + 250ms 心跳 |
 | `archive:task-finished` | `{ task: ArchiveTaskVO }` | 任务到达终态（done/failed/cancelled） |
 

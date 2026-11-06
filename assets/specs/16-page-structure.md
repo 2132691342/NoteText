@@ -34,7 +34,7 @@ App.vue
 │   ├── CodeEditor.vue      CodeMirror 容器（compartments）
 │   ├── MarkdownEditor.vue  Markdown 三态：编辑 / 分屏 / 预览
 │   ├── DocPreview.vue      只读预览：xlsx / csv / 图片 / Markdown / HTML / 文本，含「读不了」的出路卡片
-│   ├── ChunkedViewer.vue   大文件分块视图：块导航 + 单块解锁编辑
+│   ├── ChunkedViewer.vue   大文件分块视图：虚拟滚动网格浏览 + 单块解锁编辑
 │   ├── HexView.vue         十六进制视图（虚拟滚动，只渲染可视区）
 │   ├── SheetEditor.vue     大表格可编辑网格：CSV / TSV / JSONL / 顶层 JSON 数组（分页取数 + 虚拟滚动）
 │   ├── WorkbookEditor.vue  XLSX / ODS 单元格网格（值与公式可改）
@@ -189,8 +189,7 @@ CodeEditor.vue
     ├── 脏标记按「与载入时快照不同」判
     ├── nt-cursor（带 tabId）→ 状态栏光标
     ├── nt-stats  → 状态栏行数
-    ├── nt-history → 工具栏撤销可用性
-    └── 选区变化 → 选区浮条重定位（docChanged 分支也要刷，否则替换后浮条残留）
+    └── nt-history → 工具栏撤销可用性
 ```
 
 **切换标签不销毁实例**：那样会丢撤销历史。组件按 `tab.id` 缓存，

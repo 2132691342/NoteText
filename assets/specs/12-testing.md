@@ -6,8 +6,8 @@
 一眼可见，不守护任何事故，不入链；源码里不挂 `#[cfg(test)]` 单元测试，验证入口才不会被切碎。
 
 **保留判据**：写之前先问「这条测试失败时，用户界面上会出现什么坏事」。
-说不出那句坏事，它就不该存在。唯一的例外是分块解码穷举——
-失败面是不报错、不 panic 的静默损坏，放不进「用户故事」链路，只能按编码 × 块长逐块穷举。
+说不出那句坏事，它就不该存在。分块解码的坏法是「不报错、不 panic、只变乱码」
+的静默损坏，作为大文件链路的收尾段按编码 × 切长穷举，不单独成篇。
 
 | 保留 | 删除 |
 |---|---|
@@ -22,7 +22,7 @@
 ```
 src-tauri/tests/       每域一个文件，一条长链路覆盖一个域的全部能力面
   common/mod.rs         隔离装配与构造器（不单独编译成测试）
-  chain_file.rs         文件往返保真、大文件分块编辑、分块解码穷举、文件树护栏
+  chain_file.rs         文件往返保真与文件树护栏、大文件分块、宽行探测与按行取数
   chain_table.rs        大表格：CSV 记录边界与规模、编码与边界、JSON 数组 / JSONL
   chain_sheet.rs        XLSX 分页、样式保留、跨窗口取页与切表
   chain_session.rs      会话恢复与空列表序列化、备份导出导入
@@ -43,8 +43,8 @@ src-tauri/tests/       每域一个文件，一条长链路覆盖一个域的全
 | 测试 | 文件 | 用户故事 | 守住的坏事 |
 |---|---|---|---|
 | `file_round_trip_keeps_line_ending_bom_and_forced_encoding` | chain_file | 打开 → 保存 → 重开 → 二进制通道写回 → 文件树操作 | 行尾每次保存都漂移 / BOM 丢或多出来 / 强制编码打不开 / 原子写留临时文件 / base64 写出垃圾字节 / 改名覆盖已有文件 / 成环 / 路径逃逸 / 批量删除整批失败 |
-| `big_file_block_index_reads_blocks_and_reports_lines` | chain_file | 打开 15MB 日志 → 分块浏览 → 跳末行 → 外部改动 → 改中间一块 → 整文流式查找 → GB18030 日志查找 | 逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 单块写动到前后字节 / 过期基线覆盖新内容 / 查找命中行号与块读出文本对不上 / 空命中序列化成 null / 非 UTF-8 文件命中行号错位 |
-| `stream_decode_keeps_multibyte_across_any_chunk_boundary` | chain_file | 任意块长分块解码（六编码 × 块长 1–17 穷举） | 块边界切在多字节字符中间解出替换符 / UTF-16 半码元把字拆坏 |
+| `big_file_block_index_reads_blocks_and_reports_lines` | chain_file | 打开 15MB 日志 → 分块浏览 → 跳末行 → 外部改动 → 改中间一块 → 整文流式查找 → GB18030 日志查找 → 块边界解码（多字节编码 × 切长） | 逐块拼不回原文 / 行号定位落错块 / 外部修改不报 stale / 单块写动到前后字节 / 过期基线覆盖新内容 / 查找命中行号与块读出文本对不上 / 空命中序列化成 null / 非 UTF-8 文件命中行号错位 / 块边界切在多字节字符中间解出替换符 |
+| `wide_line_file_probes_paginates_and_jumps_to_line_start` | chain_file | 头部探测压缩 JSON → GB18030 分页取行 → 跨块 12MB 巨行拼接截断 → 行首跳转 | 超宽行探不出来 / 按行取数跨块行被切碎 / 深处分页解成替换符 / 越界页不给空数组 / 巨行整根进一个块 / 行号跳转落在行尾碎片 |
 | `session_and_backup_survive_restart_and_reimport` | chain_session | 首次启动 → 开三个标签 → 重启 → 关光标签 → 备份导出导入 | 空列表序列化成 null（前端白屏）/ 标签顺序与活跃项丢失 / 关光标签丢会话行 / 备份导不回来（换机丢数据）/ 导入抹掉本机数据 |
 | `batch_preview_then_apply_touches_only_confirmed_files` | chain_batch | 扫描 → 勾选 → 替换 → 改名 | 扫描阶段就落盘 / 改掉没勾选的文件 / 改名覆盖已存在文件 |
 | `csv_table_indexes_pages_finds_and_writes_back` | chain_table | 打开 5 万行 CSV → 翻页 → 整表查找 → 改一格删一行 → 另存为 → 引号换行 / 百万行满页 | 记录数算错 / 行下标与内容错位 / 命中行号对不上 / 改格动到别的行 / 另存为改到源文件 / 引号内换行切断记录 / 百万行深处给不满页 |

@@ -9,7 +9,7 @@ use crate::app::bootstrap::AppState;
 use crate::domain::file::{FileContentVO, ReadMode};
 use crate::pkg::error::{codes, AppError, AppResult};
 
-/// 读文本文件：返回文本、编码、行尾与行数。`allow_big` 放宽全量上限到 200MB。
+/// 读文本文件：返回文本、编码、行尾与行数。`allow_big` 放宽全量上限到 512MB。
 #[tauri::command(async)]
 pub fn read_file(
     state: State<'_, AppState>,
@@ -93,32 +93,57 @@ pub async fn big_file_open(
 }
 
 /// 读大文件的一个块（按块下标；跳转行号见 `big_file_goto_line`）。
+/// 读写走阻塞线程池：seek + 解码在 GB 级文件上是真实 IO，不占 worker 常驻线程。
 #[tauri::command(async)]
-pub fn big_file_block(
+pub async fn big_file_block(
     state: State<'_, AppState>,
     path: String,
     block_index: usize,
 ) -> AppResult<crate::domain::file::BigFileBlockVO> {
-    state.services.big_file.read_block(&path, block_index)
+    let svc = state.services.big_file.clone();
+    let blocking = move || svc.read_block(&path, block_index);
+    run_blocking(blocking).await
 }
 
-/// 全局行号 → 块下标（二分定位，跳转行用）。
+/// 全局行号 → 行首所在块的下标（二分定位，跳转行用）。
 #[tauri::command(async)]
-pub fn big_file_goto_line(
+pub async fn big_file_goto_line(
     state: State<'_, AppState>,
     path: String,
     line: usize,
 ) -> AppResult<usize> {
-    state.services.big_file.block_for_line(&path, line)
+    let svc = state.services.big_file.clone();
+    let blocking = move || svc.block_for_line(&path, line);
+    run_blocking(blocking).await
+}
+
+/// 大文件按行取数：只读网格浏览的分页数据源（跨块巨行拼接 + 超宽行截断）。
+#[tauri::command(async)]
+pub async fn big_file_lines(
+    state: State<'_, AppState>,
+    req: crate::domain::file::BigFileLinesReq,
+) -> AppResult<crate::domain::file::BigFileLinesVO> {
+    let svc = state.services.big_file.clone();
+    let blocking = move || svc.read_lines(&req);
+    run_blocking(blocking).await
+}
+
+/// 文本形态探测：头部采样出最长行/平均行宽，前端据此决定普通打开还是分块打开。
+#[tauri::command(async)]
+pub async fn probe_text_shape(path: String) -> AppResult<crate::domain::file::TextShapeVO> {
+    let blocking = move || crate::service::big_file::BigFileService::probe_shape(&path);
+    run_blocking(blocking).await
 }
 
 /// 大文件流式查找：逐块扫描，一轮最多读 budget 字节。
 #[tauri::command(async)]
-pub fn big_file_find(
+pub async fn big_file_find(
     state: State<'_, AppState>,
     req: crate::domain::file::BigFileFindReq,
 ) -> AppResult<crate::domain::file::BigFileFindVO> {
-    state.services.big_file.find(&req)
+    let svc = state.services.big_file.clone();
+    let blocking = move || svc.find(&req);
+    run_blocking(blocking).await
 }
 
 /// 取消建索引。
@@ -136,13 +161,26 @@ pub fn big_file_close(state: State<'_, AppState>, path: String) -> AppResult<()>
 }
 
 /// 单块局部编辑写回：只换目标块的字节区间，其余原样不动。
-/// async 不是可选项：流式拼接要搬整份文件，主线程上做就是冻窗。
+/// 流式拼接要搬整份文件，必须放进阻塞线程池。
 #[tauri::command(async)]
-pub fn big_file_write_block(
+pub async fn big_file_write_block(
     state: State<'_, AppState>,
     req: crate::domain::file::BigFileBlockWriteReq,
 ) -> AppResult<crate::domain::file::BigFileBlockWriteVO> {
-    state.services.big_file.write_block(&req)
+    let svc = state.services.big_file.clone();
+    let blocking = move || svc.write_block(&req);
+    run_blocking(blocking).await
+}
+
+/// 在阻塞线程池上跑同步 IO 任务：JoinError 归一成业务错误。
+async fn run_blocking<T, F>(blocking: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(blocking)
+        .await
+        .map_err(|e| AppError::new(codes::IO_FAILED, format!("任务异常退出：{e}")))?
 }
 
 /// 列目录。

@@ -33,7 +33,7 @@ export function useAutoSave() {
     for (const tab of editor.tabs) {
       if (!tab.dirty) continue
       // 未命名 / 草稿 / 截断：不自动写盘（理由见文件头）。
-      if (!tab.path || tab.path.startsWith('draft:') || tab.truncated || tab.big_file) continue
+      if (!tab.path || tab.path.startsWith('draft:') || tab.truncated) continue
       if (busy.has(tab.id)) continue
       busy.add(tab.id)
       try {

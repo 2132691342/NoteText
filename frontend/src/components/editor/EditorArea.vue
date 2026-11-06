@@ -13,7 +13,7 @@ import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
 import DocPreview from '@/components/editor/DocPreview.vue'
 import HexView from '@/components/editor/HexView.vue'
 import NtIcon from '@/components/common/NtIcon.vue'
-import { useEditorStore, viewTypeOf } from '@/stores/editor'
+import { useEditorStore, viewTypeOf, fileNameOf } from '@/stores/editor'
 import { useCommandStore } from '@/stores/commands'
 import { useSettingsStore } from '@/stores/settings'
 import { get, docVersionOf } from '@/composables/useEditorRegistry'
@@ -289,6 +289,12 @@ onBeforeUnmount(() => {
 
     <!-- 拖放打开的提示层 -->
     <div v-if="dragging" class="nt-drop-target">{{ t('drop.hint') }}</div>
+
+    <!-- 大文件全量读入中：几秒的读入不该让用户以为界面死了 -->
+    <div v-if="editor.opening" class="nt-opening-hint">
+      <span class="nt-spinner" />
+      <span>{{ t('editor.opening', { name: fileNameOf(editor.opening) }) }}</span>
+    </div>
   </div>
 </template>
 
@@ -333,6 +339,24 @@ onBeforeUnmount(() => {
   flex: 1;
   align-items: center;
   justify-content: center;
+}
+
+/* 大文件读入提示：右下角轻提示，不挡编辑区 */
+.nt-opening-hint {
+  position: absolute;
+  right: var(--nt-sp-4);
+  bottom: var(--nt-sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--nt-sp-2);
+  padding: var(--nt-sp-2) var(--nt-sp-3);
+  border-radius: var(--nt-radius-sm);
+  background: var(--nt-elev-raised);
+  border: 1px solid var(--nt-border);
+  box-shadow: var(--nt-card-shadow);
+  color: var(--nt-ink-2);
+  font-size: var(--nt-fs-xs);
+  z-index: var(--nt-z-pop);
 }
 
 .nt-inline-view {

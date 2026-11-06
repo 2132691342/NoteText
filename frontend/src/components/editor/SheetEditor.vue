@@ -260,7 +260,12 @@
                 @keydown.down.prevent="commitEdit(2)"
                 @blur="commitEdit(0)"
               />
-              <span v-else class="nt-sheet-cell-text" :title="row.cells[c - 1]">
+              <span
+                v-else
+                class="nt-sheet-cell-text"
+                :class="{ 'is-pending': row.pending }"
+                :title="cellTitle(row.cells[c - 1])"
+              >
                 {{ row.cells[c - 1] }}
               </span>
               <!-- 列宽拖拽手柄：只放在最后一行的右侧不够用，每格右缘都可拖 -->
@@ -405,6 +410,12 @@ const {
     else if (msg === 'stale') toast.warn(t('toast.bigFileStale', { name: props.tab.title }))
   },
 })
+
+/** 悬浮提示截断：几 MB 的单元格文本进 DOM title 会拖慢整窗绘制。 */
+function cellTitle(v: string | undefined): string {
+  if (!v) return ''
+  return v.length > 500 ? `${v.slice(0, 500)}…` : v
+}
 
 /** 列号 0 → A、26 → AA。 */
 function colName(i: number): string {
@@ -1339,6 +1350,18 @@ void settings
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--nt-ink-2);
+}
+
+/* 页还没到的占位：低频呼吸，几何不变（行高固定，不跳） */
+.nt-sheet-cell-text.is-pending {
+  background: var(--nt-elev-hover);
+  animation: nt-sheet-pending 1.2s ease-in-out infinite;
+}
+
+@keyframes nt-sheet-pending {
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .nt-sheet-input {

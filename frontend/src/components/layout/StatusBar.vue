@@ -54,14 +54,7 @@
       </button>
     </template>
 
-    <span
-      v-if="tab?.big_file"
-      class="nt-readout nt-status-readonly"
-      :title="t('bigfile.readonlyHint')"
-    >
-      {{ t('bigfile.mode') }}
-    </span>
-    <span v-else-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
+    <span v-if="tab?.truncated" class="nt-readout nt-status-readonly" :title="truncatedTitle">
       {{ t('status.partial') }}
     </span>
     <span v-else-if="tab?.read_only" class="nt-readout nt-status-readonly">

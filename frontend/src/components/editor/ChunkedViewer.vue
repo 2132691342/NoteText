@@ -1,21 +1,9 @@
-// 大文件分块视图：一次只把一块（~1MB）装进编辑器，可按块编辑并写回。
-// 与 CodeEditor 分开：这里的正文不进注册表、没有全量保存链路。编辑只作用于当前块，写回时后端按字节区间替换。
+// 大文件分块视图：浏览走虚拟滚动网格（后端 big_file_lines 分页取行，全文件连续滚动），
+// 编辑保留「单块装进 CodeMirror + 乐观锁写回」的局部编辑链路。
+// 与 CodeEditor 分开：这里的正文不进注册表、没有全量保存链路。
 <template>
   <div class="nt-chunked">
     <div class="nt-chunked-bar">
-      <ElButtonGroup>
-        <ElButton size="small" :disabled="loading || blockIdx <= 0" @click="go(-1)">
-          <NtIcon name="chevron-up" size="sm" />
-        </ElButton>
-        <ElButton size="small" :disabled="loading || blockIdx >= blockCount - 1" @click="go(1)">
-          <NtIcon name="chevron-down" size="sm" />
-        </ElButton>
-      </ElButtonGroup>
-      <span class="nt-readout">
-        {{ t('chunked.block') }} {{ blockCount > 0 ? blockIdx + 1 : 0 }} / {{ blockCount }}
-        <template v-if="blockInfo"> · {{ t('chunked.fromLine') }} {{ blockInfo.start_line }}</template>
-      </span>
-      <span class="nt-chunked-spacer" />
       <ElInput
         v-model="gotoInput"
         size="small"
@@ -29,6 +17,10 @@
           </ElButton>
         </template>
       </ElInput>
+      <span class="nt-readout">
+        {{ t('chunked.position', { n: currentLineNo, total: totalLines }) }}
+      </span>
+      <span class="nt-chunked-spacer" />
       <!-- 编辑开关：默认只读浏览，用户明确要改这块时才解锁 -->
       <ElButton
         size="small"
@@ -65,7 +57,7 @@
       </span>
     </div>
 
-    <!-- 查找条：GB 级文件不能靠肉眼翻块，流式扫描一轮一轮往下要 -->
+    <!-- 查找条：GB 级文件不能靠肉眼滚动，流式扫描一轮一轮往下要 -->
     <div v-if="findOpen" class="nt-chunked-find">
       <ElInput
         ref="findInput"
@@ -124,15 +116,52 @@
       <span class="nt-mount-error-detail">{{ error }}</span>
     </div>
 
-    <div v-show="!progress && !error" ref="host" class="nt-chunked-body" />
+    <!--
+      浏览模式：虚拟滚动网格。ref 必须叫 scrollHost——useBigFileGrid 用它量视口。
+      tabindex 让方向键 / PageUp / PageDown 走浏览器原生滚动。
+    -->
+    <div
+      v-show="!progress && !error && !editing"
+      ref="scrollHost"
+      class="nt-chunked-body"
+      tabindex="0"
+      @wheel="onWheel"
+      @scroll="onScroll"
+    >
+      <div class="nt-chunked-grid" :style="{ height: `${scrollHeight}px` }">
+        <div class="nt-chunked-window" :style="{ transform: `translateY(${windowTop}px)` }">
+          <div
+            v-for="row in windowRows"
+            :key="row.index"
+            class="nt-chunked-row"
+            :class="{ 'is-hit': row.lineNo === hitLine }"
+          >
+            <span class="nt-chunked-gutter">{{ row.lineNo }}</span>
+            <span
+              v-if="row.cached"
+              class="nt-chunked-text"
+              :class="{ 'is-clipped': row.clipped }"
+              :title="titleOf(row.text)"
+            >
+              {{ row.text }}
+            </span>
+            <span v-else class="nt-chunked-text is-pending" />
+          </div>
+        </div>
+        <div v-if="isEmpty" class="nt-chunked-empty">{{ t('chunked.emptyFile') }}</div>
+      </div>
+    </div>
+
+    <!-- 编辑模式：当前块装进只属于这一块的 CodeMirror 实例 -->
+    <div v-show="editing && !progress && !error" ref="host" class="nt-chunked-body" />
   </div>
 </template>
 
 <script lang="ts" setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { ElButton, ElButtonGroup, ElCheckbox, ElInput } from 'element-plus'
+import { ElButton, ElCheckbox, ElInput } from 'element-plus'
 import { EditorState, Compartment } from '@codemirror/state'
 import {
   EditorView,
@@ -150,6 +179,7 @@ import type { BigFileHitVO, BigFileMetaVO } from '@/types/api'
 import type { Tab } from '@/stores/editor'
 import { useEditorStore } from '@/stores/editor'
 import { useToastStore } from '@/stores/toast'
+import { useBigFileGrid } from '@/composables/useBigFileGrid'
 import NtIcon from '@/components/common/NtIcon.vue'
 
 const props = defineProps<{ tab: Tab }>()
@@ -160,38 +190,98 @@ const toast = useToastStore()
 /** 元信息缓存：同一路径重复打开不重建索引。 */
 const metaCache = new Map<string, BigFileMetaVO>()
 
-const meta = ref<BigFileMetaVO | null>(null)
-const blockIdx = ref(0)
-const blockStartLine = ref(1)
+/** 进块编辑前的卡顿提示阈值：索引统计出的最长行超过它就提醒一句。 */
+const WIDE_EDIT_WARN_BYTES = 256 * 1024
+/** 悬浮提示里一行的字符上限：再长 DOM 属性也吃不消。 */
+const TITLE_CAP = 500
+
 const loading = ref(false)
 const error = ref('')
-/** 当前块的原文快照：脏标记与乐观锁基线都用它。 */
-const blockBaseline = ref('')
 /** 建索引进度（done/total 字节）；null = 不在扫描。 */
 const progress = ref<{ done: number; total: number } | null>(null)
 const gotoInput = ref('')
-const blockInfo = computed(() =>
-  meta.value && blockIdx.value < meta.value.block_count
-    ? { start_line: blockStartLine.value }
-    : null,
-)
-const blockCount = computed(() => meta.value?.block_count ?? 0)
+/** 查找命中的高亮行：浏览模式下命中行整行高亮。 */
+const hitLine = ref<number | null>(null)
 const progressPct = computed(() =>
   progress.value && progress.value.total > 0
     ? `${Math.min(100, Math.round((progress.value.done / progress.value.total) * 100))}%`
     : '0%',
 )
 
-/** 编辑态：解锁当前块。 */
+// ---- 浏览网格 ----
+
+const grid = useBigFileGrid({ path: computed(() => props.tab.path) })
+const {
+  meta,
+  totalLines,
+  isEmpty,
+  scrollHost,
+  scrollHeight,
+  windowTop,
+  windowRows,
+  onWheel,
+  onScroll,
+  scrollToLine,
+  currentLine,
+  setMeta,
+  resetPages,
+} = grid
+
+const currentLineNo = computed(() => (editing.value ? blockStartLine.value : currentLine()))
+
+/** 悬浮提示截断：一行的完整内容走复制或块编辑，title 只负责「这是什么」。 */
+function titleOf(text: string): string {
+  return text.length > TITLE_CAP ? `${text.slice(0, TITLE_CAP)}…` : text
+}
+
+// ---- 编辑态：单块装进 CodeMirror ----
+
 const editing = ref(false)
 const saving = ref(false)
 /** 当前块是否有未保存的改动。 */
 const blockDirty = ref(false)
+const blockIdx = ref(0)
+const blockStartLine = ref(1)
+/** 当前块的原文快照：脏标记与乐观锁基线都用它。 */
+const blockBaseline = ref('')
 
 const host = ref<HTMLElement | null>(null)
 const editableComp = new Compartment()
 let view: EditorView | null = null
 let unlistenProgress: UnlistenFn | null = null
+
+/** CodeMirror 实例懒创建：只读浏览的用户不该为编辑器实例付初始化钱。 */
+function ensureView() {
+  if (view || !host.value) return
+  view = new EditorView({
+    state: EditorState.create({
+      doc: '',
+      extensions: [
+        history(),
+        drawSelection(),
+        dropCursor(),
+        highlightSpecialChars(),
+        highlightActiveLine(),
+        lineNumbers(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          // Ctrl+S 只保存当前块：这个视图没有「整篇保存」的概念。
+          { key: 'Mod-s', preventDefault: true, run: () => (void saveBlock(), true) },
+        ]),
+        editableComp.of(EditorState.readOnly.of(true)),
+        EditorView.updateListener.of((vu) => {
+          if (vu.docChanged) {
+            blockDirty.value = currentText() !== blockBaseline.value
+          }
+          if (vu.selectionSet || vu.docChanged) syncCursorToTab()
+        }),
+      ],
+    }),
+    parent: host.value,
+  })
+}
 
 /** 把块文本装进视图，光标可选落在块内某一行。 */
 function setDoc(text: string, cursorLine?: number) {
@@ -212,24 +302,43 @@ function currentText(): string {
   return view?.state.doc.toString() ?? ''
 }
 
-/** 切换编辑态。切到只读前若有未保存改动，先问一句。 */
+/** 进入编辑：定位到当前可见行所在块并装入 CodeMirror。 */
 async function toggleEdit() {
   if (editing.value) {
     if (blockDirty.value) {
-      const keep = await api.showConfirm(
-        t('chunked.discardTitle'),
-        t('chunked.discardBody'),
-      )
+      const keep = await api.showConfirm(t('chunked.discardTitle'), t('chunked.discardBody'))
       if (!keep) return
     }
     // 退回只读：把正文恢复成基线，避免「看起来改了但没存」。
     setDoc(blockBaseline.value)
     editing.value = false
     view?.dispatch({ effects: editableComp.reconfigure(EditorState.readOnly.of(true)) })
-  } else {
+    return
+  }
+  if (!props.tab.path) return
+  loading.value = true
+  try {
+    const line = currentLine()
+    const idx = await api.bigFile.gotoLine(props.tab.path, line)
+    const b = await api.bigFile.block(props.tab.path, idx)
+    ensureView()
+    blockIdx.value = b.block_index
+    blockStartLine.value = b.start_line
+    const local = Math.max(1, line - b.start_line + 1)
+    setDoc(b.text, local)
+    if (b.stale) toast.warn(t('toast.bigFileStale', { name: props.tab.title }))
+    // 索引统计出的最长行超阈值：提醒卡顿风险，编辑主动权仍在用户。
+    if ((meta.value?.max_line_bytes ?? 0) > WIDE_EDIT_WARN_BYTES) {
+      toast.warn(t('chunked.wideEditWarn'))
+    }
     editing.value = true
     view?.dispatch({ effects: editableComp.reconfigure([]) })
+    await nextTick()
     view?.focus()
+  } catch (e) {
+    error.value = normalizeError(e).message
+  } finally {
+    loading.value = false
   }
 }
 
@@ -238,9 +347,9 @@ function discardBlock() {
   setDoc(blockBaseline.value)
 }
 
-/** 写回当前块。成功后重建索引并按新块数刷新视图。 */
+/** 写回当前块。成功后索引被重建，网格页缓存全部作废。 */
 async function saveBlock() {
-  if (!meta.value || !props.tab.path || !blockDirty.value) return
+  if (!props.tab.path || !blockDirty.value) return
   saving.value = true
   try {
     const res = await api.bigFile.writeBlock({
@@ -249,22 +358,29 @@ async function saveBlock() {
       old_text: blockBaseline.value,
       new_text: currentText(),
     })
-    // 索引被重建了：块数与总行数都可能变。
-    meta.value = {
-      ...meta.value,
-      size: res.size,
-      block_count: res.block_count,
-      total_lines: res.total_lines,
-    }
     blockBaseline.value = currentText()
     blockDirty.value = false
     toast.ok(t('chunked.savedBlock', { name: props.tab.title }))
+    // 索引重建后块数与总行数都可能变；网格留在保存前用户看到的行。
+    const at = blockStartLine.value
+    editing.value = false
+    resetPages(
+      meta.value
+        ? {
+            ...meta.value,
+            size: res.size,
+            block_count: res.block_count,
+            total_lines: res.total_lines,
+          }
+        : null,
+      at,
+    )
   } catch (e) {
     const err = normalizeError(e)
     // 乐观锁失败（1008）：磁盘上这块已经变了，提示重新加载这一块。
     if (err.code === '1008') {
       toast.warn(t('chunked.staleBlock'))
-      await loadBlock(blockIdx.value)
+      await reloadEditingBlock()
     } else {
       toast.bad(t('error.writeFailed', { reason: err.message }))
     }
@@ -273,57 +389,26 @@ async function saveBlock() {
   }
 }
 
-/** 加载一个块（越界自动钳制）。cursorLine 是全局行号，装入时换算成块内行。 */
-async function loadBlock(i: number, globalLine?: number) {
-  if (!meta.value || !props.tab.path) return
-  // 换块前有未保存的改动：问一句，不替用户丢内容。
-  if (blockDirty.value) {
-    const ok = await api.showConfirm(t('chunked.unsavedTitle'), t('chunked.unsavedBody'))
-    if (!ok) return
-  }
-  const idx = Math.max(0, Math.min(i, meta.value.block_count - 1))
-  loading.value = true
+/** 乐观锁失败后重读当前块，恢复基线。 */
+async function reloadEditingBlock() {
+  if (!props.tab.path || !view) return
   try {
-    const b = await api.bigFile.block(props.tab.path, idx)
-    blockIdx.value = b.block_index
-    blockStartLine.value = b.start_line
-    const localLine = globalLine != null ? globalLine - b.start_line + 1 : undefined
-    setDoc(b.text, localLine)
-    if (b.stale) toast.warn(t('toast.bigFileStale', { name: props.tab.title }))
+    const b = await api.bigFile.block(props.tab.path, blockIdx.value)
+    setDoc(b.text)
   } catch (e) {
-    error.value = normalizeError(e).message
-  } finally {
-    loading.value = false
+    toast.bad(normalizeError(e).message)
   }
 }
 
-/** 前一块 / 后一块。 */
-function go(delta: number) {
-  void loadBlock(blockIdx.value + delta)
-}
-
-/** 跳转到全局行号：定位所在块后把光标放到块内对应行。 */
+/** 跳转到全局行号：网格滚过去，命中行短暂高亮。 */
 async function onGoto() {
   if (!meta.value || !props.tab.path) return
   const n = Number.parseInt(gotoInput.value, 10)
   if (!Number.isFinite(n) || n < 1) return
-  const line = Math.min(n, meta.value.total_lines)
-  try {
-    const idx = await api.bigFile.gotoLine(props.tab.path, line)
-    if (idx !== blockIdx.value) {
-      await loadBlock(idx, line)
-    } else {
-      // 已在目标块：光标直接落到块内对应行。
-      if (view) {
-        const local = Math.max(1, Math.min(line - blockStartLine.value + 1, view.state.doc.lines))
-        const l = view.state.doc.line(local)
-        view.dispatch({ selection: { anchor: l.from }, scrollIntoView: true })
-      }
-      syncCursorToTab()
-    }
-  } catch (e) {
-    toast.bad(normalizeError(e).message)
-  }
+  const line = Math.min(n, totalLines.value)
+  hitLine.value = null
+  scrollToLine(line)
+  syncGridCursor()
 }
 
 async function onCancel() {
@@ -426,62 +511,45 @@ async function stepFind(delta: number) {
   await jumpToHit(findCursor.value)
 }
 
-/** 跳到第 n 条命中所在的块，并把光标落到那一行。 */
+/** 跳到第 n 条命中所在行：网格滚动过去并整行高亮。 */
 async function jumpToHit(n: number) {
   const hit = findHits.value[n]
   if (!hit) return
   findCursor.value = n
-  const idx = await api.bigFile.gotoLine(props.tab.path, hit.line)
-  await loadBlock(idx, hit.line)
-  // 命中行整行选中：只把光标放过去，用户还得自己找词在哪。
-  if (view) {
-    const local = Math.max(1, Math.min(hit.line - blockStartLine.value + 1, view.state.doc.lines))
-    const line = view.state.doc.line(local)
-    const from = Math.min(line.from + hit.col - 1, line.to)
-    const to = Math.min(from + findText.value.length, line.to)
-    view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true })
-    view.focus()
-  }
+  hitLine.value = hit.line
+  scrollToLine(hit.line)
+  syncGridCursor()
 }
 
-onMounted(async () => {
-  if (!host.value || !props.tab.path) return
-  view = new EditorView({
-    state: EditorState.create({
-      doc: '',
-      extensions: [
-        history(),
-        drawSelection(),
-        dropCursor(),
-        highlightSpecialChars(),
-        highlightActiveLine(),
-        lineNumbers(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          // Ctrl+S 只保存当前块：这个视图没有「整篇保存」的概念。
-          { key: 'Mod-s', preventDefault: true, run: () => (void saveBlock(), true) },
-        ]),
-        editableComp.of(EditorState.readOnly.of(true)),
-        EditorView.updateListener.of((vu) => {
-          if (vu.docChanged) {
-            blockDirty.value = currentText() !== blockBaseline.value
-          }
-          if (vu.selectionSet || vu.docChanged) syncCursorToTab()
-        }),
-      ],
-    }),
-    parent: host.value,
-  })
+// ---- 光标与状态栏联动 ----
 
+/** 浏览模式的光标 = 视口顶部行。滚动 / 跳转 / 预取到达都可能改变它。 */
+function syncGridCursor() {
+  if (editing.value) return
+  const line = currentLine()
+  editor.setPosition(props.tab.id, { line, col: 1, selection_len: 0 })
+  document.dispatchEvent(
+    new CustomEvent('nt-cursor', {
+      detail: { tabId: props.tab.id, line, col: 1, selection_len: 0 },
+    }),
+  )
+}
+
+watch(
+  () => grid.firstVisible.value,
+  () => syncGridCursor(),
+)
+
+onMounted(async () => {
+  if (!props.tab.path) return
   try {
     const cached = metaCache.get(props.tab.path)
     meta.value = cached ?? (await openWithProgress(props.tab.path))
     if (meta.value) {
       metaCache.set(props.tab.path, meta.value)
       // 恢复会话时回到上次的位置。
-      await loadBlock(0, props.tab.position.line > 1 ? props.tab.position.line : undefined)
+      setMeta(meta.value, props.tab.position.line > 1 ? props.tab.position.line : 1)
+      syncGridCursor()
     }
   } catch (e) {
     error.value = normalizeError(e).message
@@ -517,6 +585,16 @@ function syncCursorToTab() {
     col: pos.head - line.from + 1,
     selection_len: pos.to - pos.from,
   })
+  document.dispatchEvent(
+    new CustomEvent('nt-cursor', {
+      detail: {
+        tabId: props.tab.id,
+        line: blockStartLine.value + line.number - 1,
+        col: pos.head - line.from + 1,
+        selection_len: pos.to - pos.from,
+      },
+    }),
+  )
 }
 
 onBeforeUnmount(() => {
@@ -608,14 +686,93 @@ onBeforeUnmount(() => {
   color: var(--nt-ink-2);
 }
 
+/* 浏览网格：滚动容器 + 压缩高度的画布 + 绝对定位窗口（与大表格同构） */
 .nt-chunked-body {
-  display: flex;
   flex: 1;
-  flex-direction: column;
   min-height: 0;
+  overflow: auto;
+  position: relative;
+  outline: none;
+  font-size: var(--nt-fs-sm);
 }
 
-.nt-chunked-body :deep(.cm-editor) {
+.nt-chunked-grid {
+  position: relative;
+  min-width: 100%;
+  font-family: var(--nt-font-mono, monospace);
+}
+
+.nt-chunked-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.nt-chunked-row {
+  display: flex;
+  height: 26px;
+}
+
+.nt-chunked-row.is-hit {
+  background: var(--nt-warning-bg);
+}
+
+.nt-chunked-gutter {
+  flex: none;
+  width: 72px;
+  padding: 0 var(--nt-sp-2);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--nt-ink-muted);
+  background: var(--nt-editor-gutter-bg);
+  border-bottom: 1px solid var(--nt-border);
+  border-right: 1px solid var(--nt-border);
+  font-size: var(--nt-fs-2xs);
+  user-select: none;
+}
+
+.nt-chunked-text {
   flex: 1;
+  min-width: 0;
+  padding: 0 var(--nt-sp-2);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--nt-ink-2);
+  border-bottom: 1px solid var(--nt-border);
+}
+
+/* 超宽行被截断：尾部补一个省略标记，告诉用户这不是完整内容 */
+.nt-chunked-text.is-clipped::after {
+  content: ' …';
+  color: var(--nt-ink-muted);
+  flex: none;
+}
+
+/* 页还没到：低频呼吸占位，几何不变（行高固定，不跳） */
+.nt-chunked-text.is-pending {
+  background: var(--nt-elev-hover);
+  animation: nt-chunked-pending 1.2s ease-in-out infinite;
+}
+
+@keyframes nt-chunked-pending {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.nt-chunked-empty {
+  padding: var(--nt-sp-4);
+  color: var(--nt-ink-muted);
+  font-size: var(--nt-fs-sm);
+}
+
+/* 编辑态的 CodeMirror 容器 */
+.nt-chunked-body :deep(.cm-editor) {
+  height: 100%;
 }
 </style>

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::domain::file::{
     BigFileBlockVO, BigFileBlockWriteReq, BigFileBlockWriteVO, BigFileFindReq, BigFileFindVO,
-    BigFileHitVO, BigFileMetaVO,
+    BigFileHitVO, BigFileLineVO, BigFileLinesReq, BigFileLinesVO, BigFileMetaVO, TextShapeVO,
 };
 use crate::pkg::error::{codes, AppError, AppResult};
 use crate::pkg::text::normalize_newlines;
@@ -29,14 +29,19 @@ const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
 /// 分块模式上限 64GB：索引要顺序扫一遍文件，再大不承诺只读体验。
 pub const MAX_CHUNKED_FILE: u64 = 64 * 1024 * 1024 * 1024;
 
-/// 一块的元数据：字节范围 + 全局行号起点。块内行数只在扫描期累计进
-/// `line_start`，闭块后不再单独持有。
+/// 一块的元数据：字节范围 + 全局行号起点 + 块内最长行。块内行数只在扫描期
+/// 累计进 `line_start`，闭块后不再单独持有。
 #[derive(Debug, Clone)]
 struct BlockMeta {
     offset: u64,
     byte_len: u64,
-    /// 本块第一行的全局行号（1-based）。
+    /// 本块第一行的全局行号（1-based）；硬切碎片块续接前块的半行时沿用其行号。
     line_start: usize,
+    /// 本块内最长一行（或碎片段）的字节数，扫描期顺手统计。
+    max_line_bytes: usize,
+    /// 本块是否结束在行边界（换行处闭块）。硬切碎片与无换行的文件尾为 false：
+    /// 它们的末行延续到下一块，是「开放行」。
+    ends_at_line: bool,
 }
 
 /// 一份大文件的完整索引。缓存在内存表里，标签关闭时释放。
@@ -125,25 +130,19 @@ impl BigFileService {
             block_size: TARGET_BLOCK,
             block_count: index.blocks.len(),
             total_lines: index.total_lines,
+            max_line_bytes: index
+                .blocks
+                .iter()
+                .map(|b| b.max_line_bytes)
+                .max()
+                .unwrap_or(0),
         })
     }
 
     /// 读一块：按缓存索引定位字节范围，读出后按整份文件的编码解码。
     /// 文件在索引建好后被外部改过时自动重建索引，并在出参里标记 stale。
     pub fn read_block(&self, path: &str, block_index: usize) -> AppResult<BigFileBlockVO> {
-        let index = self.index_of(path)?;
-        let current_mtime = fs::metadata(path)
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .map(|t| mtime_ms_of(Some(t)));
-        let stale = current_mtime.is_some_and(|t| t != index.mtime_ms);
-        let index = if stale {
-            // 索引过期：静默重建（不带进度回调，几秒内的扫描对只读视图可接受）。
-            self.open(path, None)?;
-            self.index_of(path)?
-        } else {
-            index
-        };
+        let (index, stale) = self.fresh_index(path)?;
 
         let block = index.blocks.get(block_index).ok_or_else(|| {
             AppError::new(
@@ -154,20 +153,7 @@ impl BigFileService {
                 ),
             )
         })?;
-
-        let mut f = fs::File::open(path)
-            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用或已移走", e))?;
-        f.seek(SeekFrom::Start(block.offset))?;
-        let mut bytes = vec![0u8; block.byte_len as usize];
-        f.read_exact(&mut bytes)?;
-
-        let (_, body) = encoding::strip_bom(&bytes, &index.encoding);
-        // 只读视图容错优先：解码失败退有损，给替换符也不给「块打不开」。
-        // 行尾归一走「有 CR 才复制」：绝大多数块本来就只有 LF，没必要整块再拷一份。
-        let text = match encoding::decode(body, &index.encoding) {
-            Ok(t) => normalize_newlines_if_needed(t),
-            Err(_) => normalize_newlines_if_needed(String::from_utf8_lossy(body).into_owned()),
-        };
+        let text = self.decode_range(path, block.offset, block.byte_len, &index.encoding)?;
 
         Ok(BigFileBlockVO {
             path: path.to_string(),
@@ -179,17 +165,201 @@ impl BigFileService {
         })
     }
 
-    /// 跳转到全局行号：返回该行所在块的下标（二分）。
+    /// 跳转到全局行号：返回该行**行首**所在块的下标。
     pub fn block_for_line(&self, path: &str, line: usize) -> AppResult<usize> {
         let index = self.index_of(path)?;
-        if index.blocks.is_empty() {
-            return Ok(0);
+        Ok(earliest_line_block(&index.blocks, line))
+    }
+
+    /// 按全局行号取一段行：只读网格浏览的分页数据源。
+    /// 跨块的超长行（硬切碎片）拼接成一行；超过 `clip_chars` 的行截断并打标记。
+    pub fn read_lines(&self, req: &BigFileLinesReq) -> AppResult<BigFileLinesVO> {
+        const DEFAULT_CLIP_CHARS: usize = 1000;
+        const MAX_LINES: usize = 1000;
+
+        let clip = req
+            .clip_chars
+            .unwrap_or(DEFAULT_CLIP_CHARS)
+            .clamp(16, 100_000);
+        let want = req.line_count.clamp(1, MAX_LINES);
+        let start = req.start_line.max(1);
+
+        let (index, _) = self.fresh_index(&req.path)?;
+        let total = index.total_lines;
+        let mut out = BigFileLinesVO {
+            lines: Vec::new(),
+            total_lines: total,
+        };
+        if index.blocks.is_empty() || start > total {
+            return Ok(out);
         }
-        let found = index
-            .blocks
-            .partition_point(|b| b.line_start <= line)
-            .saturating_sub(1);
-        Ok(found)
+
+        // 起始块回退到行首碎片（与 block_for_line 同一套规则）。
+        let mut skip = 0usize;
+        let start_block = earliest_line_block(&index.blocks, start);
+        if index.blocks[start_block].line_start < start {
+            skip = start - index.blocks[start_block].line_start;
+        }
+
+        // 开放行：块尾不带换行、正文延续到后一块的行（行号, 已收文本, 字符数, 已截断）。
+        let mut open_no = 0usize;
+        let mut open_text = String::new();
+        let mut open_chars = 0usize;
+        let mut open_clipped = false;
+        let mut have_open = false;
+        let flush_open = |out: &mut Vec<BigFileLineVO>, no: usize, text: &str, clipped: bool| {
+            if out.len() < want {
+                out.push(BigFileLineVO {
+                    line_no: no,
+                    text: text.to_string(),
+                    clipped,
+                });
+            }
+        };
+
+        for (i, b) in index.blocks[start_block..].iter().enumerate() {
+            if out.lines.len() >= want {
+                break;
+            }
+            let g = b.line_start;
+            let complete = complete_lines_of(&index.blocks, start_block + i, total);
+            // 续段块 = 前一块没结束在行边界：本块的第一段是开放行的延续。
+            let is_cont = i > 0 && !index.blocks[start_block + i - 1].ends_at_line;
+            // 本块会开始的新行数；续段块要扣掉开放行占掉的行号槽。
+            let fresh = complete.saturating_sub(usize::from(is_cont));
+
+            // 只跳元数据不解码：预算外的巨行续段块既没有新行也不需要内容。
+            let need_content =
+                fresh > 0 || (is_cont && have_open && !open_clipped) || (!is_cont && !have_open);
+            if !need_content {
+                if have_open && complete > 0 {
+                    // 开放行在本块内结束（块里有新行号槽位）：截断收尾，不再读内容。
+                    flush_open(&mut out.lines, open_no, &open_text, true);
+                    have_open = false;
+                    open_text.clear();
+                    open_chars = 0;
+                    open_clipped = false;
+                }
+                continue;
+            }
+
+            let text = self.decode_range(&req.path, b.offset, b.byte_len, &index.encoding)?;
+            let is_last = start_block + i == index.blocks.len() - 1;
+            // 末块不以换行结尾时最后一段也是完整行（文件末行）；其余块尾段是开放行。
+            let tail_complete = is_last || text.ends_with('\n');
+            let mut segs: Vec<&str> = text.split('\n').collect();
+            if text.ends_with('\n') {
+                segs.pop();
+            }
+
+            let mut idx = 0usize;
+            if is_cont {
+                // 续段块的第一个片段是开放行的尾段（硬切碎片块内无换行）。
+                if have_open
+                    && !open_clipped
+                    && append_capped(&mut open_text, segs[0], clip, &mut open_chars)
+                {
+                    open_clipped = true;
+                }
+                have_open = false;
+                flush_open(&mut out.lines, open_no, &open_text, open_clipped);
+                open_text.clear();
+                open_chars = 0;
+                open_clipped = false;
+                idx = 1;
+            } else if have_open {
+                // 索引不变量下不该发生：防御性收尾。
+                flush_open(&mut out.lines, open_no, &open_text, open_clipped);
+                open_text.clear();
+                open_chars = 0;
+                open_clipped = false;
+            }
+
+            // 行号映射对普通块与续段块同式：segs[k] 的全局行号 = g + k（续段块的
+            // segs[0] 是开放行尾段，占掉 g 这个行号槽）。
+            let fresh_end = if tail_complete {
+                segs.len()
+            } else {
+                segs.len().saturating_sub(1)
+            };
+            let first = idx.max(skip.min(fresh_end));
+            for (k, seg) in segs
+                .iter()
+                .enumerate()
+                .skip(first)
+                .take(fresh_end.saturating_sub(first))
+            {
+                if out.lines.len() >= want {
+                    break;
+                }
+                let mut text = String::new();
+                let mut chars = 0usize;
+                let clipped = append_capped(&mut text, seg, clip, &mut chars);
+                out.lines.push(BigFileLineVO {
+                    line_no: g + k,
+                    text,
+                    clipped,
+                });
+            }
+            if out.lines.len() >= want {
+                break;
+            }
+            if !tail_complete {
+                // 块尾未完行：交给后续续段块拼完（文件末行已在上面按完整行发出）。
+                open_no = g + fresh_end;
+                open_clipped =
+                    append_capped(&mut open_text, segs[fresh_end], clip, &mut open_chars);
+                have_open = true;
+            }
+            skip = 0;
+        }
+        if have_open {
+            flush_open(&mut out.lines, open_no, &open_text, open_clipped);
+        }
+        Ok(out)
+    }
+
+    /// 文本形态探测：只读头部 ≤2MB，统计换行数与最长/平均行字节数。
+    /// 不建索引、不解码——UTF-16 的行宽按字节算约为字符数的两倍，够分流判断用。
+    pub fn probe_shape(path: &str) -> AppResult<TextShapeVO> {
+        const PROBE_SAMPLE: u64 = 2 * 1024 * 1024;
+        let meta = fs::metadata(path).map_err(|e| {
+            AppError::wrap(codes::FILE_NOT_FOUND, "找不到文件", e)
+                .with_detail(format!("路径：{path}"))
+        })?;
+        let size = meta.len();
+        let mut bytes = Vec::new();
+        fs::File::open(path)
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用或已移走", e))?
+            .take(PROBE_SAMPLE)
+            .read_to_end(&mut bytes)?;
+
+        let mut lines = 0usize;
+        let mut max_line = 0usize;
+        let mut cur = 0usize;
+        for ch in &bytes {
+            if *ch == b'\n' {
+                lines += 1;
+                if cur > max_line {
+                    max_line = cur;
+                }
+                cur = 0;
+            } else {
+                cur += 1;
+            }
+        }
+        let tail = if bytes.is_empty() { 0 } else { cur };
+        if tail > max_line {
+            max_line = tail;
+        }
+        let avg = bytes.len().checked_div(lines).unwrap_or(bytes.len());
+        Ok(TextShapeVO {
+            size,
+            sampled_bytes: bytes.len() as u64,
+            sampled_lines: lines,
+            max_line_bytes: max_line,
+            avg_line_bytes: avg,
+        })
     }
 
     /// 把单个块的新正文写回文件：乐观锁比对 `old_text`、原子替换、流式拼接前后段。
@@ -433,6 +603,37 @@ impl BigFileService {
             })
     }
 
+    /// 取索引并核对 mtime：文件被外部改过就静默重建（不带进度回调，
+    /// 几秒内的扫描对只读视图可接受）。返回索引与「是否发生过重建」。
+    fn fresh_index(&self, path: &str) -> AppResult<(Arc<BlockIndex>, bool)> {
+        let index = self.index_of(path)?;
+        let current_mtime = fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map(|t| mtime_ms_of(Some(t)));
+        if current_mtime.is_some_and(|t| t != index.mtime_ms) {
+            self.open(path, None)?;
+            return Ok((self.index_of(path)?, true));
+        }
+        Ok((index, false))
+    }
+
+    /// 读一段字节并按编码解码为文本：只读视图容错优先，解码失败退有损。
+    /// 行尾归一走「有 CR 才复制」：绝大多数块本来就只有 LF，没必要再拷一份。
+    fn decode_range(&self, path: &str, offset: u64, byte_len: u64, enc: &str) -> AppResult<String> {
+        let mut f = fs::File::open(path)
+            .map_err(|e| AppError::wrap(codes::IO_FAILED, "读不了：文件被占用或已移走", e))?;
+        f.seek(SeekFrom::Start(offset))?;
+        let mut bytes = vec![0u8; byte_len as usize];
+        f.read_exact(&mut bytes)?;
+
+        let (_, body) = encoding::strip_bom(&bytes, enc);
+        Ok(match encoding::decode(body, enc) {
+            Ok(t) => normalize_newlines_if_needed(t),
+            Err(_) => normalize_newlines_if_needed(String::from_utf8_lossy(body).into_owned()),
+        })
+    }
+
     fn register_cancel(&self, path: &str) -> Arc<AtomicBool> {
         let mut map = self
             .cancelled
@@ -486,6 +687,10 @@ impl BigFileService {
         let mut last_progress = 0u64;
         let mut carry = 0usize;
         let mut cancelled = false;
+        // 当前块内最长行的字节数；随换行/硬切/收尾更新，闭块时落进 BlockMeta。
+        let mut block_max_line = 0usize;
+        // 当前行的起始字节偏移：行长 = 换行结束 - 行起始。
+        let mut cur_line_byte = 0u64;
 
         loop {
             if cancel.load(Ordering::Relaxed) {
@@ -508,36 +713,57 @@ impl BigFileService {
                 };
                 let abs = pos + (hit + rel) as u64;
                 let nl_end = abs + pattern.len() as u64;
+                let line_head = cur_line_byte;
+                let line_len = (nl_end - line_head) as usize;
+                if line_len > block_max_line {
+                    block_max_line = line_len;
+                }
+                cur_line_byte = nl_end;
                 if nl_end - block_start >= TARGET_BLOCK {
                     blocks.push(BlockMeta {
                         offset: block_start,
                         byte_len: nl_end - block_start,
                         line_start,
+                        max_line_bytes: block_max_line,
+                        ends_at_line: true,
                     });
                     line_start += nl_in_block + 1;
                     block_start = nl_end;
                     nl_in_block = 0;
+                    block_max_line = 0;
                 } else {
                     nl_in_block += 1;
-                    // 连续无换行的病态文件不能把索引拖死：到上限就地切一刀。
-                    if abs - block_start >= TARGET_BLOCK + BOUNDARY_EXTEND {
-                        let mut cut = abs;
-                        if utf16 {
-                            cut &= !1;
-                        }
-                        if cut > block_start {
-                            blocks.push(BlockMeta {
-                                offset: block_start,
-                                byte_len: cut - block_start,
-                                line_start,
-                            });
-                            block_start = cut;
-                            nl_in_block = 0;
-                        }
-                    }
                 }
                 last_nl_end = nl_end;
                 hit += rel + pattern.len();
+            }
+
+            // 连续无换行的病态行不能把索引拖死：块长到上限还没碰到换行就硬切。
+            // 切在「已扫描数据」的末尾：半行延续到下一块，行号跟着走完本块的已完成行数。
+            let scanned = pos + usable as u64;
+            if scanned - block_start >= TARGET_BLOCK + BOUNDARY_EXTEND {
+                let mut cut = scanned;
+                if utf16 {
+                    cut &= !1;
+                }
+                if cut > block_start {
+                    // 半行在本块内的部分：从行首（不早于块首）到切点。
+                    let partial = (cut - cur_line_byte.max(block_start)) as usize;
+                    if partial > block_max_line {
+                        block_max_line = partial;
+                    }
+                    blocks.push(BlockMeta {
+                        offset: block_start,
+                        byte_len: cut - block_start,
+                        line_start,
+                        max_line_bytes: block_max_line,
+                        ends_at_line: false,
+                    });
+                    line_start += nl_in_block;
+                    block_start = cut;
+                    nl_in_block = 0;
+                    block_max_line = 0;
+                }
             }
 
             // 尾巴挪到缓冲区开头，下一轮从它后面继续读。
@@ -561,10 +787,18 @@ impl BigFileService {
         }
 
         if pos > block_start {
+            // 末行无换行也计一行：它的字节长度折进收尾块的最长行。
+            let tail_line = (pos - cur_line_byte) as usize;
+            if tail_line > block_max_line {
+                block_max_line = tail_line;
+            }
             blocks.push(BlockMeta {
                 offset: block_start,
                 byte_len: pos - block_start,
                 line_start,
+                max_line_bytes: block_max_line,
+                // 文件以换行收尾时末行是完整的；否则末行只是没有后续内容。
+                ends_at_line: last_nl_end == pos,
             });
             line_start += nl_in_block;
         }
@@ -590,6 +824,59 @@ fn find_pattern(hay: &[u8], pattern: &[u8]) -> Option<usize> {
         memchr::memchr(pattern[0], hay)
     } else {
         memchr::memmem::find(hay, pattern)
+    }
+}
+
+/// 全局行号 → 该行**物理行首**所在的块下标。
+/// 续段块（前一块没结束在行边界）的第一行开始于前一块：
+/// 它的行号槽位要 +1 之后才能和目标行比较。
+fn earliest_line_block(blocks: &[BlockMeta], line: usize) -> usize {
+    if blocks.is_empty() {
+        return 0;
+    }
+    let mut lo = 0usize;
+    let mut hi = blocks.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        let cont = mid > 0 && !blocks[mid - 1].ends_at_line;
+        let first_fresh = blocks[mid].line_start + usize::from(cont);
+        if first_fresh <= line {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo.saturating_sub(1)
+}
+
+/// 块 i 的行号槽位数：下一个块的行号起点 - 本块行号起点；末块用总行数兜底。
+/// 硬切碎片组里除末尾块外槽位数为 0（整块内容都属于同一行的碎片）。
+fn complete_lines_of(blocks: &[BlockMeta], i: usize, total_lines: usize) -> usize {
+    match blocks.get(i + 1) {
+        Some(next) => next.line_start.saturating_sub(blocks[i].line_start),
+        None => total_lines.saturating_sub(blocks[i].line_start) + 1,
+    }
+}
+
+/// 把 `seg` 追加进 `buf`，累计字符数不超过 `budget`，超出部分丢弃。
+/// 返回 seg 是否长于剩余预算（即发生了截断）。`chars` 由调用方维护，避免重扫整串。
+fn append_capped(buf: &mut String, seg: &str, budget: usize, chars: &mut usize) -> bool {
+    let room = budget.saturating_sub(*chars);
+    if room == 0 {
+        return true;
+    }
+    let cut = seg
+        .char_indices()
+        .nth(room)
+        .map(|(i, _)| i)
+        .unwrap_or(seg.len());
+    buf.push_str(&seg[..cut]);
+    if cut < seg.len() {
+        *chars += room;
+        true
+    } else {
+        *chars += seg.chars().count();
+        false
     }
 }
 

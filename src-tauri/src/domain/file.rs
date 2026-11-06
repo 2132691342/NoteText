@@ -101,6 +101,8 @@ pub struct BigFileMetaVO {
     pub block_count: usize,
     /// 编辑器意义上的总行数（末行无换行也计一行；空文件为 1）。
     pub total_lines: usize,
+    /// 全文件最长一行的字节数（硬切碎片按块内长度计）：进块编辑前提示卡顿风险用。
+    pub max_line_bytes: usize,
 }
 
 /// 大文件的一个块：解码后的文本 + 它在整份文件里的行号范围。
@@ -179,4 +181,49 @@ pub struct BigFileBlockWriteVO {
     /// 写入后的总行数。
     pub total_lines: usize,
     pub modified_at: i64,
+}
+
+/// 大文件按行取数请求：只读网格浏览的分页数据源，行号是全局行号。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileLinesReq {
+    pub path: String,
+    /// 起始行（1-based）。
+    pub start_line: usize,
+    /// 要多少行；后端按需钳上限。
+    pub line_count: usize,
+    /// 单行文本的字符上限：超过就截断并打 `clipped` 标记。
+    pub clip_chars: Option<usize>,
+}
+
+/// 大文件的一行：全局行号 + 文本（可能截断）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileLineVO {
+    /// 1-based 全局行号。
+    pub line_no: usize,
+    pub text: String,
+    /// 本行超过 `clip_chars` 被截断：完整内容走块编辑链路。
+    pub clipped: bool,
+}
+
+/// 大文件按行取数结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BigFileLinesVO {
+    /// 行列表；空列表序列化成 `[]`。
+    pub lines: Vec<BigFileLineVO>,
+    /// 编辑器意义上的总行数（末行无换行也计一行；空文件为 1）。
+    pub total_lines: usize,
+}
+
+/// 文本形态探测：头部采样出「稀疏短行还是超宽行」，打开分流用。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextShapeVO {
+    pub size: u64,
+    /// 采样了多少字节（不超过采样上限与文件大小）。
+    pub sampled_bytes: u64,
+    /// 采样范围内的换行数（不是全文件行数）。
+    pub sampled_lines: usize,
+    /// 采样范围内最长一行的字节数（UTF-16 文件按字节算，约为字符数的两倍）。
+    pub max_line_bytes: usize,
+    /// 采样范围平均行字节数；无换行时等于采样字节数。
+    pub avg_line_bytes: usize,
 }

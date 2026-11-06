@@ -1358,7 +1358,7 @@ export function registerCommands() {
         let done = 0
         let failed = 0
         for (const tab of editor.tabs) {
-          if (!tab.path || tab.read_only || tab.big_file) continue
+          if (!tab.path || tab.read_only) continue
           if (tab.line_ending === target) continue
           // 只用编辑器里的正文写盘：脏标签的磁盘内容是旧的，覆盖它就是丢修改。
           const text = normalizeEnding(getText(tab.id), target)

@@ -73,9 +73,11 @@ function draw() {
   ctx.fillStyle = ink
   for (let i = 1; i <= doc.lines; i += stride) {
     const line = doc.line(i)
-    if (!line.text.trim()) continue
-    const indent = line.text.length - line.text.trimStart().length
-    const len = Math.min(line.text.trimEnd().length, w)
+    // 超宽行（几 MB 的压缩 JSON）不能物化整行文本：截头采样，形状不变。
+    const head = line.text.slice(0, 200)
+    if (!head.trim()) continue
+    const indent = head.length - head.trimStart().length
+    const len = Math.min(head.trimEnd().length, w)
     const y = ((i - 1) / doc.lines) * h
     ctx.fillRect(indent * 0.5, y, Math.max(len * 0.5, 1), Math.max(step - 1, 1))
   }

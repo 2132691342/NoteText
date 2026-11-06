@@ -135,6 +135,7 @@ export default {
   },
   editor: {
     openFailedTitle: 'Failed to read file',
+    opening: 'Opening {name} …',
     openWithSystem: 'Open with system app',
   },
   toolbar: {
@@ -273,8 +274,8 @@ export default {
   },
   // Chunked read-only viewer for very large files
   chunked: {
-    block: 'Block',
-    fromLine: 'from line',
+    position: 'Ln {n} / {total}',
+    emptyFile: 'This file is empty',
     gotoPlaceholder: 'Line',
     goto: 'Go',
     readonly: 'read-only blocks',
@@ -286,6 +287,7 @@ export default {
     saveBlock: 'Save block',
     discardBlock: 'Discard changes',
     editingWarn: 'this block only',
+    wideEditWarn: 'This block contains very long lines; editing may briefly stutter',
     savedBlock: 'Saved the current block of {name}',
     staleBlock: 'This block changed on disk — reloaded it',
     discardTitle: 'Discard changes in this block?',
@@ -527,19 +529,6 @@ export default {
     toastCancelled: '{kind} cancelled: {name}',
     toastFailed: '{kind} failed: {reason}',
   },
-  bigfile: {
-    mode: 'Large file mode',
-    lines: '{n} lines',
-    readonly: 'Read-only',
-    readonlyHint:
-      'Opened in paged view because the file is large. You can jump to any line and search the whole file; save a copy to edit.',
-    findPlaceholder: 'Find in large file…',
-    jump: 'Line {line}',
-    indexed: 'Line index ready',
-    indexing: 'Building line index…',
-    saveAs: 'Save a copy',
-    tooLargeForEditor: 'File is over {mb} MB, switched to large file mode (read-only)',
-  },
   dialog: {
     unsavedTitle: '"{name}" has unsaved changes',
     unsavedBody: 'Closing will discard those changes.',
@@ -573,9 +562,15 @@ export default {
     bigFile: {
       title: '"{name}" ({size}) is large. How to open it?',
       chunked: 'Chunked (fast, edit per block)',
-      chunkedHint: 'Opens instantly; browse by block and unlock the current one to edit',
+      chunkedHint: 'Opens instantly; virtual-scroll the whole file and unlock the current one to edit',
       normal: 'Open normally (edit whole file)',
       normalHint: 'Whole file editable, but noticeably slower for hundreds of MB',
+      normalWideHint: 'Whole file editable, but it contains very long lines that may stutter when scrolled into view',
+    },
+    wideLine: {
+      title: '"{name}" contains very long lines. How to open it?',
+      chunkedHint: 'Opens instantly; long lines are clipped for display, browsing and search unaffected',
+      normalHint: 'Loads the whole file into the editor; rendering very long lines may stutter',
     },
     crash: {
       title: 'Last session did not exit cleanly; {n} snapshot(s) found',

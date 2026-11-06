@@ -14,17 +14,6 @@
       </div>
     </div>
   </div>
-  <!-- 选区浮条：fixed 定位贴选区起点上方（coordsAtPos 给的是视口坐标） -->
-  <div
-    v-if="selBar"
-    class="nt-sel-bar"
-    :style="{ left: `${Math.max(selBar.x, 8)}px`, top: `${Math.max(selBar.y, 8)}px` }"
-    @mousedown.prevent
-  >
-    <button v-for="it in selBarItems" :key="it.label" class="nt-sel-bar-btn" @click="it.run()">
-      {{ it.label }}
-    </button>
-  </div>
   <ContextMenu
     v-if="menu"
     :x="menu.x"
@@ -121,6 +110,7 @@ import {
 import { useCommandStore } from '@/stores/commands'
 import { useDialogStore } from '@/stores/dialogs'
 import { copyText } from '@/utils'
+import { isWide, probeShape } from '@/utils/textShape'
 import { i18n } from '@/i18n'
 import { useEditorTheme } from '@/composables/useEditorTheme'
 import { useEditorLanguage } from '@/composables/useEditorLanguage'
@@ -134,7 +124,6 @@ import {
   quickEscape,
   quickUnescape,
   quickConvert,
-  quickCase,
 } from '@/composables/useQuickActions'
 
 const props = defineProps<{ tab: Tab; viewId?: 'main' | 'second'; readonly?: boolean }>()
@@ -243,35 +232,6 @@ let view: EditorView | null = null
  *  必须把「为什么是空的」画在界面上，而不是留一张空白标签。 */
 const mountError = ref('')
 
-/** 选区浮条：选中即出现，常用操作一步执行。 */
-const selBar = ref<{ x: number; y: number } | null>(null)
-
-/** 按当前选区更新浮条位置；空选区收起。 */
-function refreshSelBar(v: EditorView) {
-  const { from, to } = v.state.selection.main
-  if (from >= to || props.readonly) {
-    selBar.value = null
-    return
-  }
-  // 长选区贴起点上方：终点可能在视口外，贴终点会「浮条满屏跳」。
-  const head = v.coordsAtPos(from)
-  if (!head) {
-    selBar.value = null
-    return
-  }
-  selBar.value = { x: head.left, y: head.top - 34 }
-}
-
-/** 浮条按钮组：只放一步就能完成的动作，多步的走「更多」浮窗。 */
-const selBarItems = computed(() => [
-  { label: tr('quick.jsonFormat'), run: () => void quickJsonFormat(props.tab.id) },
-  { label: tr('quick.jsonMinify'), run: () => void quickJsonMinify(props.tab.id) },
-  { label: tr('quick.jsonToYaml'), run: () => void quickConvert(props.tab.id, 'json', 'yaml') },
-  { label: tr('menu.caseUpper'), run: () => quickCase(props.tab.id, 'upper') },
-  { label: tr('menu.caseLower'), run: () => quickCase(props.tab.id, 'lower') },
-  { label: tr('menu.find'), run: () => commands.run('edit.find') },
-])
-
 const cfg = () => settings.config.editor
 
 /** 编辑器视图的扩展集合（不含语言与主题，那些是 compartment）。
@@ -368,6 +328,15 @@ async function mount() {
 
   // 大文档降档：>2MB 时关掉补全 / 同词高亮这类全文档扫描的扩展。
   const big = text.length > BIG_DOC_LIMIT
+  // 宽行兜底：会话恢复的竞态可能绕过打开分流（探测还没翻完 chunked 标签
+  // 编辑器就挂载了）。几 MB 的单行建 doc 会冻结主线程，宁可退分块。
+  if (big && props.tab.path && !props.tab.path.startsWith('draft:')) {
+    if (isWide(await probeShape(props.tab.path))) {
+      props.tab.chunked = true
+      props.tab.read_only = true
+      return
+    }
+  }
   const state = EditorState.create({
     doc: text,
     extensions: [
@@ -464,9 +433,6 @@ onBeforeUnmount(() => {
 /** 一次文档变更：脏标记、光标、撤销可用性、宏录制。 */
 function onUpdate(vu: ViewUpdate) {
   if (vu.docChanged) {
-    // 正文变了选区一定也变了：浮条位置要跟着正文重算，
-    // 而下面 docChanged 分支会提前 return，所以这里先刷新。
-    refreshSelBar(vu.view)
     // 正文版本号：让「跟着正文走」的消费方（Markdown 预览）能感知变化。
     bumpDocVersion(props.tab.id)
     // 宏录制：把插入的文本收成一步。
@@ -486,7 +452,6 @@ function onUpdate(vu: ViewUpdate) {
   }
   if (vu.selectionSet) {
     emitCursor(vu.state)
-    refreshSelBar(vu.view)
     // 跳转历史：位移超阈值才记，否则打字与方向键微调会把栈撑爆。
     // 只在主视图记：分屏第二视图是只读的，用户不会在它里面跳转。
     if (props.viewId !== 'second') {
@@ -1136,49 +1101,4 @@ if (marksRendererMine.value) {
 }
 
 /* 挂载失败面的样式在 content.css：多处共用，容易漏掉同名类没样式 */
-
-/* 选区浮条：贴选区上方的一步操作条。出现 / 收起都要有过渡，
-   突然弹出会打断选词的视线。 */
-.nt-sel-bar {
-  position: fixed;
-  z-index: var(--nt-z-pop);
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--nt-elev-raised);
-  border: 1px solid var(--nt-border);
-  border-radius: var(--nt-radius-sm);
-  box-shadow: var(--nt-card-shadow);
-  animation: nt-sel-bar-in var(--nt-dur-fast) var(--nt-ease);
-}
-
-@keyframes nt-sel-bar-in {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-}
-
-.nt-sel-bar-btn {
-  height: var(--nt-ctl-h-sm);
-  padding: 0 var(--nt-sp-2);
-  border-radius: var(--nt-radius-xs);
-  font-size: var(--nt-fs-label);
-  color: var(--nt-ink-2);
-  white-space: nowrap;
-  transition:
-    background-color var(--nt-dur-fast) var(--nt-ease),
-    color var(--nt-dur-fast) var(--nt-ease),
-    transform var(--nt-dur-fast) var(--nt-ease);
-}
-
-.nt-sel-bar-btn:hover {
-  color: var(--nt-ink);
-  background: var(--nt-surface-hover);
-  transform: scale(1.06);
-}
-
-.nt-sel-bar-btn:active {
-  transform: scale(0.92);
-}
 </style>

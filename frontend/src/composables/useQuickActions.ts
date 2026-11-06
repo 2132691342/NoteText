@@ -25,8 +25,7 @@ function target(tabId: number | null | undefined): { from: number; to: number; t
   return { from: 0, to: len, text: v.state.doc.toString() }
 }
 
-/** 把结果写回原区间，光标收在结果尾部。
- *  不选中新文本：替换后若仍保持选中，选区浮条会立刻再弹一次。 */
+/** 把结果写回原区间，光标收在结果尾部。 */
 function apply(tabId: number | null | undefined, t: { from: number; to: number }, out: string) {
   if (tabId == null) return
   const v = get(tabId)
